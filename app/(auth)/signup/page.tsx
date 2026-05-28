@@ -64,7 +64,7 @@ export default function SignupPage() {
       return
     }
 
-    toast.success('Cuenta creada. Revisa tu email para confirmar.')
+    toast.success('¡Cuenta creada! Te enviamos un email de confirmación. Confírmalo y luego inicia sesión.', { duration: 6000 })
     router.push('/login')
   }
 

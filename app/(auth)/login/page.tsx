@@ -24,11 +24,14 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-      toast.error(
-        error.message === 'Invalid login credentials'
-          ? 'Email o contraseña incorrectos'
-          : 'Error al iniciar sesión. Intenta de nuevo.'
-      )
+      const msg = error.message.toLowerCase()
+      if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+        toast.error('Email o contraseña incorrectos')
+      } else if (msg.includes('email not confirmed') || msg.includes('not confirmed')) {
+        toast.error('Debes confirmar tu email antes de entrar. Revisa tu bandeja de entrada.')
+      } else {
+        toast.error(`Error: ${error.message}`)
+      }
       setLoading(false)
       return
     }
