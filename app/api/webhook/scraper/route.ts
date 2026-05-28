@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 import { LeadsRepository } from '@/lib/repos/leads'
 
 const LeadScraperSchema = z.object({
@@ -34,8 +34,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: result.error.issues }, { status: 400 })
   }
 
-  const supabase = await createClient()
-  const repo = new LeadsRepository(supabase)
+  // Webhook usa service role key — no necesita sesión de usuario
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const repo = new LeadsRepository(supabase as any)
 
   const leadsParaInsertar = result.data.leads.map((l) => ({
     ...l,
