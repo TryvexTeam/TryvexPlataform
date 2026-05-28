@@ -80,3 +80,4 @@ npm run lint      # linter
 1. Conectar repo en vercel.com
 2. Agregar todas las env vars del `.env.example` en Vercel > Settings > Environment Variables
 3. Deploy automático en cada push a `main`
+"# tryvex-proyects" 
