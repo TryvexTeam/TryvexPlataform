@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tryvex App
 
-## Getting Started
+Sistema operativo interno de Tryvex. Reemplaza Notion como herramienta de gestión de leads, clientes, proyectos, tareas y wiki interna.
 
-First, run the development server:
+## Stack
+
+- **Next.js 15** (App Router, TypeScript estricto)
+- **Tailwind CSS v4** + **shadcn/ui** (new-york / neutral)
+- **Supabase** (DB + Auth + Storage + Realtime)
+- **@dnd-kit** para drag & drop
+- **Zod** para validación
+- **Anthropic SDK** para features IA (opcional)
+
+## Setup local
+
+### 1. Clonar e instalar dependencias
+
+```bash
+git clone <repo>
+cd tryvex-app
+npm install
+```
+
+### 2. Variables de entorno
+
+```bash
+cp .env.example .env.local
+```
+
+Completar en `.env.local`:
+
+| Variable | Dónde obtenerla |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard > Settings > API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Mismo link, `anon public` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Mismo link, `service_role` (secreto) |
+| `ANTHROPIC_API_KEY` | console.anthropic.com (opcional) |
+| `SCRAPER_WEBHOOK_SECRET` | Generar con `openssl rand -hex 32` |
+
+### 3. Correr en desarrollo
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abrir http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Comandos
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev       # servidor de desarrollo con Turbopack
+npm run build     # build de producción
+npm run start     # servidor de producción
+npm run lint      # linter
+```
 
-## Learn More
+## Módulos
 
-To learn more about Next.js, take a look at the following resources:
+| Ruta | Descripción |
+|---|---|
+| `/dashboard` | KPIs + activity feed |
+| `/leads` | Pipeline kanban de prospectos |
+| `/clientes` | Clientes activos |
+| `/proyectos` | Proyectos por estado |
+| `/tareas` | Kanban de tareas del equipo |
+| `/reuniones` | Reuniones con leads/clientes |
+| `/cerebro` | Wiki interna (procesos, playbooks) |
+| `/settings` | Perfil y configuración |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Supabase
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Proyecto:** tryvex-migracion
+- **URL:** https://kmqozwcwttafvwhqlhkq.supabase.co
+- **Dashboard:** https://supabase.com/dashboard/project/kmqozwcwttafvwhqlhkq
+- 12 tablas con RLS habilitado
+- Solo emails registrados en `dim_integrantes` pueden hacer signup
 
-## Deploy on Vercel
+## Deploy en Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Conectar repo en vercel.com
+2. Agregar todas las env vars del `.env.example` en Vercel > Settings > Environment Variables
+3. Deploy automático en cada push a `main`
