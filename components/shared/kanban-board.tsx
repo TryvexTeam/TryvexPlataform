@@ -6,12 +6,14 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useState } from 'react'
+import { cn } from '@/lib/utils'
 
 export interface KanbanColumn<T> {
   id: string
@@ -50,6 +52,41 @@ function SortableCard<T extends { id: string }>({
   )
 }
 
+function DroppableColumn<T extends { id: string }>({
+  col,
+  renderCard,
+}: {
+  col: KanbanColumn<T>
+  renderCard: (item: T, isDragging?: boolean) => React.ReactNode
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: col.id })
+
+  return (
+    <SortableContext
+      id={col.id}
+      items={col.items.map((i) => i.id)}
+      strategy={verticalListSortingStrategy}
+    >
+      <div
+        ref={setNodeRef}
+        className={cn(
+          'flex flex-col gap-2 min-h-[120px] rounded-lg p-2 transition-colors',
+          isOver ? 'bg-neutral-200' : 'bg-neutral-100'
+        )}
+      >
+        {col.items.map((item) => (
+          <SortableCard key={item.id} item={item} renderCard={renderCard} />
+        ))}
+        {col.items.length === 0 && (
+          <p className="text-xs text-neutral-400 text-center py-6">
+            {isOver ? 'Soltar aquí' : 'Sin tareas'}
+          </p>
+        )}
+      </div>
+    </SortableContext>
+  )
+}
+
 export function KanbanBoard<T extends { id: string }>({
   columns,
   renderCard,
@@ -84,7 +121,7 @@ export function KanbanBoard<T extends { id: string }>({
     if (!over) return
 
     const fromCol = findColumn(active.id as string)
-    // over puede ser un item o una columna
+    // over.id puede ser el id de una columna (droppable) o de un ítem (sortable)
     const toCol =
       columns.find((c) => c.id === over.id) ?? findColumn(over.id as string)
 
@@ -100,10 +137,7 @@ export function KanbanBoard<T extends { id: string }>({
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex gap-4 overflow-x-auto pb-4">
         {columns.map((col) => (
-          <div
-            key={col.id}
-            className="flex flex-col min-w-[280px] w-[280px] shrink-0"
-          >
+          <div key={col.id} className="flex flex-col min-w-[280px] w-[280px] shrink-0">
             {/* Column header */}
             <div className="flex items-center justify-between mb-3 px-1">
               <div className="flex items-center gap-2">
@@ -117,24 +151,7 @@ export function KanbanBoard<T extends { id: string }>({
               </span>
             </div>
 
-            {/* Drop zone */}
-            <SortableContext
-              id={col.id}
-              items={col.items.map((i) => i.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div
-                className="flex flex-col gap-2 min-h-[120px] rounded-lg bg-neutral-100 p-2"
-                data-column-id={col.id}
-              >
-                {col.items.map((item) => (
-                  <SortableCard key={item.id} item={item} renderCard={renderCard} />
-                ))}
-                {col.items.length === 0 && (
-                  <p className="text-xs text-neutral-400 text-center py-6">Sin tareas</p>
-                )}
-              </div>
-            </SortableContext>
+            <DroppableColumn col={col} renderCard={renderCard} />
           </div>
         ))}
       </div>
