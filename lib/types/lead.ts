@@ -11,7 +11,8 @@ export const LeadSchema = z.object({
   nicho: z.string().nullable(),
   localidad: z.string().nullable(),
   score: z.number().min(1).max(10).nullable(),
-  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'cerrado', 'descartado']),
+  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'ganado', 'perdido', 'descartado']),
+  razon_perdida: z.enum(['precio', 'sin_respuesta', 'competencia', 'sin_interes', 'otro']).nullable(),
   responsable_id: z.string().uuid().nullable(),
   origen: z.enum(['scraper', 'manual', 'referido']),
   ultimo_contacto: z.string().nullable(),
@@ -30,7 +31,8 @@ export const LeadInsertSchema = z.object({
   nicho: z.string().nullable().optional(),
   localidad: z.string().nullable().optional(),
   score: z.number().min(1).max(10).nullable().optional(),
-  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'cerrado', 'descartado']).default('sin_contactar'),
+  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'ganado', 'perdido', 'descartado']).default('sin_contactar'),
+  razon_perdida: z.enum(['precio', 'sin_respuesta', 'competencia', 'sin_interes', 'otro']).nullable().optional(),
   responsable_id: z.string().uuid().nullable().optional(),
   origen: z.enum(['scraper', 'manual', 'referido']).default('manual'),
   notas: z.string().nullable().optional(),
@@ -65,6 +67,15 @@ export const ESTADOS_LEAD = [
   { id: 'contactado', label: 'Contactado', color: '#60a5fa' },
   { id: 'interesado', label: 'Interesado', color: '#f59e0b' },
   { id: 'reunion_agendada', label: 'Reunión agendada', color: '#a78bfa' },
-  { id: 'cerrado', label: 'Cerrado', color: '#22c55e' },
-  { id: 'descartado', label: 'Descartado', color: '#f87171' },
+  { id: 'ganado', label: 'Ganado', color: '#22c55e' },
+  { id: 'perdido', label: 'Perdido', color: '#f87171' },
+  { id: 'descartado', label: 'Descartado', color: '#737373' },
+] as const
+
+export const RAZONES_PERDIDA = [
+  { id: 'precio', label: 'Precio' },
+  { id: 'sin_respuesta', label: 'Dejó de responder' },
+  { id: 'competencia', label: 'Eligió competencia' },
+  { id: 'sin_interes', label: 'Sin interés real' },
+  { id: 'otro', label: 'Otro' },
 ] as const

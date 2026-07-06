@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -20,11 +20,40 @@ const SignupSchema = z.object({
   path: ['confirmPassword'],
 })
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const token = searchParams.get('token')
+
   const [form, setForm] = useState({ email: '', password: '', confirmPassword: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+  const [tokenValido, setTokenValido] = useState<boolean | null>(null)
+  const [tokenError, setTokenError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!token) {
+      setTokenValido(false)
+      setTokenError('Se requiere una invitación válida para registrarse.')
+      return
+    }
+
+    fetch(`/api/invitaciones/${token}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          setTokenValido(true)
+          setForm((prev) => ({ ...prev, email: json.data.email }))
+        } else {
+          setTokenValido(false)
+          setTokenError(json.error ?? 'Invitación inválida')
+        }
+      })
+      .catch(() => {
+        setTokenValido(false)
+        setTokenError('No se pudo verificar la invitación.')
+      })
+  }, [token])
 
   function handleChange(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -53,9 +82,7 @@ export default function SignupPage() {
     })
 
     if (error) {
-      if (error.message.toLowerCase().includes('not authorized') || error.status === 422) {
-        toast.error('Tu email no está autorizado. Contacta al admin.')
-      } else if (error.message.toLowerCase().includes('already registered')) {
+      if (error.message.toLowerCase().includes('already registered')) {
         toast.error('Este email ya tiene una cuenta. Inicia sesión.')
       } else {
         toast.error('Error al registrarse. Intenta de nuevo.')
@@ -64,15 +91,44 @@ export default function SignupPage() {
       return
     }
 
-    toast.success('¡Cuenta creada! Te enviamos un email de confirmación. Confírmalo y luego inicia sesión.', { duration: 6000 })
+    // Marcar token como usado
+    await fetch(`/api/invitaciones/${token}`, { method: 'PATCH' })
+
+    toast.success('¡Cuenta creada! Confirma tu email y luego inicia sesión.', { duration: 6000 })
     router.push('/login')
+  }
+
+  if (tokenValido === null) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <p className="text-sm text-center text-neutral-400">Verificando invitación...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (tokenValido === false) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Invitación inválida</CardTitle>
+          <CardDescription>{tokenError}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-neutral-500">
+            Contacta a tu administrador para obtener una nueva invitación.
+          </p>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Crear cuenta</CardTitle>
-        <CardDescription>Solo emails autorizados pueden registrarse</CardDescription>
+        <CardDescription>Completa tu registro con la invitación recibida</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -81,10 +137,9 @@ export default function SignupPage() {
             <Input
               id="email"
               type="email"
-              placeholder="tu@email.com"
               value={form.email}
-              onChange={(e) => handleChange('email', e.target.value)}
-              autoComplete="email"
+              readOnly
+              className="bg-neutral-50 cursor-not-allowed"
             />
             {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
           </div>
@@ -126,5 +181,19 @@ export default function SignupPage() {
         </form>
       </CardContent>
     </Card>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={
+      <Card>
+        <CardContent className="pt-6">
+          <p className="text-sm text-center text-neutral-400">Cargando...</p>
+        </CardContent>
+      </Card>
+    }>
+      <SignupForm />
+    </Suspense>
   )
 }

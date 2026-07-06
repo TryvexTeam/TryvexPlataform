@@ -1,29 +1,23 @@
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { CalendarDays, AlertCircle, Zap, Tag } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { CalendarDays, AlertCircle } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { TareaConResponsables } from '@/lib/types/tarea'
-import { cn } from '@/lib/utils'
 
 const prioridadConfig = {
-  alta: { label: 'Alta', class: 'bg-red-100 text-red-700 border-red-200' },
-  media: { label: 'Media', class: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-  baja: { label: 'Baja', class: 'bg-green-100 text-green-700 border-green-200' },
+  alta:  { label: 'Alta',  style: { background: 'oklch(63% 0.21 22 / 12%)', color: 'oklch(72% 0.17 22)',  border: '1px solid oklch(63% 0.21 22 / 28%)' } },
+  media: { label: 'Media', style: { background: 'oklch(74% 0.17 55 / 12%)', color: 'oklch(80% 0.14 55)',  border: '1px solid oklch(74% 0.17 55 / 28%)' } },
+  baja:  { label: 'Baja',  style: { background: 'oklch(72% 0.17 145 / 12%)',color: 'oklch(78% 0.14 145)', border: '1px solid oklch(72% 0.17 145 / 28%)' } },
 }
 
 const tipoConfig = {
-  error: { label: 'Bug', class: 'bg-red-50 text-red-600' },
-  feature: { label: 'Feature', class: 'bg-blue-50 text-blue-600' },
-  pulir: { label: 'Pulir', class: 'bg-purple-50 text-purple-600' },
-  general: { label: 'General', class: 'bg-neutral-50 text-neutral-600' },
+  error:   { label: 'Bug',     style: { background: 'oklch(63% 0.21 22 / 10%)',  color: 'oklch(72% 0.17 22)',  border: '1px solid oklch(63% 0.21 22 / 20%)' } },
+  feature: { label: 'Feature', style: { background: 'oklch(68% 0.18 230 / 10%)', color: 'oklch(75% 0.14 230)', border: '1px solid oklch(68% 0.18 230 / 22%)' } },
+  pulir:   { label: 'Pulir',   style: { background: 'oklch(58% 0.24 292 / 10%)', color: 'oklch(72% 0.18 292)', border: '1px solid oklch(58% 0.24 292 / 22%)' } },
+  general: { label: 'General', style: { background: 'oklch(100% 0 0 / 5%)',      color: 'oklch(65% 0 0)',      border: '1px solid oklch(100% 0 0 / 10%)' } },
 }
 
-const esfuerzoConfig = {
-  pequeno: 'S',
-  medio: 'M',
-  grande: 'L',
-}
+const esfuerzoConfig = { pequeno: 'S', medio: 'M', grande: 'L' }
 
 interface TareaCardProps {
   tarea: TareaConResponsables
@@ -39,47 +33,74 @@ export function TareaCard({ tarea, onClick }: TareaCardProps) {
   return (
     <div
       onClick={onClick}
-      className={cn(
-        'bg-white rounded-lg border border-neutral-200 p-3 cursor-pointer',
-        'hover:border-neutral-300 hover:shadow-sm transition-all select-none',
-        isVencida && 'border-red-200 bg-red-50/30'
-      )}
+      className="rounded-xl p-3 cursor-pointer select-none transition-all duration-150"
+      style={{
+        background: isVencida ? 'oklch(63% 0.21 22 / 6%)' : 'oklch(10% 0.004 240)',
+        border: isVencida ? '1px solid oklch(63% 0.21 22 / 25%)' : '1px solid var(--tx-border)',
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'
+        if (!isVencida) (e.currentTarget as HTMLElement).style.border = '1px solid oklch(100% 0 0 / 12%)'
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'
+        if (!isVencida) (e.currentTarget as HTMLElement).style.border = '1px solid var(--tx-border)'
+      }}
     >
       {/* Tipo + esfuerzo */}
       <div className="flex items-center justify-between mb-2">
-        <span className={cn('text-xs font-medium px-1.5 py-0.5 rounded', tipoConfig[tarea.tipo].class)}>
+        <span
+          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+          style={tipoConfig[tarea.tipo].style}
+        >
           {tipoConfig[tarea.tipo].label}
         </span>
-        <span className="text-xs text-neutral-400 font-mono">{esfuerzoConfig[tarea.esfuerzo]}</span>
+        <span
+          className="text-[10px] font-mono font-semibold"
+          style={{ color: 'var(--tx-ink-muted)' }}
+        >
+          {esfuerzoConfig[tarea.esfuerzo]}
+        </span>
       </div>
 
       {/* Título */}
-      <p className="text-sm font-medium text-neutral-800 leading-snug mb-2 line-clamp-2">
+      <p
+        className="text-[13px] font-medium leading-snug mb-2.5 line-clamp-2"
+        style={{ color: 'var(--tx-ink-primary)' }}
+      >
         {tarea.titulo}
       </p>
 
       {/* Footer */}
-      <div className="flex items-center justify-between mt-2">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <Badge variant="outline" className={cn('text-xs h-5 px-1.5', prioridadConfig[tarea.prioridad].class)}>
+          <span
+            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+            style={prioridadConfig[tarea.prioridad].style}
+          >
             {prioridadConfig[tarea.prioridad].label}
-          </Badge>
+          </span>
 
           {tarea.fecha_limite && (
-            <span className={cn('flex items-center gap-0.5 text-xs', isVencida ? 'text-red-500' : 'text-neutral-400')}>
-              {isVencida ? <AlertCircle size={11} /> : <CalendarDays size={11} />}
+            <span
+              className="flex items-center gap-0.5 text-[10px]"
+              style={{ color: isVencida ? 'oklch(72% 0.17 22)' : 'var(--tx-ink-muted)' }}
+            >
+              {isVencida ? <AlertCircle size={10} /> : <CalendarDays size={10} />}
               {format(new Date(tarea.fecha_limite), 'd MMM', { locale: es })}
             </span>
           )}
         </div>
 
-        {/* Responsables */}
         {tarea.responsables.length > 0 && (
           <div className="flex -space-x-1">
             {tarea.responsables.slice(0, 3).map((r) => (
-              <Avatar key={r.integrante_id} className="h-5 w-5 border border-white">
+              <Avatar key={r.integrante_id} className="h-5 w-5" style={{ border: '1.5px solid var(--tx-bg-primary)' }}>
                 <AvatarImage src={r.avatar_url ?? undefined} />
-                <AvatarFallback className="text-[9px] bg-neutral-200">
+                <AvatarFallback
+                  className="text-[8px] font-bold"
+                  style={{ background: 'var(--tx-surface-2)', color: 'var(--tx-ink-secondary)' }}
+                >
                   {r.nombre.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>

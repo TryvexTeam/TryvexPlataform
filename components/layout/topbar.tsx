@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Menu, LogOut } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
+import { Menu, LogOut, Settings } from 'lucide-react'
 import { toast } from 'sonner'
+import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { ThemePanel } from '@/components/dashboard/theme-panel'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +18,42 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { Sidebar } from './sidebar'
 
+const routeLabels: Record<string, string> = {
+  '/dashboard':           'Dashboard',
+  '/leads':               'Leads',
+  '/clientes':            'Clientes',
+  '/proyectos':           'Proyectos',
+  '/tareas':              'Tareas',
+  '/reuniones':           'Reuniones',
+  '/cerebro':             'Cerebro',
+  '/settings':            'Configuración',
+  '/admin/invitaciones':  'Invitaciones',
+}
+
+function Breadcrumb() {
+  const pathname = usePathname()
+  const segments = pathname.split('/').filter(Boolean)
+  if (!segments.length) return null
+
+  const rootPath = '/' + segments[0]
+  const rootLabel = routeLabels[rootPath]
+  if (!rootLabel) return null
+
+  return (
+    <nav aria-label="Breadcrumb" className="hidden md:flex items-center gap-1.5">
+      <span className="text-[13px] font-semibold" style={{ color: 'var(--tx-ink-primary)' }}>{rootLabel}</span>
+      {segments.length > 1 && (
+        <>
+          <span className="text-[13px]" style={{ color: 'var(--tx-ink-muted)' }}>/</span>
+          <span className="text-[13px] truncate max-w-40" style={{ color: 'var(--tx-ink-secondary)' }}>
+            {segments.slice(1).join(' / ')}
+          </span>
+        </>
+      )}
+    </nav>
+  )
+}
+
 interface TopbarProps {
   nombre: string
   email: string
@@ -25,6 +63,21 @@ interface TopbarProps {
 export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
   const router = useRouter()
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [status, setStatus] = useState<'online' | 'offline'>('online')
+
+  useEffect(() => {
+    const saved = localStorage.getItem('tryvex-user-status') as 'online' | 'offline'
+    if (saved) {
+      setStatus(saved)
+    }
+  }, [])
+
+  function toggleStatus() {
+    const newStatus = status === 'online' ? 'offline' : 'online'
+    setStatus(newStatus)
+    localStorage.setItem('tryvex-user-status', newStatus)
+    toast.success(`Estado de presencia cambiado a: ${newStatus === 'online' ? 'Activo' : 'Inactivo'}`)
+  }
 
   const initials = nombre
     .split(' ')
@@ -45,44 +98,122 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
   }
 
   return (
-    <header className="h-14 border-b border-neutral-200 bg-white flex items-center justify-between px-4 shrink-0">
+    <header
+      className="h-12 shrink-0 flex items-center justify-between px-4"
+      style={{
+        position: 'relative',
+        zIndex: 50,
+        background: 'oklch(6% 0.003 240 / 80%)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: '1px solid var(--tx-border)',
+      }}
+    >
+      {/* Left: mobile menu + breadcrumb */}
       <div className="flex items-center gap-3">
-        {/* Mobile menu — base-ui Sheet no usa asChild */}
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger
-            className="md:hidden inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-neutral-100"
+            className="md:hidden inline-flex items-center justify-center h-7 w-7 rounded-md text-[var(--tx-ink-muted)] hover:bg-[var(--tx-surface-1)] transition-colors"
             aria-label="Abrir menú"
           >
-            <Menu size={18} />
+            <Menu size={16} />
           </SheetTrigger>
-          <SheetContent side="left" className="p-0 w-60">
-            <Sidebar onNavigate={() => setSheetOpen(false)} />
+          <SheetContent side="left" className="p-0 w-[220px]">
+            <Sidebar onNavigate={() => setSheetOpen(false)} forceExpand />
           </SheetContent>
         </Sheet>
-        <span className="font-semibold text-sm text-neutral-700 hidden md:block">
-          Tryvex
-        </span>
+
+        <Breadcrumb />
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-neutral-300">
-          <Avatar className="h-8 w-8">
-            <AvatarImage src={avatarUrl ?? undefined} />
-            <AvatarFallback className="text-xs bg-neutral-200">{initials}</AvatarFallback>
-          </Avatar>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <div className="px-3 py-2">
-            <p className="text-sm font-medium truncate">{nombre}</p>
-            <p className="text-xs text-neutral-500 truncate">{email}</p>
-          </div>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleSignOut} className="text-red-600 cursor-pointer">
-            <LogOut size={14} className="mr-2" />
-            Cerrar sesión
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* Right: user */}
+      <div className="flex items-center gap-1">
+        {/* Theme panel */}
+        <ThemePanel />
+
+        {/* User menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="flex items-center gap-2 pl-1 pr-1.5 h-7 rounded-lg transition-colors focus:outline-none"
+            style={{ color: 'var(--tx-ink-primary)' }}
+          >
+            <div className="relative">
+              <Avatar className="h-6 w-6">
+                <AvatarImage src={avatarUrl ?? undefined} />
+                <AvatarFallback
+                  className="text-[9px] font-bold"
+                  style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
+                >
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: -1,
+                  right: -1,
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  backgroundColor: status === 'online' ? '#22C55E' : '#9CA3AF',
+                  border: '1.5px solid oklch(6% 0.003 240)',
+                  boxShadow: status === 'online' ? '0 0 6px rgba(34,197,94,0.8)' : 'none',
+                }}
+              />
+            </div>
+            <span className="hidden md:block text-[12px] font-medium max-w-28 truncate" style={{ color: 'var(--tx-ink-primary)' }}>
+              {nombre.split(' ')[0]}
+            </span>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="px-3 py-2.5" style={{ borderBottom: '1px solid var(--tx-border)' }}>
+              <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--tx-ink-primary)' }}>{nombre}</p>
+              <p className="text-[11px] truncate" style={{ color: 'var(--tx-ink-muted)' }}>{email}</p>
+            </div>
+            <div className="px-3 py-1.5" style={{ borderBottom: '1px solid var(--tx-border)' }}>
+              <button
+                onClick={toggleStatus}
+                className="w-full flex items-center justify-between text-left text-[11px] font-semibold py-1 px-1.5 rounded hover:bg-[var(--tx-surface-2)] transition-colors"
+                style={{ color: 'var(--tx-ink-secondary)' }}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{
+                      backgroundColor: status === 'online' ? '#22C55E' : '#9CA3AF',
+                      boxShadow: status === 'online' ? '0 0 6px rgba(34,197,94,0.6)' : 'none'
+                    }}
+                  />
+                  <span>Presencia: {status === 'online' ? 'Activo' : 'Inactivo'}</span>
+                </span>
+                <span className="text-[10px]" style={{ color: 'var(--tx-accent)' }}>
+                  Cambiar
+                </span>
+              </button>
+            </div>
+            <div className="py-1">
+              <DropdownMenuItem
+                onClick={() => router.push('/settings')}
+                className="cursor-pointer text-[13px] gap-2"
+              >
+                <Settings size={13} />
+                Configuración
+              </DropdownMenuItem>
+            </div>
+            <DropdownMenuSeparator />
+            <div className="py-1">
+              <DropdownMenuItem
+                onClick={handleSignOut}
+                className="cursor-pointer text-[13px] gap-2 text-red-600 focus:text-red-600"
+              >
+                <LogOut size={13} />
+                Cerrar sesión
+              </DropdownMenuItem>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </header>
   )
 }

@@ -1,9 +1,13 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { LeadsRepository } from '@/lib/repos/leads'
-import { LeadsPipeline } from '@/components/leads/leads-pipeline'
+import { LeadsWorkspace } from '@/components/leads/leads-workspace'
 
-export default async function LeadsPage() {
+interface LeadsPageProps {
+  searchParams: Promise<{ lead?: string }>
+}
+
+export default async function LeadsPage({ searchParams }: LeadsPageProps) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -11,9 +15,14 @@ export default async function LeadsPage() {
   const repo = new LeadsRepository(supabase)
   const leads = await repo.list()
 
+  const { lead: selectedId } = await searchParams
+  const interacciones = selectedId ? await repo.listInteracciones(selectedId) : []
+
   return (
-    <div className="p-6">
-      <LeadsPipeline initialLeads={leads} />
-    </div>
+    <LeadsWorkspace
+      leads={leads}
+      selectedId={selectedId ?? null}
+      interacciones={interacciones}
+    />
   )
 }

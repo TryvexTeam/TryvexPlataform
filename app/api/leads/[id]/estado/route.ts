@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { LeadsRepository } from '@/lib/repos/leads'
 
 const EstadoSchema = z.object({
-  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'cerrado', 'descartado']),
+  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'ganado', 'perdido', 'descartado']),
+  razon_perdida: z.enum(['precio', 'sin_respuesta', 'competencia', 'sin_interes', 'otro']).optional(),
 })
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

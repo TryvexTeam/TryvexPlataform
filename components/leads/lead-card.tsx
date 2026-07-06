@@ -1,12 +1,10 @@
 import { Globe, Phone, MapPin, Star } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import type { Lead } from '@/lib/types/lead'
-import { cn } from '@/lib/utils'
 
 const origenConfig = {
-  scraper: { label: 'Scraper', class: 'bg-blue-50 text-blue-600' },
-  manual: { label: 'Manual', class: 'bg-neutral-50 text-neutral-600' },
-  referido: { label: 'Referido', class: 'bg-green-50 text-green-600' },
+  scraper: { label: 'Scraper', style: { background: 'oklch(68% 0.18 230 / 12%)', color: 'oklch(75% 0.14 230)', border: '1px solid oklch(68% 0.18 230 / 25%)' } },
+  manual:  { label: 'Manual',  style: { background: 'oklch(100% 0 0 / 5%)',       color: 'oklch(65% 0 0)',      border: '1px solid oklch(100% 0 0 / 10%)' } },
+  referido:{ label: 'Referido',style: { background: 'oklch(72% 0.17 145 / 12%)', color: 'oklch(78% 0.14 145)', border: '1px solid oklch(72% 0.17 145 / 25%)' } },
 }
 
 interface LeadCardProps {
@@ -18,39 +16,66 @@ export function LeadCard({ lead, onClick }: LeadCardProps) {
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-lg border border-neutral-200 p-3 cursor-pointer hover:border-neutral-300 hover:shadow-sm transition-all select-none"
+      className="rounded-xl p-3 cursor-pointer select-none transition-all duration-150 group"
+      style={{
+        background: 'oklch(10% 0.004 240)',
+        border: '1px solid var(--tx-border)',
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.border = '1px solid oklch(100% 0 0 / 12%)'
+        ;(e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.border = '1px solid var(--tx-border)'
+        ;(e.currentTarget as HTMLElement).style.transform = 'translateY(0)'
+      }}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
-        <p className="text-sm font-semibold text-neutral-800 leading-snug line-clamp-2">
+        <p
+          className="text-[13px] font-semibold leading-snug line-clamp-2"
+          style={{ color: 'var(--tx-ink-primary)' }}
+        >
           {lead.nombre_negocio}
         </p>
         {lead.score && (
-          <span className="flex items-center gap-0.5 text-xs text-amber-500 shrink-0 font-medium">
-            <Star size={11} fill="currentColor" />
+          <span
+            className="flex items-center gap-0.5 text-[11px] shrink-0 font-medium"
+            style={{ color: 'oklch(74% 0.17 55)' }}
+          >
+            <Star size={10} fill="currentColor" />
             {lead.score}
           </span>
         )}
       </div>
 
-      <div className="space-y-1 mb-2">
+      <div className="space-y-1 mb-2.5">
         {lead.nicho && (
-          <p className="text-xs text-neutral-500 truncate">{lead.nicho}</p>
+          <p className="text-[11px] truncate" style={{ color: 'var(--tx-ink-secondary)' }}>
+            {lead.nicho}
+          </p>
         )}
         {lead.localidad && (
-          <span className="flex items-center gap-1 text-xs text-neutral-400">
-            <MapPin size={10} />
+          <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--tx-ink-muted)' }}>
+            <MapPin size={9} />
             {lead.localidad}
           </span>
         )}
       </div>
 
-      <div className="flex items-center justify-between mt-2">
-        <span className={cn('text-xs font-medium px-1.5 py-0.5 rounded', origenConfig[lead.origen].class)}>
+      <div className="flex items-center justify-between">
+        <span
+          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+          style={origenConfig[lead.origen].style}
+        >
           {origenConfig[lead.origen].label}
         </span>
-        <div className="flex items-center gap-1.5">
-          {lead.telefono && <Phone size={11} className="text-neutral-300" />}
-          {lead.tiene_web && <Globe size={11} className="text-neutral-300" />}
+        <div className="flex items-center gap-2">
+          {lead.telefono && (
+            <Phone size={11} style={{ color: 'var(--tx-ink-muted)' }} />
+          )}
+          {lead.tiene_web && (
+            <Globe size={11} style={{ color: 'var(--tx-ink-muted)' }} />
+          )}
         </div>
       </div>
     </div>

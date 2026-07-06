@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# artefactos de sesión / herramientas locales (no son parte del producto)
+/workspace/
+/.playwright-mcp/
+/.verify/
+/.agent/
+/references/
+dev-server.log
+capture.js
+/*.png
+!public/*.png
+
+# config local de Claude (la compartida sí se versiona)
+.claude/settings.local.json
+.claude/skills/

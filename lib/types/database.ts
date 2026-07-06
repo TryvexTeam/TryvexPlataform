@@ -159,7 +159,8 @@ export interface Database {
           nicho: string | null
           localidad: string | null
           score: number | null
-          estado: 'sin_contactar' | 'contactado' | 'interesado' | 'reunion_agendada' | 'cerrado' | 'descartado'
+          estado: 'sin_contactar' | 'contactado' | 'interesado' | 'reunion_agendada' | 'ganado' | 'perdido' | 'descartado'
+          razon_perdida: 'precio' | 'sin_respuesta' | 'competencia' | 'sin_interes' | 'otro' | null
           responsable_id: string | null
           origen: 'scraper' | 'manual' | 'referido'
           ultimo_contacto: string | null
@@ -178,7 +179,8 @@ export interface Database {
           nicho?: string | null
           localidad?: string | null
           score?: number | null
-          estado?: 'sin_contactar' | 'contactado' | 'interesado' | 'reunion_agendada' | 'cerrado' | 'descartado'
+          estado?: 'sin_contactar' | 'contactado' | 'interesado' | 'reunion_agendada' | 'ganado' | 'perdido' | 'descartado'
+          razon_perdida?: 'precio' | 'sin_respuesta' | 'competencia' | 'sin_interes' | 'otro' | null
           responsable_id?: string | null
           origen?: 'scraper' | 'manual' | 'referido'
           ultimo_contacto?: string | null
@@ -197,7 +199,8 @@ export interface Database {
           nicho?: string | null
           localidad?: string | null
           score?: number | null
-          estado?: 'sin_contactar' | 'contactado' | 'interesado' | 'reunion_agendada' | 'cerrado' | 'descartado'
+          estado?: 'sin_contactar' | 'contactado' | 'interesado' | 'reunion_agendada' | 'ganado' | 'perdido' | 'descartado'
+          razon_perdida?: 'precio' | 'sin_respuesta' | 'competencia' | 'sin_interes' | 'otro' | null
           responsable_id?: string | null
           origen?: 'scraper' | 'manual' | 'referido'
           ultimo_contacto?: string | null
