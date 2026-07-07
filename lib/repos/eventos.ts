@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { Evento, EventoInsert } from '@/lib/types/evento'
+import type { Evento, EventoInsert, EventoDesdeGoogle } from '@/lib/types/evento'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -15,6 +15,8 @@ interface EventoRow {
   creado_por: string | null
   notas: string | null
   created_at: string
+  google_event_id: string | null
+  origen: Evento['origen']
   eventos_asistentes: { integrante_id: string; dim_integrantes: { nombre: string } | null }[] | null
 }
 
@@ -49,6 +51,8 @@ export class EventosRepository {
       creado_por: e.creado_por,
       notas: e.notas,
       created_at: e.created_at,
+      google_event_id: e.google_event_id,
+      origen: e.origen,
       asistentes: (e.eventos_asistentes ?? []).map((a) => ({
         integrante_id: a.integrante_id,
         nombre: a.dim_integrantes?.nombre ?? '',
@@ -72,6 +76,25 @@ export class EventosRepository {
     )
     if (aError) throw new Error(aError.message)
     return data.id
+  }
+
+  /** Upsert idempotente desde Google Calendar (origen = 'google', sin asistentes en v1) */
+  async upsertFromGoogle(evento: EventoDesdeGoogle): Promise<void> {
+    const { error } = await this.sb
+      .from('eventos')
+      .upsert(
+        { ...evento, origen: 'google', creado_por: null },
+        { onConflict: 'google_event_id' }
+      )
+    if (error) throw new Error(error.message)
+  }
+
+  async deleteByGoogleId(googleEventId: string): Promise<void> {
+    const { error } = await this.sb
+      .from('eventos')
+      .delete()
+      .eq('google_event_id', googleEventId)
+    if (error) throw new Error(error.message)
   }
 
   async delete(id: string): Promise<void> {

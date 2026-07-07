@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/google-watch",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

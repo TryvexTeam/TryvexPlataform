@@ -34,6 +34,29 @@ export interface Evento {
   creado_por: string | null
   notas: string | null
   created_at: string
+  google_event_id: string | null
+  origen: 'crm' | 'google'
   asistentes: { integrante_id: string; nombre: string }[]
   es_mio: boolean
+}
+
+/** Evento normalizado desde Google Calendar, listo para upsert */
+export interface EventoDesdeGoogle {
+  google_event_id: string
+  titulo: string
+  tipo: Evento['tipo']
+  inicio: string
+  fin: string
+  notas: string | null
+}
+
+export interface GoogleSyncState {
+  id: string
+  calendar_id: string
+  sync_token: string | null
+  channel_id: string | null
+  resource_id: string | null
+  channel_expiration: string | null
+  last_sync_at: string | null
+  created_at: string
 }
