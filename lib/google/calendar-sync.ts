@@ -2,7 +2,7 @@ import type { calendar_v3 } from 'googleapis'
 import { getCalendarClient, getCalendarId } from '@/lib/google/auth'
 import type { EventosRepository } from '@/lib/repos/eventos'
 import type { GoogleSyncRepository } from '@/lib/repos/google-sync'
-import type { EventoDesdeGoogle } from '@/lib/types/evento'
+import type { AsistenteExterno, EventoDesdeGoogle } from '@/lib/types/evento'
 
 const TZ = 'America/Santiago'
 const FULL_RESYNC_DIAS_ATRAS = 30
@@ -47,6 +47,22 @@ export function mapGoogleEvent(ev: calendar_v3.Schema$Event): EventoDesdeGoogle 
 
   const titulo = ev.summary?.trim() || '(Sin título)'
 
+  // Meet: hangoutLink directo, o el entry point de video de conferenceData
+  const meetLink =
+    ev.hangoutLink ??
+    ev.conferenceData?.entryPoints?.find((p) => p.entryPointType === 'video')?.uri ??
+    null
+
+  const asistentesExternos = (ev.attendees ?? [])
+    .filter((a): a is calendar_v3.Schema$EventAttendee & { email: string } =>
+      Boolean(a.email) && !a.resource
+    )
+    .map((a) => ({
+      email: a.email,
+      nombre: a.displayName ?? null,
+      respuesta: (a.responseStatus ?? null) as AsistenteExterno['respuesta'],
+    }))
+
   return {
     google_event_id: ev.id,
     titulo,
@@ -54,6 +70,10 @@ export function mapGoogleEvent(ev: calendar_v3.Schema$Event): EventoDesdeGoogle 
     inicio: inicio.toISOString(),
     fin: fin.toISOString(),
     notas: ev.description ?? null,
+    meet_link: meetLink,
+    ubicacion: ev.location ?? null,
+    html_link: ev.htmlLink ?? null,
+    asistentes_externos: asistentesExternos,
   }
 }
 

@@ -96,7 +96,7 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
-        <h1 className="text-xl font-bold text-neutral-900 leading-snug">{tarea.titulo}</h1>
+        <h1 className="text-xl font-bold text-[var(--tx-ink-primary)] leading-snug">{tarea.titulo}</h1>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil size={13} className="mr-1.5" />

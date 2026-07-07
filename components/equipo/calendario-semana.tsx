@@ -453,11 +453,20 @@ export function CalendarioSemana() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error((j as Record<string, string>).error ?? 'Error al crear evento')
+      const j = await res.json().catch(() => ({})) as {
+        error?: string
+        data?: { google_sync?: boolean; meet_link?: string | null }
       }
-      toast.success('Evento creado')
+      if (!res.ok) {
+        throw new Error(j.error ?? 'Error al crear evento')
+      }
+      if (j.data?.google_sync) {
+        toast.success(j.data.meet_link
+          ? 'Evento creado con Meet e invitaciones enviadas'
+          : 'Evento creado y sincronizado con Google Calendar')
+      } else {
+        toast.warning('Evento creado en el CRM, pero no se pudo sincronizar con Google')
+      }
       closeModal()
       fetchEventos()
     } catch (err: unknown) {
@@ -1087,8 +1096,10 @@ export function CalendarioSemana() {
             style={{
               position: 'fixed',
               left: `${Math.min(detailPos.x, window.innerWidth - 300)}px`,
-              top: `${Math.min(detailPos.y, window.innerHeight - 260)}px`,
+              top: `${Math.min(detailPos.y, Math.max(12, window.innerHeight - 440))}px`,
               width: '280px',
+              maxHeight: 'min(420px, calc(100vh - 24px))',
+              overflowY: 'auto',
               background: '#1c1c1e',
               border: '1px solid rgba(255,255,255,0.10)',
               borderRadius: '12px',
@@ -1136,6 +1147,136 @@ export function CalendarioSemana() {
             >
               {hhmm(new Date(detailEvento.inicio))} – {hhmm(new Date(detailEvento.fin))}
             </span>
+
+            {/* Unirse a Meet */}
+            {detailEvento.meet_link && (
+              <a
+                href={detailEvento.meet_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  marginTop: '4px',
+                  background: 'var(--tx-accent)',
+                  color: 'var(--tx-accent-fg)',
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85' }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4Z" fill="currentColor" />
+                </svg>
+                Unirse a la reunión
+              </a>
+            )}
+
+            {/* Ubicación */}
+            {detailEvento.ubicacion && (
+              <span
+                style={{
+                  fontSize: '12px',
+                  color: 'var(--tx-ink-secondary)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '6px',
+                }}
+              >
+                <span aria-hidden="true" style={{ flexShrink: 0 }}>📍</span>
+                <span style={{ wordBreak: 'break-word' }}>{detailEvento.ubicacion}</span>
+              </span>
+            )}
+
+            {/* Invitados externos (Google) */}
+            {detailEvento.asistentes_externos.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--tx-ink-muted)' }}>
+                  Invitados
+                </span>
+                {detailEvento.asistentes_externos.map((a) => (
+                  <span
+                    key={a.email}
+                    style={{
+                      fontSize: '11.5px',
+                      color: 'var(--tx-ink-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <span
+                      aria-label={
+                        a.respuesta === 'accepted' ? 'Aceptó'
+                        : a.respuesta === 'declined' ? 'Rechazó'
+                        : a.respuesta === 'tentative' ? 'Quizás'
+                        : 'Sin responder'
+                      }
+                      style={{
+                        width: '7px',
+                        height: '7px',
+                        borderRadius: '50%',
+                        flexShrink: 0,
+                        background:
+                          a.respuesta === 'accepted' ? '#22c55e'
+                          : a.respuesta === 'declined' ? '#E8352A'
+                          : a.respuesta === 'tentative' ? '#eab308'
+                          : 'rgba(255,255,255,0.25)',
+                      }}
+                    />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {a.nombre || a.email}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Notas / descripción */}
+            {detailEvento.notas && (
+              <span
+                style={{
+                  fontSize: '11.5px',
+                  color: 'var(--tx-ink-muted)',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: '90px',
+                  overflowY: 'auto',
+                  marginTop: '2px',
+                }}
+              >
+                {detailEvento.notas}
+              </span>
+            )}
+
+            {/* Ver en Google Calendar */}
+            {detailEvento.html_link && (
+              <a
+                href={detailEvento.html_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  color: 'var(--tx-ink-secondary)',
+                  textDecoration: 'none',
+                  marginTop: '2px',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--tx-ink-primary)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--tx-ink-secondary)' }}
+              >
+                Ver en Google Calendar ↗
+              </a>
+            )}
+
             {detailEvento.asistentes.length > 0 && (
               <div
                 style={{

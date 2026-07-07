@@ -13,7 +13,6 @@ function isAuthorized(req: Request): boolean {
   // Fallback: invocación manual con header directo
   return req.headers.get('x-cron-secret') === secret
 }
-
 export async function GET(req: Request) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })

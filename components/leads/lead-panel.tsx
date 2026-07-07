@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  ArrowLeft,
   Trash2,
   Sparkles,
   CheckSquare,
@@ -215,6 +216,17 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
       {/* Top Bar Actions */}
       <div className="reader__bar">
         <div className="reader__actions">
+          <button
+            className="icon-btn md:hidden"
+            title="Volver a la lista"
+            onClick={() => {
+              const params = new URLSearchParams(window.location.search)
+              params.delete('lead')
+              router.replace(`/leads?${params.toString()}`, { scroll: false })
+            }}
+          >
+            <ArrowLeft size={16} />
+          </button>
           <button className="icon-btn" title="Eliminar lead" onClick={deleteLead} disabled={loading}>
             <Trash2 size={16} />
           </button>

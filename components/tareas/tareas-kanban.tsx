@@ -91,10 +91,10 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Tareas</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{tareas.length} tareas en total</p>
+          <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">Tareas</h1>
+          <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">{tareas.length} tareas en total</p>
         </div>
         <div className="flex items-center gap-2">
           <Button

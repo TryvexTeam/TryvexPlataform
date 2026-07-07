@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { EventosRepository } from '@/lib/repos/eventos'
 import { EventoInsertSchema } from '@/lib/types/evento'
+import { crearEventoEnGoogle } from '@/lib/google/calendar-write'
 
 export async function GET(req: Request) {
   const supabase = await createClient()
@@ -37,5 +38,33 @@ export async function POST(req: Request) {
   }
 
   const id = await repo.create(result.data, integranteId)
-  return NextResponse.json({ success: true, data: { id } }, { status: 201 })
+
+  // Espejo en Google Calendar con Meet e invitaciones. Best-effort:
+  // si Google falla, el evento vive igual en el CRM.
+  let meetLink: string | null = null
+  let googleOk = false
+  try {
+    const asistentesIds = result.data.asistentes_ids.length > 0
+      ? result.data.asistentes_ids
+      : [integranteId]
+    const emails = await repo.emailsDeIntegrantes(asistentesIds)
+    const g = await crearEventoEnGoogle({
+      titulo: result.data.titulo,
+      inicio: result.data.inicio,
+      fin: result.data.fin,
+      notas: result.data.notas ?? null,
+      invitadosEmails: emails,
+    })
+    await repo.setGoogleData(id, g)
+    meetLink = g.meet_link
+    googleOk = true
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error creando en Google'
+    console.error('[eventos POST → google]', message)
+  }
+
+  return NextResponse.json(
+    { success: true, data: { id, meet_link: meetLink, google_sync: googleOk } },
+    { status: 201 }
+  )
 }

@@ -20,10 +20,7 @@ export function DashWorkspace({ items, stats }: DashWorkspaceProps) {
       style={{ isolation: 'isolate' }}
     >
       <div
-        className="relative z-[2] h-full grid gap-[18px] p-[22px]"
-        style={{
-          gridTemplateColumns: '360px 1fr',
-        }}
+        className="relative z-[2] h-full grid gap-[18px] p-[14px] md:p-[22px] grid-cols-1 md:grid-cols-[360px_1fr] overflow-y-auto md:overflow-visible"
       >
         {/* Col 1 — Feed */}
         <DashFeed
@@ -33,8 +30,10 @@ export function DashWorkspace({ items, stats }: DashWorkspaceProps) {
           title="Leads & Contactos"
         />
 
-        {/* Col 2 — Reader */}
-        <DashReader item={selected} stats={stats} />
+        {/* Col 2 — Reader (en móvil solo cuando hay selección) */}
+        <div className={`min-w-0 ${selected ? '' : 'hidden md:block'}`}>
+          <DashReader item={selected} stats={stats} />
+        </div>
       </div>
     </div>
   )
