@@ -92,10 +92,10 @@ export function ProyectosKanban({ initialProyectos, clientes }: ProyectosKanbanP
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Proyectos</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{proyectos.length} proyectos</p>
+          <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">Proyectos</h1>
+          <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">{proyectos.length} proyectos</p>
         </div>
         <Button size="sm" onClick={() => setFormOpen(true)}>
           <Plus size={14} className="mr-1.5" /> Nuevo proyecto

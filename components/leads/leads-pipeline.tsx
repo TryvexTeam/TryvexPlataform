@@ -84,7 +84,7 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Leads</h1>
+          <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">Leads</h1>
           <p className="text-sm text-neutral-500 mt-0.5">{leads.length} leads en total</p>
         </div>
         <div className="flex items-center gap-2">

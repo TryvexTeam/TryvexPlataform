@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { Evento, EventoInsert, EventoDesdeGoogle } from '@/lib/types/evento'
+import type { AsistenteExterno, Evento, EventoInsert, EventoDesdeGoogle } from '@/lib/types/evento'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -17,6 +17,10 @@ interface EventoRow {
   created_at: string
   google_event_id: string | null
   origen: Evento['origen']
+  meet_link: string | null
+  ubicacion: string | null
+  html_link: string | null
+  asistentes_externos: AsistenteExterno[] | null
   eventos_asistentes: { integrante_id: string; dim_integrantes: { nombre: string } | null }[] | null
 }
 
@@ -53,6 +57,10 @@ export class EventosRepository {
       created_at: e.created_at,
       google_event_id: e.google_event_id,
       origen: e.origen,
+      meet_link: e.meet_link,
+      ubicacion: e.ubicacion,
+      html_link: e.html_link,
+      asistentes_externos: e.asistentes_externos ?? [],
       asistentes: (e.eventos_asistentes ?? []).map((a) => ({
         integrante_id: a.integrante_id,
         nombre: a.dim_integrantes?.nombre ?? '',
@@ -78,15 +86,61 @@ export class EventosRepository {
     return data.id
   }
 
-  /** Upsert idempotente desde Google Calendar (origen = 'google', sin asistentes en v1) */
+  /** Upsert idempotente desde Google Calendar. Si el evento nació en el CRM
+   *  (origen = 'crm'), actualiza solo los datos del evento sin pisar origen/creado_por. */
   async upsertFromGoogle(evento: EventoDesdeGoogle): Promise<void> {
+    const { data: existente } = await this.sb
+      .from('eventos')
+      .select('id, origen')
+      .eq('google_event_id', evento.google_event_id)
+      .maybeSingle()
+
+    if (existente) {
+      const { error } = await this.sb
+        .from('eventos')
+        .update(evento)
+        .eq('id', existente.id)
+      if (error) throw new Error(error.message)
+      return
+    }
+
     const { error } = await this.sb
       .from('eventos')
-      .upsert(
-        { ...evento, origen: 'google', creado_por: null },
-        { onConflict: 'google_event_id' }
-      )
+      .insert({ ...evento, origen: 'google', creado_por: null })
     if (error) throw new Error(error.message)
+  }
+
+  /** Vincula un evento del CRM con su copia creada en Google Calendar */
+  async setGoogleData(
+    id: string,
+    data: { google_event_id: string; meet_link: string | null; html_link: string | null }
+  ): Promise<void> {
+    const { error } = await this.sb.from('eventos').update(data).eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  /** google_event_id + origen de un evento (para borrar también en Google) */
+  async getGoogleRef(id: string): Promise<{ google_event_id: string | null; origen: Evento['origen'] } | null> {
+    const { data } = await this.sb
+      .from('eventos')
+      .select('google_event_id, origen')
+      .eq('id', id)
+      .maybeSingle()
+    return data ?? null
+  }
+
+  /** Emails de integrantes activos por id (para invitaciones de calendario) */
+  async emailsDeIntegrantes(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) return []
+    const { data, error } = await this.sb
+      .from('dim_integrantes')
+      .select('email')
+      .in('id', ids)
+      .eq('activo', true)
+    if (error) throw new Error(error.message)
+    return ((data ?? []) as { email: string | null }[])
+      .map((r) => r.email)
+      .filter((e): e is string => Boolean(e))
   }
 
   async deleteByGoogleId(googleEventId: string): Promise<void> {

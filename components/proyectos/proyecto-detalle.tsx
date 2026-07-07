@@ -68,7 +68,7 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
 
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">{proyecto.nombre}</h1>
+          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)]">{proyecto.nombre}</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-medium">
               <span className="h-2 w-2 rounded-full" style={{ background: estadoConf?.color }} />

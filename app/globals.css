@@ -1126,4 +1126,62 @@
   border-color: rgba(255, 255, 255, 0.18) !important;
   color: #ffffff !important;
   transform: translateY(-1px);
-}
+}
+
+/* ── Responsive móvil — leads workspace (lista ↔ detalle) ── */
+@media (max-width: 767px) {
+  /* Rail de categorías → chips horizontales scrolleables */
+  .leads-categories {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    overflow-y: hidden;
+    overflow-x: auto;
+    flex-shrink: 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .leads-categories::-webkit-scrollbar { display: none; }
+  .leads-categories__title,
+  .leads-categories__divider { display: none; }
+  .leads-categories__item {
+    white-space: nowrap;
+    flex-shrink: 0;
+    border-radius: 100px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    padding: 5px 12px;
+  }
+
+  /* Workspace apilado: chips arriba, lista debajo */
+  .leads-workspace { flex-direction: column; }
+
+  /* Lista a ancho completo */
+  .leads-workspace .feed {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Sin lead seleccionado: el panel (estado vacío) no ocupa la pantalla */
+  .leads-workspace:not(.has-lead) .reader { display: none; }
+
+  /* Con lead seleccionado: detalle a pantalla completa, lista y chips ocultas */
+  .leads-workspace.has-lead .feed,
+  .leads-workspace.has-lead .leads-categories { display: none; }
+  .leads-workspace.has-lead .reader { width: 100%; }
+}
+
+/* Task panel a pantalla completa en móvil */
+@media (max-width: 767px) {
+  .task-panel {
+    top: 8px;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+}

@@ -23,6 +23,13 @@ export const EventoInsertSchema = z.object({
 
 export type EventoInsert = z.infer<typeof EventoInsertSchema>
 
+/** Asistente externo del evento en Google Calendar (no es integrante del CRM) */
+export interface AsistenteExterno {
+  email: string
+  nombre: string | null
+  respuesta: 'accepted' | 'declined' | 'tentative' | 'needsAction' | null
+}
+
 export interface Evento {
   id: string
   titulo: string
@@ -36,6 +43,10 @@ export interface Evento {
   created_at: string
   google_event_id: string | null
   origen: 'crm' | 'google'
+  meet_link: string | null
+  ubicacion: string | null
+  html_link: string | null
+  asistentes_externos: AsistenteExterno[]
   asistentes: { integrante_id: string; nombre: string }[]
   es_mio: boolean
 }
@@ -48,6 +59,10 @@ export interface EventoDesdeGoogle {
   inicio: string
   fin: string
   notas: string | null
+  meet_link: string | null
+  ubicacion: string | null
+  html_link: string | null
+  asistentes_externos: AsistenteExterno[]
 }
 
 export interface GoogleSyncState {

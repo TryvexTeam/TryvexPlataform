@@ -65,7 +65,7 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">{cliente.nombre_negocio}</h1>
+          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)]">{cliente.nombre_negocio}</h1>
           <span className={cn('inline-block text-xs font-medium px-2 py-0.5 rounded-full mt-1',
             cliente.estado === 'activo' ? 'bg-green-100 text-green-700' :
             cliente.estado === 'pausado' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'

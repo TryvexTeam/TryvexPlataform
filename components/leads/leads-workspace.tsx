@@ -52,9 +52,9 @@ export function LeadsWorkspace({ leads, selectedId, interacciones }: LeadsWorksp
 
   return (
     <div
-      className={`relative h-full transition-all duration-300 ${
-        isTaskPanelOpen && selectedLead ? 'pr-[362px]' : 'pr-[0px]'
-      }`}
+      className={`leads-workspace relative h-full transition-all duration-300 ${
+        selectedLead ? 'has-lead' : ''
+      } ${isTaskPanelOpen && selectedLead ? 'md:pr-[362px]' : 'pr-[0px]'}`}
       style={{
         display: 'flex',
         gap: '0',
