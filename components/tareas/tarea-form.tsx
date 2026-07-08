@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { TareaInsertSchema, type TareaConResponsables } from '@/lib/types/tarea'
+import type { DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
+import { getInitials, hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -46,6 +48,28 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
   })
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [integrantes, setIntegrantes] = useState<DisponibilidadIntegrante[]>([])
+  const [responsables, setResponsables] = useState<Set<string>>(
+    new Set(tarea?.responsables.map((r) => r.integrante_id) ?? [])
+  )
+
+  // Miembros del equipo para asignar (misma fuente y colores que el calendario)
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    fetch('/api/disponibilidad')
+      .then((r) => r.json())
+      .then((json: { success: boolean; data: DisponibilidadIntegrante[] }) => {
+        if (!cancelled && json.success) setIntegrantes(json.data)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [open])
+
+  function memberColor(integranteId: string, nombre: string): string {
+    const idx = integrantes.findIndex((m) => m.integrante_id === integranteId)
+    return idx >= 0 ? MEMBER_PALETTE[idx % MEMBER_PALETTE.length] : hashColorHex(nombre)
+  }
 
   function set(field: string, value: string) {
     setForm((p) => ({ ...p, [field]: value }))
@@ -60,6 +84,7 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
       ...form,
       fecha_limite: form.fecha_limite || null,
       descripcion: form.descripcion || null,
+      responsables_ids: Array.from(responsables),
     })
 
     if (!result.success) {
@@ -155,6 +180,46 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
             <Label>Fecha límite</Label>
             <Input type="date" value={form.fecha_limite ?? ''} onChange={(e) => set('fecha_limite', e.target.value)} />
           </div>
+
+          {integrantes.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Responsables</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {integrantes.map((m) => {
+                  const selected = responsables.has(m.integrante_id)
+                  const color = memberColor(m.integrante_id, m.nombre)
+                  return (
+                    <button
+                      key={m.integrante_id}
+                      type="button"
+                      onClick={() => {
+                        setResponsables((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(m.integrante_id)) next.delete(m.integrante_id)
+                          else next.add(m.integrante_id)
+                          return next
+                        })
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-all"
+                      style={{
+                        border: `1.5px solid ${selected ? color : 'rgba(128,128,128,0.35)'}`,
+                        background: selected ? `${color}3a` : 'transparent',
+                        color: selected ? color : undefined,
+                      }}
+                    >
+                      <span
+                        className="flex items-center justify-center rounded-full text-[8px] font-bold"
+                        style={{ width: 16, height: 16, background: color, color: '#000' }}
+                      >
+                        {getInitials(m.nombre)}
+                      </span>
+                      {m.nombre}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

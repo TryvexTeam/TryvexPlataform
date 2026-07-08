@@ -15,9 +15,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: result.error.issues }, { status: 400 })
   }
 
-  const repo = new TareasRepository(supabase)
-  await repo.update(id, result.data)
-  return NextResponse.json({ ok: true })
+  try {
+    const repo = new TareasRepository(supabase)
+    const { responsables_ids, ...tarea } = result.data
+    if (Object.keys(tarea).length > 0) {
+      await repo.update(id, tarea)
+    }
+    if (responsables_ids) {
+      await repo.setResponsables(id, responsables_ids)
+    }
+    return NextResponse.json({ ok: true })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error al actualizar tarea'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

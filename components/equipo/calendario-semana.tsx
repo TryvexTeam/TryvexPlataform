@@ -9,10 +9,13 @@ import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
 import { getInitials, hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 
 // ─── Constants ────────────────────────────────────────────────────────
-const HORA_MIN = 8
-const HORA_MAX = 22
+const HORA_MIN = 10
+// 26 = 2:00 del día siguiente; filas 24-25 representan 0:00-1:00 de la madrugada
+const HORA_MAX = 26
 const HORAS = Array.from({ length: HORA_MAX - HORA_MIN }, (_, i) => i + HORA_MIN)
 const ROW_H = 48
+// Horas reales menores a este umbral (0-1 am) pertenecen al día extendido anterior
+const UMBRAL_MADRUGADA = HORA_MAX - 24
 
 type TipoEvento = (typeof TIPOS_EVENTO)[number]['id']
 
@@ -68,6 +71,22 @@ function tipoColor(tipo: TipoEvento): string {
   return TIPOS_EVENTO.find((t) => t.id === tipo)?.color ?? '#a78bfa'
 }
 
+/** Hora efectiva en el día extendido: 0:00-1:59 cuentan como 24-25.x del día anterior */
+function horaExtendida(d: Date): number {
+  const h = d.getHours()
+  return h < UMBRAL_MADRUGADA ? h + 24 : h
+}
+
+/** Día calendario al que pertenece una fecha dentro del día extendido (madrugada → día anterior) */
+function diaExtendido(d: Date): Date {
+  return d.getHours() < UMBRAL_MADRUGADA ? addDays(d, -1) : d
+}
+
+/** Clave de celda de dispo para una fila del grid (filas 24-25 → día siguiente, hora real) */
+function celdaKey(dayIdx: number, h: number): string {
+  return h >= 24 ? `${(dayIdx + 1) % 7}-${h - 24}` : `${dayIdx}-${h}`
+}
+
 /** Snap a fractional hour to the nearest 15-min boundary */
 function snap15(h: number): number {
   return Math.round(h * 4) / 4
@@ -98,8 +117,8 @@ function layoutEventsForDay(events: Evento[]): LayoutEvent[] {
     .map((ev) => {
       const s = new Date(ev.inicio)
       const e = new Date(ev.fin)
-      const startMin = (s.getHours() - HORA_MIN) * 60 + s.getMinutes()
-      const endMin = (e.getHours() - HORA_MIN) * 60 + e.getMinutes()
+      const startMin = (horaExtendida(s) - HORA_MIN) * 60 + s.getMinutes()
+      const endMin = (horaExtendida(e) - HORA_MIN) * 60 + e.getMinutes()
       const top = (startMin / 60) * ROW_H
       const height = Math.max(((endMin - startMin) / 60) * ROW_H, 22)
       return { ev, top, height, startMin, endMin, col: 0, totalCols: 1 }
@@ -230,7 +249,7 @@ export function CalendarioSemana() {
     if (!isCurrentWeek) return
     const el = gridScrollRef.current
     if (!el) return
-    const nowH = now.getHours()
+    const nowH = horaExtendida(now)
     const nowM = now.getMinutes()
     if (nowH >= HORA_MIN && nowH < HORA_MAX) {
       const nowTop = ((nowH - HORA_MIN) * 60 + nowM) / 60 * ROW_H
@@ -314,9 +333,9 @@ export function CalendarioSemana() {
     }
   }
 
-  // ─── Events per day ──────────────────────────────────────────────
+  // ─── Events per day (madrugada 0-1 am cuenta como el día anterior) ─
   const eventsByDay: Evento[][] = days.map((d) =>
-    eventos.filter((ev) => isSameDay(new Date(ev.inicio), d))
+    eventos.filter((ev) => isSameDay(diaExtendido(new Date(ev.inicio)), d))
   )
 
   // ─── Best windows ───────────────────────────────────────────────
@@ -324,13 +343,13 @@ export function CalendarioSemana() {
   if (disp && totalMembers > 0) {
     for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
       for (const hora of HORAS) {
-        const k = `${dayIdx}-${hora}`
+        const k = celdaKey(dayIdx, hora)
         if ((dispCountMap.get(k) ?? 0) === totalMembers) {
           // check no event overlaps this slot
           const slotStart = new Date(days[dayIdx])
-          slotStart.setHours(hora, 0, 0, 0)
-          const slotEnd = new Date(slotStart)
-          slotEnd.setHours(hora + 1, 0, 0, 0)
+          if (hora >= 24) slotStart.setDate(slotStart.getDate() + 1)
+          slotStart.setHours(hora % 24, 0, 0, 0)
+          const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000)
           const hasConflict = eventsByDay[dayIdx].some((ev) => {
             const evS = new Date(ev.inicio).getTime()
             const evE = new Date(ev.fin).getTime()
@@ -373,8 +392,8 @@ export function CalendarioSemana() {
         dayIdx: dragRef.current.dayIdx,
         top,
         height,
-        startLabel: `${fmt2(sHr)}:${fmt2(sMin)}`,
-        endLabel: `${fmt2(eHr)}:${fmt2(eMin)}`,
+        startLabel: `${fmt2(sHr % 24)}:${fmt2(sMin)}`,
+        endLabel: `${fmt2(eHr % 24)}:${fmt2(eMin)}`,
       })
     }
 
@@ -434,8 +453,8 @@ export function CalendarioSemana() {
     setModal({ dayIdx, startHour: sH, startMin: sM, endHour: eH, endMin: eM })
     setModalTitulo('')
     setModalTipo('interno')
-    setModalInicio(`${fmt2(sH)}:${fmt2(sM)}`)
-    setModalFin(`${fmt2(eH)}:${fmt2(eM)}`)
+    setModalInicio(`${fmt2(sH % 24)}:${fmt2(sM)}`)
+    setModalFin(`${fmt2(eH % 24)}:${fmt2(eM)}`)
     const ownId = disp?.find((m) => m.es_propio)?.integrante_id
     setModalAsistentes(ownId ? new Set([ownId]) : new Set())
     setCreating(false)
@@ -459,8 +478,13 @@ export function CalendarioSemana() {
     const day = days[modal.dayIdx]
     const inicio = new Date(day)
     inicio.setHours(ini[0], ini[1], 0, 0)
+    // Horas de madrugada (0:00-1:59, o 2:00 exacto como fin) pertenecen al día siguiente
+    if (ini[0] < UMBRAL_MADRUGADA) inicio.setDate(inicio.getDate() + 1)
     const fin = new Date(day)
     fin.setHours(end[0], end[1], 0, 0)
+    if (end[0] < UMBRAL_MADRUGADA || (end[0] === UMBRAL_MADRUGADA && end[1] === 0)) {
+      fin.setDate(fin.getDate() + 1)
+    }
     if (fin <= inicio) { toast.error('El fin debe ser posterior al inicio'); return }
     const body: EventoInsert = {
       titulo: modalTitulo.trim(),
@@ -512,11 +536,11 @@ export function CalendarioSemana() {
   }
 
   // ─── Compute now-line position (used in gutter + columns) ─────────
-  const nowH = now.getHours()
+  const nowH = horaExtendida(now)
   const nowM = now.getMinutes()
   const nowInRange = nowH >= HORA_MIN && nowH < HORA_MAX
   const nowTop = nowInRange ? ((nowH - HORA_MIN) * 60 + nowM) / 60 * ROW_H : null
-  const nowTimeLabel = `${fmt2(nowH)}:${fmt2(nowM)}`
+  const nowTimeLabel = `${fmt2(nowH % 24)}:${fmt2(nowM)}`
 
   // Which gutter hour does the now-line collide with?
   // The gutter label sits centered at (hora - HORA_MIN) * ROW_H, so we check proximity
@@ -895,7 +919,7 @@ export function CalendarioSemana() {
                       visibility: isColliding ? 'hidden' : 'visible',
                     }}
                   >
-                    {h}:00
+                    {h % 24}:00
                   </div>
                 )
               })}
@@ -929,9 +953,9 @@ export function CalendarioSemana() {
               const isPast = d < new Date(now.getFullYear(), now.getMonth(), now.getDate())
               const laid = layoutEventsForDay(eventsByDay[dayIdx])
 
-              // Now line position (only on today's column)
+              // Now line position (en madrugada la línea vive en la columna del día anterior)
               let dayNowTop: number | null = null
-              if (isToday && nowTop !== null) {
+              if (nowTop !== null && isSameDay(d, diaExtendido(now))) {
                 dayNowTop = nowTop
               }
 
@@ -984,7 +1008,7 @@ export function CalendarioSemana() {
                   {/* Availability layer — bandas de color por integrante */}
                   {showDisp &&
                     HORAS.map((h) => {
-                      const k = `${dayIdx}-${h}`
+                      const k = celdaKey(dayIdx, h)
                       const members = dispMembersMap.get(k)
                       if (!members || members.length === 0) return null
                       const allIn = totalMembers > 0 && members.length === totalMembers
@@ -998,6 +1022,9 @@ export function CalendarioSemana() {
                             right: 0,
                             height: `${ROW_H}px`,
                             display: 'flex',
+                            gap: '2px',
+                            padding: '2px 0 2px 2px',
+                            boxSizing: 'border-box',
                             background: allIn ? 'var(--tx-accent-subtle)' : 'transparent',
                             boxShadow: allIn
                               ? 'inset 0 0 0 1px color-mix(in srgb, var(--tx-accent) 35%, transparent)'
@@ -1006,16 +1033,18 @@ export function CalendarioSemana() {
                             zIndex: 1,
                           }}
                         >
+                          {/* Líneas GCal en el margen izquierdo: una por integrante disponible */}
                           {members.map((m) => {
                             const c = memberColor(m.id, m.nombre)
                             return (
                               <div
                                 key={m.id}
                                 style={{
-                                  flex: 1,
-                                  background: `color-mix(in srgb, ${c} 32%, transparent)`,
-                                  borderTop: `2.5px solid ${c}`,
-                                  boxSizing: 'border-box',
+                                  width: '4px',
+                                  borderRadius: '2px',
+                                  background: c,
+                                  boxShadow: `0 0 6px color-mix(in srgb, ${c} 45%, transparent)`,
+                                  flexShrink: 0,
                                 }}
                               />
                             )

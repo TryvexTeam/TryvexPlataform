@@ -27,6 +27,8 @@ export const TareaInsertSchema = z.object({
   fecha_limite: z.string().nullable().optional(),
   proyecto_id: z.string().uuid().nullable().optional(),
   cliente_id: z.string().uuid().nullable().optional(),
+  // No es columna de `tareas`: se persiste en tarea_responsables vía setResponsables
+  responsables_ids: z.array(z.string().uuid()).optional(),
 })
 
 export const TareaUpdateSchema = TareaInsertSchema.partial()

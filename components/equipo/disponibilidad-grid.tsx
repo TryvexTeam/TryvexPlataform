@@ -4,14 +4,16 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { Celda, DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
 import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
-import { hashColorHex, getInitials } from '@/lib/utils/lead-utils'
+import { hashColorHex, getInitials, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 
-const HORA_MIN = 8
-const HORA_MAX = 22
+const HORA_MIN = 10
+// 26 = 2:00 del día siguiente; filas 24-25 representan 0:00-1:00 de la madrugada
+const HORA_MAX = 26
 const HORAS = Array.from({ length: HORA_MAX - HORA_MIN }, (_, i) => i + HORA_MIN)
 
+/** Normaliza a celda real: filas 24-25 (madrugada) se guardan como hora 0-1 del día siguiente */
 function celdaKey(dia: number, hora: number): string {
-  return `${dia}-${hora}`
+  return hora >= 24 ? `${(dia + 1) % 7}-${hora - 24}` : `${dia}-${hora}`
 }
 
 function buildSet(celdas: Celda[]): Set<string> {
@@ -192,8 +194,8 @@ export function DisponibilidadGrid() {
           gap: '8px',
         }}
       >
-        {data.map((m) => {
-          const color = hashColorHex(m.nombre)
+        {data.map((m, mi) => {
+          const color = MEMBER_PALETTE[mi % MEMBER_PALETTE.length] ?? hashColorHex(m.nombre)
           return (
             <span
               key={m.integrante_id}
@@ -320,7 +322,7 @@ export function DisponibilidadGrid() {
                   minHeight: '36px',
                 }}
               >
-                {hora}:00
+                {hora % 24}:00
               </div>
 
               {/* Day cells */}
@@ -361,20 +363,24 @@ export function DisponibilidadGrid() {
                       flexWrap: 'wrap',
                     }}
                   >
-                    {members.map((m) => (
-                      <span
-                        key={m.integrante_id}
-                        title={m.nombre}
-                        style={{
-                          width: '8px',
-                          height: '8px',
-                          borderRadius: '50%',
-                          backgroundColor: hashColorHex(m.nombre),
-                          flexShrink: 0,
-                          opacity: 0.9,
-                        }}
-                      />
-                    ))}
+                    {members.map((m) => {
+                      const mi = data.findIndex((d2) => d2.integrante_id === m.integrante_id)
+                      const color = mi >= 0 ? MEMBER_PALETTE[mi % MEMBER_PALETTE.length] : hashColorHex(m.nombre)
+                      return (
+                        <span
+                          key={m.integrante_id}
+                          title={m.nombre}
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: color,
+                            flexShrink: 0,
+                            opacity: 0.9,
+                          }}
+                        />
+                      )
+                    })}
                   </div>
                 )
               })}
