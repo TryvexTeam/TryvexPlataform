@@ -26,7 +26,7 @@ cerebro/
 **Para buscar conocimiento acumulado:**
 - Leer `cerebro/index.md` → identificar nodo relevante → leer ese nodo
 
-## Formato de Nodo de Sesión
+## Formato de Nodo de Sesion
 
 ```markdown
 ---
