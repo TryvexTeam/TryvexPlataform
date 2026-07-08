@@ -5,6 +5,18 @@ export function hashColorHex(str: string): string {
   return `#${'00000'.substring(0, 6 - c.length) + c}`
 }
 
+/** Paleta vívida para distinguir integrantes del equipo (dispo por color en calendario) */
+export const MEMBER_PALETTE = [
+  '#60a5fa', // azul
+  '#34d399', // verde
+  '#fbbf24', // ámbar
+  '#f472b6', // rosa
+  '#a78bfa', // violeta
+  '#22d3ee', // cian
+  '#fb923c', // naranja
+  '#f87171', // rojo suave
+] as const
+
 export const tagTones = ['violet', 'amber', 'cyan'] as const
 export function getTagTone(nicho: string): typeof tagTones[number] {
   let hash = 0
