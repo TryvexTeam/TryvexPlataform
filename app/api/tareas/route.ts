@@ -14,7 +14,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: result.error.issues }, { status: 400 })
   }
 
-  const repo = new TareasRepository(supabase)
-  const id = await repo.create(result.data, user.id)
-  return NextResponse.json({ id }, { status: 201 })
+  try {
+    const repo = new TareasRepository(supabase)
+    // created_by es FK a dim_integrantes.id — mapear desde auth user (null si no es integrante)
+    const integranteId = await repo.integranteIdDe(user.id)
+    const id = await repo.create(result.data, integranteId)
+    return NextResponse.json({ id }, { status: 201 })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error al crear tarea'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }

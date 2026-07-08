@@ -73,7 +73,19 @@ export class TareasRepository {
     return mapTarea(data as SupabaseTarea)
   }
 
-  async create(data: TareaInsert, createdBy: string): Promise<string> {
+  /** Mapea auth user id → id de integrante activo (created_by es FK a dim_integrantes) */
+  async integranteIdDe(authUserId: string): Promise<string | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (this.supabase as any)
+      .from('dim_integrantes')
+      .select('id')
+      .eq('auth_user_id', authUserId)
+      .eq('activo', true)
+      .maybeSingle()
+    return (data as { id: string } | null)?.id ?? null
+  }
+
+  async create(data: TareaInsert, createdBy: string | null): Promise<string> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: row, error } = await (this.supabase as any)
       .from('tareas')
