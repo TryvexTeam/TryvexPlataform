@@ -665,9 +665,9 @@ export function CalendarioSemana() {
                   gap: '6px',
                   padding: '3px 10px',
                   borderRadius: '100px',
-                  background: `color-mix(in srgb, ${c} 14%, transparent)`,
-                  border: `1px solid color-mix(in srgb, ${c} 45%, transparent)`,
-                  color: `color-mix(in oklab, ${c} 70%, white)`,
+                  background: `color-mix(in srgb, ${c} 24%, transparent)`,
+                  border: `1px solid ${c}`,
+                  color: `color-mix(in oklab, ${c} 55%, white)`,
                   fontSize: '11.5px',
                 }}
               >
@@ -1013,8 +1013,8 @@ export function CalendarioSemana() {
                                 key={m.id}
                                 style={{
                                   flex: 1,
-                                  background: `color-mix(in srgb, ${c} 16%, transparent)`,
-                                  borderTop: `2px solid color-mix(in srgb, ${c} 55%, transparent)`,
+                                  background: `color-mix(in srgb, ${c} 32%, transparent)`,
+                                  borderTop: `2.5px solid ${c}`,
                                   boxSizing: 'border-box',
                                 }}
                               />
@@ -1076,7 +1076,7 @@ export function CalendarioSemana() {
                           width,
                           height: `${item.height}px`,
                           minHeight: '22px',
-                          background: `color-mix(in srgb, ${color} 18%, transparent)`,
+                          background: `color-mix(in srgb, ${color} 28%, transparent)`,
                           borderLeft: `3px solid ${color}`,
                           borderRadius: '4px',
                           padding: '3px 6px',
@@ -1089,11 +1089,11 @@ export function CalendarioSemana() {
                           transition: 'background 120ms, box-shadow 120ms',
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 28%, transparent)`
+                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 40%, transparent)`
                           e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.4)'
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 18%, transparent)`
+                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 28%, transparent)`
                           e.currentTarget.style.boxShadow = 'none'
                         }}
                       >
@@ -1581,7 +1581,7 @@ export function CalendarioSemana() {
                           padding: '4px 10px',
                           borderRadius: '100px',
                           border: `1.5px solid ${selected ? color : 'rgba(255,255,255,0.10)'}`,
-                          background: selected ? `${color}22` : 'transparent',
+                          background: selected ? `${color}3a` : 'transparent',
                           color: selected ? color : 'var(--tx-ink-muted)',
                           cursor: 'pointer',
                           transition: 'all 0.15s',
