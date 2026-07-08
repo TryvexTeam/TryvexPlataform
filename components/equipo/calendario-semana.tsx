@@ -6,7 +6,7 @@ import type { Evento, EventoInsert } from '@/lib/types/evento'
 import { TIPOS_EVENTO } from '@/lib/types/evento'
 import type { DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
 import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
-import { getInitials, hashColorHex } from '@/lib/utils/lead-utils'
+import { getInitials, hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 
 // ─── Constants ────────────────────────────────────────────────────────
 const HORA_MIN = 8
@@ -281,12 +281,35 @@ export function CalendarioSemana() {
 
   // ─── Availability map ────────────────────────────────────────────
   const totalMembers = disp?.length ?? 0
+
+  // Color estable por integrante (paleta por índice; hash como fallback)
+  const memberColorMap = useMemo(() => {
+    const map = new Map<string, string>()
+    if (disp) {
+      disp.forEach((m, i) => {
+        map.set(m.integrante_id, MEMBER_PALETTE[i % MEMBER_PALETTE.length])
+      })
+    }
+    return map
+  }, [disp])
+
+  const memberColor = useCallback(
+    (integranteId: string, nombre: string): string =>
+      memberColorMap.get(integranteId) ?? hashColorHex(nombre),
+    [memberColorMap],
+  )
+
   const dispCountMap = new Map<string, number>()
+  // Por celda: qué integrantes están disponibles (para pintar bandas por color)
+  const dispMembersMap = new Map<string, { id: string; nombre: string }[]>()
   if (disp) {
     for (const m of disp) {
       for (const c of m.celdas) {
         const k = `${c.dia_semana}-${c.hora}`
         dispCountMap.set(k, (dispCountMap.get(k) ?? 0) + 1)
+        const list = dispMembersMap.get(k) ?? []
+        list.push({ id: m.integrante_id, nombre: m.nombre })
+        dispMembersMap.set(k, list)
       }
     }
   }
@@ -617,6 +640,76 @@ export function CalendarioSemana() {
         </label>
       </div>
 
+      {/* ── Leyenda de disponibilidad por integrante ───────────── */}
+      {showDisp && disp && disp.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flexWrap: 'wrap',
+            fontSize: '12px',
+            fontWeight: 600,
+            color: 'var(--tx-ink-secondary)',
+          }}
+        >
+          <span style={{ color: 'var(--tx-ink-muted)' }}>Disponibilidad:</span>
+          {disp.map((m) => {
+            const c = memberColor(m.integrante_id, m.nombre)
+            return (
+              <span
+                key={m.integrante_id}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 10px',
+                  borderRadius: '100px',
+                  background: `color-mix(in srgb, ${c} 14%, transparent)`,
+                  border: `1px solid color-mix(in srgb, ${c} 45%, transparent)`,
+                  color: `color-mix(in oklab, ${c} 70%, white)`,
+                  fontSize: '11.5px',
+                }}
+              >
+                <span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: c,
+                    flexShrink: 0,
+                  }}
+                />
+                {m.nombre}
+                {m.es_propio && ' (tú)'}
+              </span>
+            )
+          })}
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '11px',
+              color: 'var(--tx-ink-muted)',
+              fontWeight: 500,
+            }}
+          >
+            <span
+              style={{
+                width: '14px',
+                height: '10px',
+                borderRadius: '2px',
+                background: 'var(--tx-accent-subtle)',
+                border: '1px solid color-mix(in srgb, var(--tx-accent) 35%, transparent)',
+                flexShrink: 0,
+              }}
+            />
+            todos disponibles
+          </span>
+        </div>
+      )}
+
       {/* ── Best windows panel ─────────────────────────────────── */}
       <div
         style={{
@@ -888,13 +981,13 @@ export function CalendarioSemana() {
                     </div>
                   ))}
 
-                  {/* Availability layer */}
+                  {/* Availability layer — bandas de color por integrante */}
                   {showDisp &&
                     HORAS.map((h) => {
                       const k = `${dayIdx}-${h}`
-                      const count = dispCountMap.get(k) ?? 0
-                      if (count === 0) return null
-                      const allIn = totalMembers > 0 && count === totalMembers
+                      const members = dispMembersMap.get(k)
+                      if (!members || members.length === 0) return null
+                      const allIn = totalMembers > 0 && members.length === totalMembers
                       return (
                         <div
                           key={`av-${h}`}
@@ -904,13 +997,30 @@ export function CalendarioSemana() {
                             left: 0,
                             right: 0,
                             height: `${ROW_H}px`,
-                            background: allIn
-                              ? 'var(--tx-accent-subtle)'
-                              : `rgba(255,255,255,${0.03 * count})`,
+                            display: 'flex',
+                            background: allIn ? 'var(--tx-accent-subtle)' : 'transparent',
+                            boxShadow: allIn
+                              ? 'inset 0 0 0 1px color-mix(in srgb, var(--tx-accent) 35%, transparent)'
+                              : 'none',
                             pointerEvents: 'none',
                             zIndex: 1,
                           }}
-                        />
+                        >
+                          {members.map((m) => {
+                            const c = memberColor(m.id, m.nombre)
+                            return (
+                              <div
+                                key={m.id}
+                                style={{
+                                  flex: 1,
+                                  background: `color-mix(in srgb, ${c} 16%, transparent)`,
+                                  borderTop: `2px solid color-mix(in srgb, ${c} 55%, transparent)`,
+                                  boxSizing: 'border-box',
+                                }}
+                              />
+                            )
+                          })}
+                        </div>
                       )
                     })}
 
@@ -1296,7 +1406,7 @@ export function CalendarioSemana() {
                       borderRadius: '100px',
                       background: 'rgba(255,255,255,0.06)',
                       color: 'var(--tx-ink-secondary)',
-                      border: `1px solid ${hashColorHex(a.nombre)}`,
+                      border: `1px solid ${memberColor(a.integrante_id, a.nombre)}`,
                     }}
                   >
                     {getInitials(a.nombre)} {a.nombre}
@@ -1452,7 +1562,7 @@ export function CalendarioSemana() {
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {disp.map((m) => {
                     const selected = modalAsistentes.has(m.integrante_id)
-                    const color = hashColorHex(m.nombre)
+                    const color = memberColor(m.integrante_id, m.nombre)
                     return (
                       <button
                         key={m.integrante_id}
