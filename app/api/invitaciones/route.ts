@@ -47,7 +47,8 @@ export async function POST(req: Request) {
     const { email, enviarEmail } = result.data
     const { invitacion, tokenRaw } = await crearInvitacion(supabase, email, integrante.id)
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    // Sin env configurada, usar el origin real del request (en prod = dominio de producción)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin
     const link = `${appUrl}/signup?token=${tokenRaw}`
 
     if (enviarEmail) {
