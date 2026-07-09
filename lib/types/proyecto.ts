@@ -38,7 +38,7 @@ export type Proyecto = {
   responsable_id: string | null
   created_at: string
   updated_at: string
-  cliente?: { nombre_negocio: string } | null
+  cliente?: { nombre_negocio: string | null; nombre_contacto: string | null } | null
 }
 
 export type Venta = {
@@ -51,9 +51,54 @@ export type Venta = {
   estado_pago: 'pendiente' | 'pagado' | 'atrasado' | 'cancelado'
   fecha_emision: string | null
   fecha_pago: string | null
+  fecha_vencimiento: string | null
   metodo_pago: 'mercadopago' | 'transferencia' | 'otro' | null
   referencia: string | null
+  descripcion: string | null
   created_at: string
+}
+
+export const VentaInsertSchema = z.object({
+  cliente_id: z.string().uuid(),
+  proyecto_id: z.string().uuid().nullable().optional(),
+  tipo: z.enum(['inicial', 'mantencion', 'extra']),
+  monto_usd: z.number().positive('El monto debe ser mayor a 0'),
+  estado_pago: z.enum(['pendiente', 'pagado', 'atrasado', 'cancelado']).default('pendiente'),
+  fecha_emision: z.string().nullable().optional(),
+  fecha_pago: z.string().nullable().optional(),
+  fecha_vencimiento: z.string().nullable().optional(),
+  metodo_pago: z.enum(['mercadopago', 'transferencia', 'otro']).nullable().optional(),
+  descripcion: z.string().nullable().optional(),
+})
+
+export const VentaUpdateSchema = VentaInsertSchema.partial()
+
+export type VentaInsert = z.infer<typeof VentaInsertSchema>
+export type VentaUpdate = z.infer<typeof VentaUpdateSchema>
+
+/** Resumen financiero calculado a partir de los pagos de un cliente */
+export type ResumenFinanciero = {
+  totalCobrado: number
+  porCobrar: number
+  proximoCobro: string | null
+}
+
+export function resumenFinanciero(ventas: Venta[]): ResumenFinanciero {
+  const totalCobrado = ventas
+    .filter((v) => v.estado_pago === 'pagado')
+    .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+
+  const pendientes = ventas.filter(
+    (v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado'
+  )
+  const porCobrar = pendientes.reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+
+  const fechas = pendientes
+    .map((v) => v.fecha_vencimiento ?? v.fecha_emision)
+    .filter((f): f is string => Boolean(f))
+    .sort()
+
+  return { totalCobrado, porCobrar, proximoCobro: fechas[0] ?? null }
 }
 
 export const ESTADOS_PROYECTO = [

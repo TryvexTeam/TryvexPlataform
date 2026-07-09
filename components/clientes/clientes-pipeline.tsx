@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { KanbanBoard, type KanbanColumn } from '@/components/shared/kanban-board'
 import { AlertTriangle, TrendingUp, FolderKanban } from 'lucide-react'
-import type { Cliente } from '@/lib/types/cliente'
+import { nombreCliente, type Cliente } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 
 const pipelineColumns: { id: string; title: string; color: string; estados: string[] }[] = [
@@ -48,7 +48,7 @@ function ClienteKanbanCard({
   isSelected: boolean
   isDragging?: boolean
 }) {
-  const color = getColor(cliente.nombre_negocio)
+  const color = getColor(nombreCliente(cliente))
   const proy = proyectos.filter((p) => p.cliente_id === cliente.id && p.estado !== 'cerrado')
   const vents = ventas.filter((v) => v.cliente_id === cliente.id)
   const atrasados = vents.some((v) => v.estado_pago === 'atrasado')
@@ -82,7 +82,7 @@ function ClienteKanbanCard({
             color,
           }}
         >
-          {initials(cliente.nombre_negocio)}
+          {initials(nombreCliente(cliente))}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -90,7 +90,7 @@ function ClienteKanbanCard({
               className="text-[12px] font-semibold truncate"
               style={{ color: 'var(--tx-ink-primary)' }}
             >
-              {cliente.nombre_negocio}
+              {nombreCliente(cliente)}
             </p>
             {atrasados && <AlertTriangle size={10} style={{ color: 'oklch(72% 0.21 22)', flexShrink: 0 }} />}
           </div>

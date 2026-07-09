@@ -30,7 +30,7 @@ function ProyectoCard({ proyecto, onClick }: { proyecto: Proyecto; onClick?: () 
     >
       <p className="text-sm font-semibold text-neutral-800 mb-1 line-clamp-2">{proyecto.nombre}</p>
       {proyecto.cliente && (
-        <p className="text-xs text-neutral-400 mb-2 truncate">{proyecto.cliente.nombre_negocio}</p>
+        <p className="text-xs text-neutral-400 mb-2 truncate">{proyecto.cliente.nombre_contacto ?? proyecto.cliente.nombre_negocio}</p>
       )}
       <div className="flex items-center justify-between">
         <span className="text-xs text-neutral-500 capitalize">{proyecto.tipo}</span>

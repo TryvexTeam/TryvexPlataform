@@ -12,7 +12,7 @@ import {
   TrendingUp,
   ChevronRight,
 } from 'lucide-react'
-import type { Cliente } from '@/lib/types/cliente'
+import { nombreCliente, type Cliente } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 
 const estadoBadge: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -67,7 +67,7 @@ export function ClientesFeed({ clientes, proyectos, ventas, selectedId, onSelect
       const q = search.toLowerCase()
       const matchQ =
         !q ||
-        c.nombre_negocio.toLowerCase().includes(q) ||
+        (c.nombre_negocio ?? '').toLowerCase().includes(q) ||
         (c.nombre_contacto ?? '').toLowerCase().includes(q) ||
         (c.nicho ?? '').toLowerCase().includes(q)
       const matchEstado = filtroEstado === 'todos' || c.estado === filtroEstado
@@ -188,7 +188,7 @@ export function ClientesFeed({ clientes, proyectos, ventas, selectedId, onSelect
 
           {filtered.map((c, i) => {
             const badge = estadoBadge[c.estado]
-            const color = getColor(c.nombre_negocio)
+            const color = getColor(nombreCliente(c))
             const isSelected = selectedId === c.id
             const { pendientes, atrasados, proyActivos } = getClienteData(c.id)
 
@@ -224,7 +224,7 @@ export function ClientesFeed({ clientes, proyectos, ventas, selectedId, onSelect
                       color,
                     }}
                   >
-                    {initials(c.nombre_negocio)}
+                    {initials(nombreCliente(c))}
                   </div>
 
                   {/* Content */}
@@ -234,7 +234,7 @@ export function ClientesFeed({ clientes, proyectos, ventas, selectedId, onSelect
                         className="text-[13px] font-semibold truncate"
                         style={{ color: 'var(--tx-ink-primary)' }}
                       >
-                        {c.nombre_negocio}
+                        {nombreCliente(c)}
                       </span>
                       {atrasados && (
                         <AlertTriangle
@@ -253,15 +253,15 @@ export function ClientesFeed({ clientes, proyectos, ventas, selectedId, onSelect
                           {c.nicho}
                         </span>
                       )}
-                      {c.nicho && (c.nombre_contacto || c.localidad) && (
+                      {c.nicho && (c.nombre_negocio || c.localidad) && (
                         <span style={{ color: 'var(--tx-ink-muted)', fontSize: 10 }}>·</span>
                       )}
-                      {c.nombre_contacto && (
+                      {c.nombre_negocio && (
                         <span
                           className="text-[10.5px]"
                           style={{ color: 'var(--tx-ink-muted)' }}
                         >
-                          {c.nombre_contacto}
+                          {c.nombre_negocio}
                         </span>
                       )}
                     </div>

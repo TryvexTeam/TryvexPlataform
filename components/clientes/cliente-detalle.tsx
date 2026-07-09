@@ -4,15 +4,16 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ArrowLeft, Pencil, Trash2, Phone, Mail, MapPin, DollarSign, FolderKanban } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Phone, Mail, MapPin, Plus, FolderKanban, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ClienteForm } from './cliente-form'
-import type { Cliente, ClienteInsert } from '@/lib/types/cliente'
+import { PagoForm } from './pago-form'
+import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
-import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
+import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
 import { cn } from '@/lib/utils'
 
 const estadoPagoConfig = {
@@ -31,6 +32,7 @@ interface ClienteDetalleProps {
 export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetalleProps) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
+  const [pagoOpen, setPagoOpen] = useState(false)
 
   async function handleEdit(data: ClienteInsert) {
     const res = await fetch(`/api/clientes/${cliente.id}`, {
@@ -50,11 +52,18 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
     router.push('/clientes')
   }
 
-  const totalVentas = ventas
-    .filter((v) => v.estado_pago === 'pagado')
-    .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+  async function handleMarcarPagado(ventaId: string) {
+    const res = await fetch(`/api/pagos/${ventaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado_pago: 'pagado', fecha_pago: new Date().toISOString().slice(0, 10) }),
+    })
+    if (!res.ok) { toast.error('Error al actualizar el pago'); return }
+    toast.success('Pago marcado como pagado')
+    router.refresh()
+  }
 
-  const ventasPendientes = ventas.filter((v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado')
+  const { totalCobrado, porCobrar, proximoCobro } = resumenFinanciero(ventas)
 
   return (
     <div>
@@ -65,7 +74,12 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)]">{cliente.nombre_negocio}</h1>
+          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)]">{nombreCliente(cliente)}</h1>
+          {(cliente.nombre_negocio || cliente.nicho) && (
+            <p className="text-sm text-neutral-500">
+              {[cliente.nombre_negocio, cliente.nicho].filter(Boolean).join(' · ')}
+            </p>
+          )}
           <span className={cn('inline-block text-xs font-medium px-2 py-0.5 rounded-full mt-1',
             cliente.estado === 'activo' ? 'bg-green-100 text-green-700' :
             cliente.estado === 'pausado' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
@@ -85,34 +99,27 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
 
       {/* Info */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6 text-sm">
-        {cliente.nombre_contacto && <span className="text-neutral-600">👤 {cliente.nombre_contacto}</span>}
         {cliente.telefono && <span className="flex items-center gap-1.5 text-neutral-600"><Phone size={13} />{cliente.telefono}</span>}
         {cliente.email && <span className="flex items-center gap-1.5 text-neutral-600"><Mail size={13} />{cliente.email}</span>}
         {cliente.localidad && <span className="flex items-center gap-1.5 text-neutral-600"><MapPin size={13} />{cliente.localidad}</span>}
-        {cliente.nicho && <span className="text-neutral-600">Nicho: <strong>{cliente.nicho}</strong></span>}
         {cliente.fecha_cierre && <span className="text-neutral-500">Cierre: {format(new Date(cliente.fecha_cierre), 'd MMM yyyy', { locale: es })}</span>}
       </div>
 
       {/* Finanzas */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         {[
+          { label: 'Total cobrado', value: totalCobrado > 0 ? `$${totalCobrado.toLocaleString()}` : '—' },
+          { label: 'Nos debe', value: porCobrar > 0 ? `$${porCobrar.toLocaleString()}` : '—', alerta: porCobrar > 0 },
+          { label: 'Próximo cobro', value: proximoCobro ? format(new Date(proximoCobro), 'd MMM', { locale: es }) : '—' },
+          { label: 'MRR', value: cliente.mantencion_mensual_usd ? `$${cliente.mantencion_mensual_usd}/mes` : '—' },
           { label: 'Valor inicial', value: cliente.valor_inicial_usd ? `$${cliente.valor_inicial_usd.toLocaleString()}` : '—' },
-          { label: 'Mantención/mes', value: cliente.mantencion_mensual_usd ? `$${cliente.mantencion_mensual_usd}/mes` : '—' },
-          { label: 'Total cobrado', value: totalVentas > 0 ? `$${totalVentas.toLocaleString()}` : '—' },
         ].map((item) => (
-          <div key={item.label} className="bg-neutral-50 rounded-lg p-3 text-center">
+          <div key={item.label} className={cn('rounded-lg p-3 text-center', item.alerta ? 'bg-red-50' : 'bg-neutral-50')}>
             <p className="text-xs text-neutral-500 mb-1">{item.label}</p>
-            <p className="text-sm font-semibold text-neutral-800">{item.value}</p>
+            <p className={cn('text-sm font-semibold', item.alerta ? 'text-red-600' : 'text-neutral-800')}>{item.value}</p>
           </div>
         ))}
       </div>
-
-      {ventasPendientes.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 flex items-center gap-2 text-sm text-yellow-700">
-          <DollarSign size={14} />
-          {ventasPendientes.length} pago(s) pendiente(s) o atrasado(s)
-        </div>
-      )}
 
       {cliente.notas && (
         <div className="bg-neutral-50 rounded-lg p-3 mb-6 text-sm text-neutral-600">{cliente.notas}</div>
@@ -159,7 +166,12 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
 
       {/* Historial de pagos */}
       <div>
-        <h2 className="text-sm font-semibold text-neutral-700 mb-3">Historial de pagos ({ventas.length})</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-neutral-700">Pagos ({ventas.length})</h2>
+          <Button size="sm" onClick={() => setPagoOpen(true)}>
+            <Plus size={13} className="mr-1.5" /> Registrar pago
+          </Button>
+        </div>
         {ventas.length === 0 ? (
           <p className="text-sm text-neutral-400 py-4 text-center">Sin pagos registrados</p>
         ) : (
@@ -170,13 +182,17 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
                   <th className="text-left px-3 py-2 font-medium text-neutral-600">Tipo</th>
                   <th className="text-left px-3 py-2 font-medium text-neutral-600">Monto</th>
                   <th className="text-left px-3 py-2 font-medium text-neutral-600">Estado</th>
-                  <th className="text-left px-3 py-2 font-medium text-neutral-600 hidden md:table-cell">Emisión</th>
+                  <th className="text-left px-3 py-2 font-medium text-neutral-600 hidden md:table-cell">Cobro</th>
+                  <th className="px-3 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {ventas.map((v) => (
                   <tr key={v.id}>
-                    <td className="px-3 py-2 capitalize text-neutral-700">{v.tipo}</td>
+                    <td className="px-3 py-2 capitalize text-neutral-700">
+                      {v.tipo}
+                      {v.descripcion && <span className="block text-xs text-neutral-400 normal-case">{v.descripcion}</span>}
+                    </td>
                     <td className="px-3 py-2 font-medium text-neutral-800">{v.monto_usd ? `$${v.monto_usd.toLocaleString()}` : '—'}</td>
                     <td className="px-3 py-2">
                       <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', estadoPagoConfig[v.estado_pago])}>
@@ -184,7 +200,16 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
                       </span>
                     </td>
                     <td className="px-3 py-2 text-neutral-500 hidden md:table-cell">
-                      {v.fecha_emision ? format(new Date(v.fecha_emision), 'd MMM yyyy', { locale: es }) : '—'}
+                      {(v.fecha_vencimiento ?? v.fecha_emision)
+                        ? format(new Date((v.fecha_vencimiento ?? v.fecha_emision)!), 'd MMM yyyy', { locale: es })
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {(v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado') && (
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => handleMarcarPagado(v.id)}>
+                          <Check size={12} className="mr-1" /> Pagado
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -195,6 +220,7 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
       </div>
 
       <ClienteForm open={editOpen} onOpenChange={setEditOpen} cliente={cliente} onSubmit={handleEdit} />
+      <PagoForm open={pagoOpen} onOpenChange={setPagoOpen} clienteId={cliente.id} proyectos={proyectos} onCreated={() => router.refresh()} />
     </div>
   )
 }

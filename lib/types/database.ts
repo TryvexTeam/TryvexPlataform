@@ -41,7 +41,7 @@ export interface Database {
       dim_clientes: {
         Row: {
           id: string
-          nombre_negocio: string
+          nombre_negocio: string | null
           nombre_contacto: string | null
           telefono: string | null
           email: string | null
@@ -58,7 +58,7 @@ export interface Database {
         }
         Insert: {
           id?: string
-          nombre_negocio: string
+          nombre_negocio?: string | null
           nombre_contacto?: string | null
           telefono?: string | null
           email?: string | null
@@ -75,7 +75,7 @@ export interface Database {
         }
         Update: {
           id?: string
-          nombre_negocio?: string
+          nombre_negocio?: string | null
           nombre_contacto?: string | null
           telefono?: string | null
           email?: string | null
@@ -220,8 +220,10 @@ export interface Database {
           estado_pago: 'pendiente' | 'pagado' | 'atrasado' | 'cancelado'
           fecha_emision: string | null
           fecha_pago: string | null
+          fecha_vencimiento: string | null
           metodo_pago: 'mercadopago' | 'transferencia' | 'otro' | null
           referencia: string | null
+          descripcion: string | null
           created_at: string
         }
         Insert: {
@@ -234,8 +236,10 @@ export interface Database {
           estado_pago?: 'pendiente' | 'pagado' | 'atrasado' | 'cancelado'
           fecha_emision?: string | null
           fecha_pago?: string | null
+          fecha_vencimiento?: string | null
           metodo_pago?: 'mercadopago' | 'transferencia' | 'otro' | null
           referencia?: string | null
+          descripcion?: string | null
           created_at?: string
         }
         Update: {
@@ -248,8 +252,10 @@ export interface Database {
           estado_pago?: 'pendiente' | 'pagado' | 'atrasado' | 'cancelado'
           fecha_emision?: string | null
           fecha_pago?: string | null
+          fecha_vencimiento?: string | null
           metodo_pago?: 'mercadopago' | 'transferencia' | 'otro' | null
           referencia?: string | null
+          descripcion?: string | null
           created_at?: string
         }
       }

@@ -45,7 +45,7 @@ export function ClienteForm({ open, onOpenChange, cliente, onSubmit }: ClienteFo
 
     const result = ClienteInsertSchema.safeParse({
       ...form,
-      nombre_contacto: form.nombre_contacto || null,
+      nombre_negocio: form.nombre_negocio || null,
       telefono: form.telefono || null,
       email: form.email || null,
       nicho: form.nicho || null,
@@ -82,30 +82,30 @@ export function ClienteForm({ open, onOpenChange, cliente, onSubmit }: ClienteFo
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Nombre negocio *</Label>
-            <Input value={form.nombre_negocio} onChange={(e) => set('nombre_negocio', e.target.value)} placeholder="Nombre del negocio" />
-            {errors.nombre_negocio && <p className="text-xs text-red-500">{errors.nombre_negocio}</p>}
+            <Label>Nombre del cliente *</Label>
+            <Input value={form.nombre_contacto} onChange={(e) => set('nombre_contacto', e.target.value)} placeholder="Ej: Rodolfo" />
+            {errors.nombre_contacto && <p className="text-xs text-red-500">{errors.nombre_contacto}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Contacto</Label>
-              <Input value={form.nombre_contacto} onChange={(e) => set('nombre_contacto', e.target.value)} placeholder="Nombre" />
-            </div>
             <div className="space-y-1.5">
               <Label>Teléfono</Label>
               <Input value={form.telefono} onChange={(e) => set('telefono', e.target.value)} placeholder="+56 9..." />
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Email</Label>
               <Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="email@..." />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Negocio</Label>
+              <Input value={form.nombre_negocio} onChange={(e) => set('nombre_negocio', e.target.value)} placeholder="Ej: perrustingo" />
+            </div>
             <div className="space-y-1.5">
               <Label>Nicho</Label>
-              <Input value={form.nicho} onChange={(e) => set('nicho', e.target.value)} placeholder="Ej: Restaurante" />
+              <Input value={form.nicho} onChange={(e) => set('nicho', e.target.value)} placeholder="Ej: Peluquería canina" />
             </div>
           </div>
 
