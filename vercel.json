@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/google-watch",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/avisos",
+      "schedule": "0 12 * * *"
     }
   ]
 }

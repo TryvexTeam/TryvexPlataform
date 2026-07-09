@@ -44,6 +44,15 @@ export async function POST(req: Request) {
     const id = await repo.create(tarea, integranteId)
     if (responsables_ids && responsables_ids.length > 0) {
       await repo.setResponsables(id, responsables_ids)
+      const { NotificacionesRepository } = await import('@/lib/repos/notificaciones')
+      await new NotificacionesRepository(supabase).notificar({
+        destinatarios: responsables_ids,
+        tipo: 'tarea_asignada',
+        titulo: `Tarea asignada: ${tarea.titulo}`,
+        cuerpo: tarea.fecha_limite ? `Vence el ${tarea.fecha_limite}` : undefined,
+        link: `/tareas/${id}`,
+        excluir: integranteId,
+      })
     }
     return NextResponse.json({ id }, { status: 201 })
   } catch (err: unknown) {

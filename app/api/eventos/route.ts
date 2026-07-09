@@ -63,6 +63,23 @@ export async function POST(req: Request) {
     console.error('[eventos POST → google]', message)
   }
 
+  // Aviso in-app a los asistentes internos (excluye al creador)
+  {
+    const { NotificacionesRepository } = await import('@/lib/repos/notificaciones')
+    const hora = new Date(result.data.inicio).toLocaleString('es-CL', {
+      weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      timeZone: 'America/Santiago',
+    })
+    await new NotificacionesRepository(supabase).notificar({
+      destinatarios: result.data.asistentes_ids,
+      tipo: 'cita_invitado',
+      titulo: `Cita: ${result.data.titulo}`,
+      cuerpo: hora,
+      link: '/reuniones',
+      excluir: integranteId,
+    })
+  }
+
   // Confirmación con template Tryvex a los invitados externos. Best-effort.
   if (result.data.invitados_externos.length > 0) {
     try {
