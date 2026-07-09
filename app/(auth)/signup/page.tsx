@@ -76,9 +76,13 @@ function SignupForm() {
 
     setLoading(true)
     const supabase = createClient()
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
     const { error } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
+      options: {
+        emailRedirectTo: `${appUrl}/login`,
+      },
     })
 
     if (error) {
