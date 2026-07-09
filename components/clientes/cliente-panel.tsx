@@ -21,9 +21,11 @@ import {
   ExternalLink,
   TrendingUp,
   Building2,
+  Plus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ClienteForm } from './cliente-form'
+import { PagoForm } from './pago-form'
 import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
@@ -64,6 +66,7 @@ interface ClientePanelProps {
 export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: ClientePanelProps) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
+  const [pagoOpen, setPagoOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'proyectos' | 'pagos'>('overview')
 
   const color = getColor(nombreCliente(cliente))
@@ -534,10 +537,24 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
                 transition={{ duration: 0.15 }}
                 className="p-5 space-y-2"
               >
+                <button
+                  onClick={() => setPagoOpen(true)}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-[12.5px] font-semibold transition-colors"
+                  style={{
+                    background: 'oklch(58% 0.24 24.3 / 15%)',
+                    border: '1px solid oklch(58% 0.24 24.3 / 35%)',
+                    color: 'oklch(78% 0.14 24.3)',
+                  }}
+                >
+                  <Plus size={14} /> Registrar pago
+                </button>
                 {ventas.length === 0 ? (
                   <div className="text-center py-12">
                     <DollarSign size={28} style={{ color: 'var(--tx-ink-muted)', margin: '0 auto 10px' }} />
                     <p className="text-[13px]" style={{ color: 'var(--tx-ink-muted)' }}>Sin pagos registrados</p>
+                    <p className="text-[11.5px] mt-1" style={{ color: 'var(--tx-ink-muted)' }}>
+                      Registra un pago pendiente para ver cuánto te debe
+                    </p>
                   </div>
                 ) : (
                   ventas.map((v, i) => {
@@ -593,6 +610,13 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
         onOpenChange={setEditOpen}
         cliente={cliente}
         onSubmit={handleEdit}
+      />
+      <PagoForm
+        open={pagoOpen}
+        onOpenChange={setPagoOpen}
+        clienteId={cliente.id}
+        proyectos={proyectos}
+        onCreated={onUpdate}
       />
     </>
   )
