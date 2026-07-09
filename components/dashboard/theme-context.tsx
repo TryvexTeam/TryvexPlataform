@@ -39,7 +39,7 @@ const DEFAULT_THEME: ThemeTokens = {
   grainEnabled: true,
   bgType: 'color',
   bgImage: '',
-  bgVideo: 'https://assets.mixkit.co/videos/preview/mixkit-mysterious-glowing-underwater-particles-48596-large.mp4',
+  bgVideo: 'https://videos.pexels.com/video-files/857195/857195-hd_1280_720_25fps.mp4',
 }
 
 /* ── Storage key (bump to clear old saved themes) ── */
