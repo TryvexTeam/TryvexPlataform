@@ -3,6 +3,28 @@ import { createClient } from '@/lib/supabase/server'
 import { TareasRepository } from '@/lib/repos/tareas'
 import { TareaInsertSchema } from '@/lib/types/tarea'
 
+export async function GET(req: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
+
+  const url = new URL(req.url)
+  const desde = url.searchParams.get('desde')
+  const hasta = url.searchParams.get('hasta')
+  if (!desde || !hasta) {
+    return NextResponse.json({ success: false, error: 'Faltan params desde/hasta' }, { status: 400 })
+  }
+
+  try {
+    const repo = new TareasRepository(supabase)
+    const data = await repo.listPorVencimiento(desde, hasta)
+    return NextResponse.json({ success: true, data })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error al listar tareas'
+    return NextResponse.json({ success: false, error: message }, { status: 500 })
+  }
+}
+
 export async function POST(req: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -22,6 +44,15 @@ export async function POST(req: Request) {
     const id = await repo.create(tarea, integranteId)
     if (responsables_ids && responsables_ids.length > 0) {
       await repo.setResponsables(id, responsables_ids)
+      const { NotificacionesRepository } = await import('@/lib/repos/notificaciones')
+      await new NotificacionesRepository(supabase).notificar({
+        destinatarios: responsables_ids,
+        tipo: 'tarea_asignada',
+        titulo: `Tarea asignada: ${tarea.titulo}`,
+        cuerpo: tarea.fecha_limite ? `Vence el ${tarea.fecha_limite}` : undefined,
+        link: `/tareas/${id}`,
+        excluir: integranteId,
+      })
     }
     return NextResponse.json({ id }, { status: 201 })
   } catch (err: unknown) {

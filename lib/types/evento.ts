@@ -16,6 +16,7 @@ export const EventoInsertSchema = z.object({
   cliente_id: z.string().uuid().nullable().optional(),
   notas: z.string().nullable().optional(),
   asistentes_ids: z.array(z.string().uuid()).default([]),
+  invitados_externos: z.array(z.string().email('Email inválido')).max(10).default([]),
 }).refine((e) => new Date(e.fin) > new Date(e.inicio), {
   message: 'El fin debe ser posterior al inicio',
   path: ['fin'],

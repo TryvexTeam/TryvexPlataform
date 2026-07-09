@@ -8,6 +8,7 @@ import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ThemePanel } from '@/components/dashboard/theme-panel'
+import { NotificacionesBell } from './notificaciones-bell'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -128,6 +129,9 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
 
       {/* Right: user */}
       <div className="flex items-center gap-1">
+        {/* Notificaciones */}
+        <NotificacionesBell />
+
         {/* Theme panel */}
         <ThemePanel />
 

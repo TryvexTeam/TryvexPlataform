@@ -39,6 +39,6 @@ export type Cliente = {
 }
 
 /** Nombre principal a mostrar: la persona; fallback al negocio para datos antiguos */
-export function nombreCliente(c: Pick<Cliente, 'nombre_contacto' | 'nombre_negocio'>): string {
+export function nombreCliente(c: { nombre_contacto?: string | null; nombre_negocio?: string | null }): string {
   return c.nombre_contacto || c.nombre_negocio || 'Sin nombre'
 }

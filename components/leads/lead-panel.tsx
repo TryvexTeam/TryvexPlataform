@@ -417,6 +417,24 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           <MessageCircle size={12} />
           <span>Registrar Contacto</span>
         </button>
+        {lead.telefono && (
+          <button
+            onClick={() => {
+              // wa.me exige solo dígitos con código de país
+              const digitos = lead.telefono!.replace(/\D/g, '')
+              const numero = digitos.length <= 9 ? `56${digitos}` : digitos
+              window.open(
+                `https://wa.me/${numero}?text=${encodeURIComponent(`Hola${lead.nombre_negocio ? ` ${lead.nombre_negocio}` : ''}, te escribimos de Tryvex 👋`)}`,
+                '_blank',
+                'noopener,noreferrer'
+              )
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-green-500/15 bg-green-500/5 hover:bg-green-500/15 text-green-400 transition-colors"
+          >
+            <MessageCircle size={12} />
+            <span>WhatsApp</span>
+          </button>
+        )}
 
         {lead.notas && (
           <div className="ml-auto text-[12px] max-w-[200px] truncate text-[var(--tx-ink-muted)] italic">
