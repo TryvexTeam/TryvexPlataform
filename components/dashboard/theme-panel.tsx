@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Sliders, RotateCcw, ChevronDown, Check } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { toast } from 'sonner'
 import { useTheme, type GlowMode } from './theme-context'
 
 /* ─────────────────────────────────────────────────
@@ -362,7 +363,30 @@ function ThemePresets() {
 export function ThemePanel() {
   const { theme, set, updateTheme, reset, panelOpen: open, setPanelOpen: setOpen } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const [subiendo, setSubiendo] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
+
+  // Sube el archivo a Supabase Storage y guarda solo la URL.
+  // (base64 en localStorage revienta la cuota de 5MB con cualquier video)
+  async function subirWallpaper(file: File, campo: 'bgImage' | 'bgVideo') {
+    setSubiendo(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/wallpaper', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error ?? 'Error al subir el archivo')
+        return
+      }
+      set(campo, json.data.url)
+      toast.success('Fondo actualizado')
+    } catch {
+      toast.error('Error al subir el archivo')
+    } finally {
+      setSubiendo(false)
+    }
+  }
 
   // Set mounted on client side
   useEffect(() => {
@@ -476,21 +500,15 @@ export function ThemePanel() {
               <Row label="Subir imagen local">
                 <label className="flex items-center justify-center gap-2 w-full h-9 rounded-lg cursor-pointer text-xs font-semibold hover:bg-white/10 transition-colors"
                        style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px dashed rgba(255, 255, 255, 0.2)' }}>
-                  <span>Seleccionar imagen</span>
+                  <span>{subiendo ? 'Subiendo…' : 'Seleccionar imagen'}</span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
                     className="hidden"
+                    disabled={subiendo}
                     onChange={e => {
                       const file = e.target.files?.[0]
-                      if (file) {
-                        const reader = new FileReader()
-                        reader.onload = (event) => {
-                          const res = event.target?.result as string
-                          set('bgImage', res)
-                        }
-                        reader.readAsDataURL(file)
-                      }
+                      if (file) void subirWallpaper(file, 'bgImage')
                     }}
                   />
                 </label>
@@ -534,21 +552,15 @@ export function ThemePanel() {
               <Row label="Subir video local (MP4)">
                 <label className="flex items-center justify-center gap-2 w-full h-9 rounded-lg cursor-pointer text-xs font-semibold hover:bg-white/10 transition-colors"
                        style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px dashed rgba(255, 255, 255, 0.2)' }}>
-                  <span>Seleccionar archivo .mp4</span>
+                  <span>{subiendo ? 'Subiendo…' : 'Seleccionar archivo .mp4 / .webm (máx 25MB)'}</span>
                   <input
                     type="file"
-                    accept="video/mp4"
+                    accept="video/mp4,video/webm"
                     className="hidden"
+                    disabled={subiendo}
                     onChange={e => {
                       const file = e.target.files?.[0]
-                      if (file) {
-                        const reader = new FileReader()
-                        reader.onload = (event) => {
-                          const res = event.target?.result as string
-                          set('bgVideo', res)
-                        }
-                        reader.readAsDataURL(file)
-                      }
+                      if (file) void subirWallpaper(file, 'bgVideo')
                     }}
                   />
                 </label>
@@ -557,9 +569,10 @@ export function ThemePanel() {
               <Row label="Loops de video premium">
                 <div className="flex flex-col gap-1.5 mt-1">
                   {[
-                    { label: 'Nebulosa Espacial', val: 'https://assets.mixkit.co/videos/preview/mixkit-nebula-in-outer-space-41940-large.mp4' },
-                    { label: 'Partículas de Agua', val: 'https://assets.mixkit.co/videos/preview/mixkit-mysterious-glowing-underwater-particles-48596-large.mp4' },
-                    { label: 'Túnel Láser digital', val: 'https://assets.mixkit.co/videos/preview/mixkit-abstract-laser-lights-background-loop-42202-large.mp4' },
+                    { label: 'Tinta abstracta', val: 'https://videos.pexels.com/video-files/3129671/3129671-hd_1920_1080_30fps.mp4' },
+                    { label: 'Océano aéreo', val: 'https://videos.pexels.com/video-files/2611250/2611250-hd_1920_1080_30fps.mp4' },
+                    { label: 'Aurora nocturna', val: 'https://videos.pexels.com/video-files/1943483/1943483-hd_1920_1080_25fps.mp4' },
+                    { label: 'Partículas', val: 'https://videos.pexels.com/video-files/857195/857195-hd_1280_720_25fps.mp4' },
                   ].map(vid => {
                     const active = theme.bgVideo === vid.val
                     return (
