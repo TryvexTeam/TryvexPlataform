@@ -16,6 +16,7 @@ export interface DisponibilidadIntegrante {
   integrante_id: string
   nombre: string
   avatar_url: string | null
+  color: string | null
   es_propio: boolean
   celdas: Celda[]
 }

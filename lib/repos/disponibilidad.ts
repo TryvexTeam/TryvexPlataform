@@ -14,6 +14,7 @@ interface IntegranteRow {
   id: string
   nombre: string
   avatar_url: string | null
+  color: string | null
   auth_user_id: string | null
 }
 
@@ -29,7 +30,7 @@ export class DisponibilidadRepository {
     const [{ data: integrantes, error: e1 }, { data: celdas, error: e2 }] = await Promise.all([
       this.sb
         .from('dim_integrantes')
-        .select('id, nombre, avatar_url, auth_user_id')
+        .select('id, nombre, avatar_url, color, auth_user_id')
         .eq('activo', true)
         .order('nombre'),
       this.sb
@@ -50,6 +51,7 @@ export class DisponibilidadRepository {
       integrante_id: i.id,
       nombre: i.nombre,
       avatar_url: i.avatar_url,
+      color: i.color,
       es_propio: i.auth_user_id === authUserId,
       celdas: porIntegrante.get(i.id) ?? [],
     }))

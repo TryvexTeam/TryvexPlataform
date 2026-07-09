@@ -13,6 +13,10 @@ export interface Database {
           especialidad: string | null
           avatar_url: string | null
           activo: boolean
+          color: string | null
+          telefono: string | null
+          horario: Json | null
+          notificaciones: Json | null
           created_at: string
         }
         Insert: {
@@ -24,6 +28,10 @@ export interface Database {
           especialidad?: string | null
           avatar_url?: string | null
           activo?: boolean
+          color?: string | null
+          telefono?: string | null
+          horario?: Json | null
+          notificaciones?: Json | null
           created_at?: string
         }
         Update: {
@@ -35,6 +43,10 @@ export interface Database {
           especialidad?: string | null
           avatar_url?: string | null
           activo?: boolean
+          color?: string | null
+          telefono?: string | null
+          horario?: Json | null
+          notificaciones?: Json | null
           created_at?: string
         }
       }
