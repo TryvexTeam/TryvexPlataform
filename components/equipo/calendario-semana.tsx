@@ -301,12 +301,12 @@ export function CalendarioSemana() {
   // ─── Availability map ────────────────────────────────────────────
   const totalMembers = disp?.length ?? 0
 
-  // Color estable por integrante (paleta por índice; hash como fallback)
+  // Color por integrante: el elegido en su perfil; paleta por índice como fallback
   const memberColorMap = useMemo(() => {
     const map = new Map<string, string>()
     if (disp) {
       disp.forEach((m, i) => {
-        map.set(m.integrante_id, MEMBER_PALETTE[i % MEMBER_PALETTE.length])
+        map.set(m.integrante_id, m.color ?? MEMBER_PALETTE[i % MEMBER_PALETTE.length])
       })
     }
     return map

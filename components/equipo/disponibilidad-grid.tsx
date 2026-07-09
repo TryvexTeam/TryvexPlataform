@@ -195,7 +195,7 @@ export function DisponibilidadGrid() {
         }}
       >
         {data.map((m, mi) => {
-          const color = MEMBER_PALETTE[mi % MEMBER_PALETTE.length] ?? hashColorHex(m.nombre)
+          const color = m.color ?? MEMBER_PALETTE[mi % MEMBER_PALETTE.length] ?? hashColorHex(m.nombre)
           return (
             <span
               key={m.integrante_id}
@@ -365,7 +365,8 @@ export function DisponibilidadGrid() {
                   >
                     {members.map((m) => {
                       const mi = data.findIndex((d2) => d2.integrante_id === m.integrante_id)
-                      const color = mi >= 0 ? MEMBER_PALETTE[mi % MEMBER_PALETTE.length] : hashColorHex(m.nombre)
+                      const color = (mi >= 0 ? data[mi].color : null)
+                        ?? (mi >= 0 ? MEMBER_PALETTE[mi % MEMBER_PALETTE.length] : hashColorHex(m.nombre))
                       return (
                         <span
                           key={m.integrante_id}
