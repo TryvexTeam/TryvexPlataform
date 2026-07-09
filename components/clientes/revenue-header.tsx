@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { TrendingUp, Users, AlertCircle, DollarSign } from 'lucide-react'
 import type { Cliente } from '@/lib/types/cliente'
-import type { Venta } from '@/lib/types/proyecto'
+import { resumenFinanciero, type Venta } from '@/lib/types/proyecto'
 
 interface RevenueHeaderProps {
   clientes: Cliente[]
@@ -17,7 +17,11 @@ export function RevenueHeader({ clientes, ventas }: RevenueHeaderProps) {
   const pendientes = ventas.filter(
     (v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado'
   )
-  const totalPendiente = pendientes.reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+  // Por cobrar agregado: saldo del valor inicial + pagos pendientes, por cliente
+  const totalPendiente = clientes.reduce((sum, c) => {
+    const ventasCliente = ventas.filter((v) => v.cliente_id === c.id)
+    return sum + resumenFinanciero(ventasCliente, c.valor_inicial_usd).porCobrar
+  }, 0)
   const hayAtrasados = ventas.some((v) => v.estado_pago === 'atrasado')
 
   const metrics = [
@@ -52,7 +56,9 @@ export function RevenueHeader({ clientes, ventas }: RevenueHeaderProps) {
       id: 'pendientes',
       label: hayAtrasados ? 'Por cobrar ⚠' : 'Por cobrar',
       value: totalPendiente > 0 ? `$${totalPendiente.toLocaleString()}` : '$0',
-      sub: `${pendientes.length} pago${pendientes.length !== 1 ? 's' : ''} pendiente${pendientes.length !== 1 ? 's' : ''}`,
+      sub: pendientes.length > 0
+        ? `${pendientes.length} pago${pendientes.length !== 1 ? 's' : ''} pendiente${pendientes.length !== 1 ? 's' : ''}`
+        : totalPendiente > 0 ? 'saldo inicial por cobrar' : 'sin pendientes',
       icon: AlertCircle,
       color: hayAtrasados ? 'oklch(72% 0.21 22)' : 'oklch(74% 0.008 240)',
       glow: hayAtrasados ? 'oklch(63% 0.21 22 / 20%)' : 'transparent',
