@@ -26,7 +26,7 @@ import {
 import { toast } from 'sonner'
 import { ClienteForm } from './cliente-form'
 import { PagoForm } from './pago-form'
-import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
+import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 
@@ -70,10 +70,7 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
   const [activeTab, setActiveTab] = useState<'overview' | 'proyectos' | 'pagos'>('overview')
 
   const color = getColor(nombreCliente(cliente))
-  const totalCobrado = ventas.filter((v) => v.estado_pago === 'pagado').reduce((s, v) => s + (v.monto_usd ?? 0), 0)
-  const porCobrar = ventas
-    .filter((v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado')
-    .reduce((s, v) => s + (v.monto_usd ?? 0), 0)
+  const { totalCobrado, porCobrar } = resumenFinanciero(ventas, cliente.valor_inicial_usd)
   const pendientes = ventas.filter((v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado')
   const hayAtrasados = ventas.some((v) => v.estado_pago === 'atrasado')
   const proyActivos = proyectos.filter((p) => p.estado !== 'cerrado' && p.estado !== 'entregado')

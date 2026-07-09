@@ -63,7 +63,7 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
     router.refresh()
   }
 
-  const { totalCobrado, porCobrar, proximoCobro } = resumenFinanciero(ventas)
+  const { totalCobrado, porCobrar, proximoCobro } = resumenFinanciero(ventas, cliente.valor_inicial_usd)
 
   return (
     <div>

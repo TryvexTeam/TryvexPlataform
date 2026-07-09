@@ -83,7 +83,7 @@ export type ResumenFinanciero = {
   proximoCobro: string | null
 }
 
-export function resumenFinanciero(ventas: Venta[]): ResumenFinanciero {
+export function resumenFinanciero(ventas: Venta[], valorInicialUsd?: number | null): ResumenFinanciero {
   const totalCobrado = ventas
     .filter((v) => v.estado_pago === 'pagado')
     .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
@@ -91,7 +91,22 @@ export function resumenFinanciero(ventas: Venta[]): ResumenFinanciero {
   const pendientes = ventas.filter(
     (v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado'
   )
-  const porCobrar = pendientes.reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+
+  // Saldo del valor inicial: lo acordado menos lo ya cobrado de tipo inicial.
+  // Se toma el máximo contra los pagos iniciales pendientes registrados para
+  // no contar dos veces el mismo saldo cuando también fue agendado como pago.
+  const cobradoInicial = ventas
+    .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
+    .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+  const saldoInicial = Math.max(0, (valorInicialUsd ?? 0) - cobradoInicial)
+  const pendienteInicialRegistrado = pendientes
+    .filter((v) => v.tipo === 'inicial')
+    .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+  const pendienteOtros = pendientes
+    .filter((v) => v.tipo !== 'inicial')
+    .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+
+  const porCobrar = Math.max(saldoInicial, pendienteInicialRegistrado) + pendienteOtros
 
   const fechas = pendientes
     .map((v) => v.fecha_vencimiento ?? v.fecha_emision)
