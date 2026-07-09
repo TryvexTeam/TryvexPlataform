@@ -14,7 +14,7 @@ export class ProyectosRepository {
   async list(filters?: { cliente_id?: string; estado?: string }): Promise<Proyecto[]> {
     let query = this.sb
       .from('dim_proyectos')
-      .select('*, dim_clientes ( nombre_negocio )')
+      .select('*, dim_clientes ( nombre_negocio, nombre_contacto )')
       .order('created_at', { ascending: false })
 
     if (filters?.cliente_id) query = query.eq('cliente_id', filters.cliente_id)
@@ -23,7 +23,7 @@ export class ProyectosRepository {
     const { data, error } = await query
     if (error) throw new Error(error.message)
 
-    return ((data ?? []) as (Proyecto & { dim_clientes: { nombre_negocio: string } | null })[]).map((p) => ({
+    return ((data ?? []) as (Proyecto & { dim_clientes:  { nombre_negocio: string | null; nombre_contacto: string | null } | null })[]).map((p) => ({
       ...p,
       cliente: p.dim_clientes,
     }))
@@ -32,7 +32,7 @@ export class ProyectosRepository {
   async getById(id: string): Promise<Proyecto | null> {
     const { data, error } = await this.sb
       .from('dim_proyectos')
-      .select('*, dim_clientes ( nombre_negocio )')
+      .select('*, dim_clientes ( nombre_negocio, nombre_contacto )')
       .eq('id', id)
       .single()
     if (error || !data) return null

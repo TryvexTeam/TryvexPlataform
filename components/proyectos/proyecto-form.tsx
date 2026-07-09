@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ProyectoInsertSchema, type Proyecto, type ProyectoInsert } from '@/lib/types/proyecto'
-import type { Cliente } from '@/lib/types/cliente'
+import { nombreCliente, type Cliente } from '@/lib/types/cliente'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -107,7 +107,9 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
               <SelectTrigger><SelectValue placeholder="Sin cliente" /></SelectTrigger>
               <SelectContent>
                 {clientes.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.nombre_negocio}</SelectItem>
+                  <SelectItem key={c.id} value={c.id}>
+                    {nombreCliente(c)}{c.nombre_negocio ? ` — ${c.nombre_negocio}` : ''}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>

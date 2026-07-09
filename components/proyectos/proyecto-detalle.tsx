@@ -76,7 +76,10 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
             </span>
             <span className="text-xs text-neutral-400 capitalize">{proyecto.tipo}</span>
             {proyecto.cliente && (
-              <span className="text-xs text-neutral-400">· {proyecto.cliente.nombre_negocio}</span>
+              <span className="text-xs text-neutral-400">
+                · {proyecto.cliente.nombre_contacto ?? proyecto.cliente.nombre_negocio}
+                {proyecto.cliente.nombre_contacto && proyecto.cliente.nombre_negocio ? ` (${proyecto.cliente.nombre_negocio})` : ''}
+              </span>
             )}
           </div>
         </div>
@@ -173,7 +176,7 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
         open={editOpen}
         onOpenChange={setEditOpen}
         proyecto={proyecto}
-        clientes={proyecto.cliente ? [{ id: proyecto.cliente_id!, nombre_negocio: proyecto.cliente.nombre_negocio } as never] : []}
+        clientes={proyecto.cliente ? [{ id: proyecto.cliente_id!, nombre_negocio: proyecto.cliente.nombre_negocio, nombre_contacto: proyecto.cliente.nombre_contacto } as never] : []}
         onSubmit={handleEdit}
       />
     </div>

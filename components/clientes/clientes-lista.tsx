@@ -6,7 +6,7 @@ import { Plus, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ClienteForm } from './cliente-form'
-import type { Cliente, ClienteInsert } from '@/lib/types/cliente'
+import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 
 const estadoConfig = {
   activo:    { label: 'Activo',    style: { background: 'oklch(72% 0.17 145 / 12%)', color: 'oklch(78% 0.14 145)', border: '1px solid oklch(72% 0.17 145 / 28%)' } },
@@ -57,8 +57,8 @@ export function ClientesLista({ initialClientes }: ClientesListaProps) {
         <table className="w-full text-[13px]">
           <thead style={{ background: 'oklch(8% 0.003 240)', borderBottom: '1px solid var(--tx-border)' }}>
             <tr>
-              <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--tx-ink-muted)' }}>Negocio</th>
-              <th className="text-left px-4 py-3 font-medium hidden md:table-cell" style={{ color: 'var(--tx-ink-muted)' }}>Contacto</th>
+              <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--tx-ink-muted)' }}>Cliente</th>
+              <th className="text-left px-4 py-3 font-medium hidden md:table-cell" style={{ color: 'var(--tx-ink-muted)' }}>Negocio</th>
               <th className="text-left px-4 py-3 font-medium hidden md:table-cell" style={{ color: 'var(--tx-ink-muted)' }}>Nicho</th>
               <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--tx-ink-muted)' }}>Estado</th>
               <th className="text-left px-4 py-3 font-medium hidden lg:table-cell" style={{ color: 'var(--tx-ink-muted)' }}>Valor inicial</th>
@@ -82,8 +82,8 @@ export function ClientesLista({ initialClientes }: ClientesListaProps) {
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'oklch(100% 0 0 / 2%)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
               >
-                <td className="px-4 py-3 font-semibold" style={{ color: 'var(--tx-ink-primary)' }}>{c.nombre_negocio}</td>
-                <td className="px-4 py-3 hidden md:table-cell" style={{ color: 'var(--tx-ink-secondary)' }}>{c.nombre_contacto ?? '—'}</td>
+                <td className="px-4 py-3 font-semibold" style={{ color: 'var(--tx-ink-primary)' }}>{nombreCliente(c)}</td>
+                <td className="px-4 py-3 hidden md:table-cell" style={{ color: 'var(--tx-ink-secondary)' }}>{c.nombre_negocio ?? '—'}</td>
                 <td className="px-4 py-3 hidden md:table-cell" style={{ color: 'var(--tx-ink-secondary)' }}>{c.nicho ?? '—'}</td>
                 <td className="px-4 py-3">
                   <span

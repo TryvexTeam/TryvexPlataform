@@ -25,7 +25,7 @@ import {
 import { toast } from 'sonner'
 import { ClienteForm } from './cliente-form'
 import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
-import type { Cliente, ClienteInsert } from '@/lib/types/cliente'
+import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 
 const estadoPagoConfig: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
@@ -66,8 +66,11 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
   const [editOpen, setEditOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'proyectos' | 'pagos'>('overview')
 
-  const color = getColor(cliente.nombre_negocio)
+  const color = getColor(nombreCliente(cliente))
   const totalCobrado = ventas.filter((v) => v.estado_pago === 'pagado').reduce((s, v) => s + (v.monto_usd ?? 0), 0)
+  const porCobrar = ventas
+    .filter((v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado')
+    .reduce((s, v) => s + (v.monto_usd ?? 0), 0)
   const pendientes = ventas.filter((v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado')
   const hayAtrasados = ventas.some((v) => v.estado_pago === 'atrasado')
   const proyActivos = proyectos.filter((p) => p.estado !== 'cerrado' && p.estado !== 'entregado')
@@ -84,7 +87,7 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
   }
 
   async function handleDelete() {
-    if (!confirm(`¿Eliminar a ${cliente.nombre_negocio}?`)) return
+    if (!confirm(`¿Eliminar a ${nombreCliente(cliente)}?`)) return
     await fetch(`/api/clientes/${cliente.id}`, { method: 'DELETE' })
     toast.success('Cliente eliminado')
     onClose()
@@ -93,6 +96,7 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
 
   const kpis = [
     { label: 'Total cobrado', value: totalCobrado > 0 ? `$${totalCobrado.toLocaleString()}` : '—', color: 'oklch(72% 0.17 145)' },
+    { label: 'Nos debe', value: porCobrar > 0 ? `$${porCobrar.toLocaleString()}` : '—', color: 'oklch(72% 0.21 22)' },
     { label: 'MRR', value: cliente.mantencion_mensual_usd ? `$${cliente.mantencion_mensual_usd}/mes` : '—', color: 'oklch(68% 0.18 230)' },
     { label: 'Valor inicial', value: cliente.valor_inicial_usd ? `$${cliente.valor_inicial_usd.toLocaleString()}` : '—', color: 'oklch(74% 0.17 55)' },
   ]
@@ -133,19 +137,18 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
                   boxShadow: `0 8px 24px ${color}20`,
                 }}
               >
-                {initials(cliente.nombre_negocio)}
+                {initials(nombreCliente(cliente))}
               </div>
               <div className="min-w-0">
                 <h2
                   className="text-[16px] font-bold tracking-tight truncate"
                   style={{ color: 'var(--tx-ink-primary)' }}
                 >
-                  {cliente.nombre_negocio}
+                  {nombreCliente(cliente)}
                 </h2>
-                {cliente.nicho && (
+                {(cliente.nombre_negocio || cliente.nicho) && (
                   <p className="text-[12px] mt-0.5" style={{ color: 'var(--tx-ink-muted)' }}>
-                    {cliente.nicho}
-                    {cliente.localidad && ` · ${cliente.localidad}`}
+                    {[cliente.nombre_negocio, cliente.nicho, cliente.localidad].filter(Boolean).join(' · ')}
                   </p>
                 )}
               </div>
@@ -256,7 +259,7 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
 
         {/* KPI Strip */}
         <div
-          className="shrink-0 grid grid-cols-3 gap-px"
+          className="shrink-0 grid grid-cols-4 gap-px"
           style={{ background: 'oklch(100% 0 0 / 5%)', borderBottom: '1px solid oklch(100% 0 0 / 6%)' }}
         >
           {kpis.map((k) => (

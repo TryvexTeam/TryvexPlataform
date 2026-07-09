@@ -1,8 +1,8 @@
 import { z } from 'zod'
 
 export const ClienteInsertSchema = z.object({
-  nombre_negocio: z.string().min(1, 'El nombre es requerido'),
-  nombre_contacto: z.string().nullable().optional(),
+  nombre_contacto: z.string().min(1, 'El nombre del cliente es requerido'),
+  nombre_negocio: z.string().nullable().optional(),
   telefono: z.string().nullable().optional(),
   email: z.string().email().nullable().optional().or(z.literal('')),
   nicho: z.string().nullable().optional(),
@@ -22,7 +22,7 @@ export type ClienteUpdate = z.infer<typeof ClienteUpdateSchema>
 
 export type Cliente = {
   id: string
-  nombre_negocio: string
+  nombre_negocio: string | null
   nombre_contacto: string | null
   telefono: string | null
   email: string | null
@@ -36,4 +36,9 @@ export type Cliente = {
   notas: string | null
   created_at: string
   updated_at: string
+}
+
+/** Nombre principal a mostrar: la persona; fallback al negocio para datos antiguos */
+export function nombreCliente(c: Pick<Cliente, 'nombre_contacto' | 'nombre_negocio'>): string {
+  return c.nombre_contacto || c.nombre_negocio || 'Sin nombre'
 }
