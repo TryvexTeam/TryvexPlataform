@@ -53,7 +53,7 @@ export async function POST(req: Request) {
       inicio: result.data.inicio,
       fin: result.data.fin,
       notas: result.data.notas ?? null,
-      invitadosEmails: emails,
+      invitadosEmails: [...emails, ...result.data.invitados_externos],
     })
     await repo.setGoogleData(id, g)
     meetLink = g.meet_link
@@ -61,6 +61,21 @@ export async function POST(req: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error creando en Google'
     console.error('[eventos POST → google]', message)
+  }
+
+  // Confirmación con template Tryvex a los invitados externos. Best-effort.
+  if (result.data.invitados_externos.length > 0) {
+    try {
+      const { enviarEmailCita } = await import('@/lib/email/cita')
+      await enviarEmailCita({
+        emails: result.data.invitados_externos,
+        titulo: result.data.titulo,
+        inicio: result.data.inicio,
+        meetLink,
+      })
+    } catch (error: unknown) {
+      console.error('[eventos POST → email cita]', error instanceof Error ? error.message : error)
+    }
   }
 
   return NextResponse.json(

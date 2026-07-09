@@ -40,6 +40,43 @@ export class TareasRepository {
     this.supabase = supabase
   }
 
+  /** Tareas con fecha_limite dentro de un rango (para el calendario del equipo),
+   *  con el color de perfil de cada responsable. */
+  async listPorVencimiento(desde: string, hasta: string): Promise<{
+    id: string
+    titulo: string
+    estado: string
+    prioridad: string
+    fecha_limite: string
+    responsables: { integrante_id: string; nombre: string; color: string | null }[]
+  }[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (this.supabase as any)
+      .from('tareas')
+      .select(`id, titulo, estado, prioridad, fecha_limite, tarea_responsables ( integrante_id, dim_integrantes ( nombre, color ) )`)
+      .gte('fecha_limite', desde)
+      .lt('fecha_limite', hasta)
+      .neq('estado', 'listo')
+      .order('fecha_limite', { ascending: true })
+    if (error) throw new Error(error.message)
+    type Row = {
+      id: string; titulo: string; estado: string; prioridad: string; fecha_limite: string
+      tarea_responsables: { integrante_id: string; dim_integrantes: { nombre: string; color: string | null } | null }[] | null
+    }
+    return ((data ?? []) as Row[]).map((t) => ({
+      id: t.id,
+      titulo: t.titulo,
+      estado: t.estado,
+      prioridad: t.prioridad,
+      fecha_limite: t.fecha_limite,
+      responsables: (t.tarea_responsables ?? []).map((r) => ({
+        integrante_id: r.integrante_id,
+        nombre: r.dim_integrantes?.nombre ?? '',
+        color: r.dim_integrantes?.color ?? null,
+      })),
+    }))
+  }
+
   async list(filters?: {
     estado?: string
     prioridad?: string

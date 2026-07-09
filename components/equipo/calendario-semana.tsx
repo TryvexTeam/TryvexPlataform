@@ -174,6 +174,7 @@ export function CalendarioSemana() {
   const [modalInicio, setModalInicio] = useState('09:00')
   const [modalFin, setModalFin] = useState('10:00')
   const [modalAsistentes, setModalAsistentes] = useState<Set<string>>(new Set())
+  const [modalExternos, setModalExternos] = useState('')
   const [creating, setCreating] = useState(false)
 
   // Detail popover
@@ -237,6 +238,32 @@ export function CalendarioSemana() {
   }, [weekStart])
 
   useEffect(() => { fetchEventos() }, [fetchEventos])
+
+  // ─── Tareas de la semana (chips por día, color del responsable) ────
+  type TareaSemana = {
+    id: string
+    titulo: string
+    estado: string
+    prioridad: string
+    fecha_limite: string
+    responsables: { integrante_id: string; nombre: string; color: string | null }[]
+  }
+  const [tareasSemana, setTareasSemana] = useState<TareaSemana[]>([])
+  useEffect(() => {
+    const desde = toLocalISO(weekStart).slice(0, 10)
+    const hasta = toLocalISO(addDays(weekStart, 7)).slice(0, 10)
+    fetch(`/api/tareas?desde=${desde}&hasta=${hasta}`)
+      .then((r) => r.json())
+      .then((json: { success: boolean; data: TareaSemana[] }) => {
+        if (json.success) setTareasSemana(json.data)
+      })
+      .catch(() => {})
+  }, [weekStart])
+
+  const tareasDeDia = useCallback((d: Date): TareaSemana[] => {
+    const iso = toLocalISO(d).slice(0, 10)
+    return tareasSemana.filter((t) => t.fecha_limite === iso)
+  }, [tareasSemana])
 
   // ─── Now line interval ────────────────────────────────────────────
   useEffect(() => {
@@ -457,6 +484,7 @@ export function CalendarioSemana() {
     setModalFin(`${fmt2(eH % 24)}:${fmt2(eM)}`)
     const ownId = disp?.find((m) => m.es_propio)?.integrante_id
     setModalAsistentes(ownId ? new Set([ownId]) : new Set())
+    setModalExternos('')
     setCreating(false)
   }
 
@@ -486,12 +514,19 @@ export function CalendarioSemana() {
       fin.setDate(fin.getDate() + 1)
     }
     if (fin <= inicio) { toast.error('El fin debe ser posterior al inicio'); return }
+    const externos = modalExternos
+      .split(/[,;\s]+/)
+      .map((e) => e.trim())
+      .filter(Boolean)
+    const emailInvalido = externos.find((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+    if (emailInvalido) { toast.error(`Email inválido: ${emailInvalido}`); return }
     const body: EventoInsert = {
       titulo: modalTitulo.trim(),
       tipo: modalTipo,
       inicio: inicio.toISOString(),
       fin: fin.toISOString(),
       asistentes_ids: Array.from(modalAsistentes),
+      invitados_externos: externos,
     }
     setCreating(true)
     try {
@@ -870,6 +905,37 @@ export function CalendarioSemana() {
                 >
                   {d.getDate()}
                 </span>
+                {/* Tareas que vencen este día — color del responsable */}
+                {tareasDeDia(d).slice(0, 3).map((t) => {
+                  const c = t.responsables[0]?.color
+                    ?? memberColor(t.responsables[0]?.integrante_id ?? '', t.responsables[0]?.nombre ?? t.titulo)
+                  return (
+                    <span
+                      key={t.id}
+                      title={`Tarea: ${t.titulo} · ${t.responsables.map((r) => r.nombre).join(', ') || 'sin responsable'}`}
+                      style={{
+                        maxWidth: '92%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontSize: '9.5px',
+                        fontWeight: 700,
+                        padding: '1px 7px',
+                        borderRadius: '100px',
+                        background: `${c}26`,
+                        border: `1px solid ${c}55`,
+                        color: c,
+                      }}
+                    >
+                      ✓ {t.titulo}
+                    </span>
+                  )
+                })}
+                {tareasDeDia(d).length > 3 && (
+                  <span style={{ fontSize: '9px', color: 'var(--tx-ink-muted)' }}>
+                    +{tareasDeDia(d).length - 3} tareas
+                  </span>
+                )}
               </div>
             )
           })}
@@ -1642,6 +1708,27 @@ export function CalendarioSemana() {
                 </div>
               </div>
             )}
+
+            {/* Invitados externos (reciben Meet + email de confirmación Tryvex) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--tx-ink-muted)' }}>
+                Invitados externos (emails, separados por coma)
+              </span>
+              <input
+                placeholder="cliente@correo.com, otro@correo.com"
+                value={modalExternos}
+                onChange={(e) => setModalExternos(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  fontSize: '13px',
+                  color: 'var(--tx-ink-primary)',
+                  outline: 'none',
+                }}
+              />
+            </div>
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>

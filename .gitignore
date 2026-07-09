@@ -54,3 +54,4 @@ capture.js
 # config local de Claude (la compartida sí se versiona)
 .claude/settings.local.json
 .claude/skills/
+workspace/

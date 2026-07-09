@@ -70,7 +70,8 @@ export class EventosRepository {
   }
 
   async create(input: EventoInsert, creadoPorId: string): Promise<string> {
-    const { asistentes_ids, ...evento } = input
+    // invitados_externos viaja a Google/email, no a la tabla eventos
+    const { asistentes_ids, invitados_externos: _externos, ...evento } = input
     const { data, error } = await this.sb
       .from('eventos')
       .insert({ ...evento, creado_por: creadoPorId })
