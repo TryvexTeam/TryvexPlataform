@@ -15,9 +15,10 @@ CREATE TABLE IF NOT EXISTS notificaciones (
 CREATE INDEX IF NOT EXISTS idx_notif_integrante_leida
   ON notificaciones (integrante_id, leida, created_at DESC);
 
--- Evita duplicados del cron diario (mismo aviso, mismo día)
+-- Evita duplicados del cron diario (mismo aviso, mismo día).
+-- AT TIME ZONE 'UTC' hace la expresión IMMUTABLE (cast directo ::date no lo es).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedupe
-  ON notificaciones (integrante_id, tipo, titulo, (created_at::date));
+  ON notificaciones (integrante_id, tipo, titulo, (((created_at AT TIME ZONE 'UTC')::date)));
 
 ALTER TABLE notificaciones ENABLE ROW LEVEL SECURITY;
 
