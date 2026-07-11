@@ -54,62 +54,107 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Lead no encontrado." }, { status: 404 });
   }
 
-  const { data: yaEnviado } = await admin
-    .from("outreach_messages")
-    .select("id")
-    .eq("lead_id", lead_id)
-    .eq("canal", "whatsapp")
-    .eq("estado", "enviado")
-    .maybeSingle();
-
-  if (yaEnviado) {
-    return NextResponse.json({ error: "Ya se le envió el primer contacto" }, { status: 409 });
-  }
-
   if (!whatsappConfigurado()) {
     const link = construirLinkWhatsApp(lead.telefono, texto);
-    await admin.from("outreach_messages").insert({
+    const { error: errorBorrador } = await admin.from("outreach_messages").insert({
       lead_id,
       canal: "whatsapp",
       texto,
       estado: "borrador",
       aprobado_por: integranteId,
     });
+    if (errorBorrador) {
+      console.error("[vex/whatsapp/send] error guardando borrador:", errorBorrador);
+      return NextResponse.json(
+        { ok: true, fallback: true, link, advertencia: "el link salió pero falló el registro del borrador" }
+      );
+    }
     return NextResponse.json({ fallback: true, link });
   }
 
-  const resultado = await enviarPlantillaPrimerContacto(lead.telefono, lead.nombre_negocio);
-
-  if (resultado.ok) {
-    await admin.from("outreach_messages").insert({
+  // Reservar ANTES de llamar a Meta: si dos aprobaciones llegan a la vez, el
+  // unique parcial (lead_id, canal) WHERE estado='enviado' hace que solo una
+  // reserva se inserte; la otra recibe 23505 y NUNCA llega a llamar a Meta.
+  const { data: reserva, error: errorReserva } = await admin
+    .from("outreach_messages")
+    .insert({
       lead_id,
       canal: "whatsapp",
       texto,
       estado: "enviado",
       aprobado_por: integranteId,
-      wa_message_id: resultado.proveedorId,
-      enviado_at: new Date().toISOString(),
-    });
-    await admin
+    })
+    .select("id")
+    .single();
+
+  if (errorReserva) {
+    const esDuplicado =
+      errorReserva.code === "23505" ||
+      (typeof errorReserva.message === "string" && errorReserva.message.includes("duplicate key"));
+    if (esDuplicado) {
+      return NextResponse.json({ error: "Ya se le envió el primer contacto" }, { status: 409 });
+    }
+    console.error("[vex/whatsapp/send] error reservando el envío:", errorReserva);
+    return NextResponse.json({ error: "No se pudo reservar el envío." }, { status: 500 });
+  }
+
+  const reservaId = reserva.id as string;
+  const resultado = await enviarPlantillaPrimerContacto(lead.telefono, lead.nombre_negocio);
+
+  if (resultado.ok) {
+    const { error: errorUpdate } = await admin
+      .from("outreach_messages")
+      .update({
+        wa_message_id: resultado.proveedorId,
+        enviado_at: new Date().toISOString(),
+      })
+      .eq("id", reservaId);
+    if (errorUpdate) {
+      console.error("[vex/whatsapp/send] error actualizando outreach_messages:", errorUpdate);
+    }
+
+    const { error: errorLead } = await admin
       .from("fact_leads")
       .update({ estado: "contactado", ultimo_contacto: new Date().toISOString() })
       .eq("id", lead_id);
-    await admin.from("interacciones_lead").insert({
+    if (errorLead) {
+      console.error("[vex/whatsapp/send] error actualizando fact_leads:", errorLead);
+    }
+
+    const { error: errorInteraccion } = await admin.from("interacciones_lead").insert({
       lead_id,
       integrante_id: integranteId,
       tipo: "whatsapp",
       contenido: texto,
     });
+    if (errorInteraccion) {
+      console.error("[vex/whatsapp/send] error insertando interacciones_lead:", errorInteraccion);
+    }
+
+    if (errorUpdate || errorLead || errorInteraccion) {
+      const partes: string[] = [];
+      if (errorUpdate) partes.push("el registro del envío");
+      if (errorLead) partes.push("el estado del lead");
+      if (errorInteraccion) partes.push("la interacción");
+      return NextResponse.json({
+        ok: true,
+        proveedorId: resultado.proveedorId,
+        advertencia: `el mensaje salió pero falló el registro de ${partes.join(", ")}`,
+      });
+    }
+
     return NextResponse.json({ ok: true, proveedorId: resultado.proveedorId });
   }
 
-  await admin.from("outreach_messages").insert({
-    lead_id,
-    canal: "whatsapp",
-    texto,
-    estado: "fallido",
-    aprobado_por: integranteId,
-    error: resultado.error,
-  });
+  const { error: errorFallido } = await admin
+    .from("outreach_messages")
+    .update({
+      estado: "fallido",
+      error: resultado.error,
+    })
+    .eq("id", reservaId);
+  if (errorFallido) {
+    console.error("[vex/whatsapp/send] error registrando el fallo:", errorFallido);
+  }
   return NextResponse.json({ ok: false, error: resultado.error }, { status: 502 });
 }
