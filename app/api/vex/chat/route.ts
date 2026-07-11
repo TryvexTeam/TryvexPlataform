@@ -16,10 +16,18 @@ const RESPUESTA_GROQ_CAIDO =
   "Groq está sin cuota o caído, dame unos minutos y reintentá.";
 
 function esErrorGroq(e: unknown): boolean {
-  const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
-  return ["groq", "503", "unavailable", "overloaded", "high demand", "429", "rate", "timeout"].some(
-    (k) => msg.includes(k)
-  );
+  // Solo consideramos "error de Groq" los errores marcados explícitamente
+  // por las llamadas a llmJSON/llmTexto (ver marcarErrorLLM más abajo).
+  // Antes esto matcheaba substrings amplios sobre CUALQUIER error del bloque
+  // try (incluyendo errores de Supabase), lo que mostraba "Groq está sin
+  // cuota" sin loguear nada real.
+  return e instanceof Error && (e as Error & { esErrorLLM?: boolean }).esErrorLLM === true;
+}
+
+function marcarErrorLLM(e: unknown): never {
+  const error = e instanceof Error ? e : new Error(String(e));
+  (error as Error & { esErrorLLM?: boolean }).esErrorLLM = true;
+  throw error;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,7 +78,7 @@ async function ejecutarAccion(
         cantidad: Math.min(a.cantidad ?? 10, 10),
       });
       const borradores = await Promise.all(
-        leads.map((lead) => generarDraftLead(lead, a.instrucciones))
+        leads.map((lead) => generarDraftLead(lead, a.instrucciones).catch(marcarErrorLLM))
       );
       return {
         tipo: a.tipo,
@@ -121,7 +129,7 @@ export async function POST(req: Request) {
 
     const historial: Turno[] = ((historialRaw ?? []) as Turno[]).slice().reverse();
 
-    const acciones = await clasificarIntencion(mensaje, historial);
+    const acciones = await clasificarIntencion(mensaje, historial).catch(marcarErrorLLM);
 
     const resultados: { tipo: string; datos: unknown }[] = [];
     let borradores: DraftLead[] | undefined;
@@ -143,7 +151,7 @@ ${JSON.stringify(resultados)}
 Redactá una respuesta corta y útil basada solo en esos resultados.
 `.trim();
 
-    const respuesta = (await llmTexto(promptRespuesta)) || "Listo.";
+    const respuesta = (await llmTexto(promptRespuesta).catch(marcarErrorLLM)) || "Listo.";
 
     await admin.from("vex_conversaciones").insert([
       { integrante_id: integranteId, rol: "user", texto: mensaje },
@@ -153,6 +161,7 @@ Redactá una respuesta corta y útil basada solo en esos resultados.
     return NextResponse.json({ respuesta, borradores });
   } catch (error) {
     if (esErrorGroq(error)) {
+      console.error("[vex/chat] error real:", error);
       return NextResponse.json({ respuesta: RESPUESTA_GROQ_CAIDO });
     }
     console.error("Vex chat error:", error);

@@ -58,6 +58,7 @@ export async function recomendarLeads(
     .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales")
     .eq("estado", "sin_contactar")
     .order("score", { ascending: false })
+    // TODO: tope de escaneo; revisar si la cartera supera 800 leads
     .limit(800);
   if (error) throw new Error(error.message);
 
@@ -77,6 +78,7 @@ export async function buscarLeadsPorNombre(
     .from("fact_leads")
     .select("id,nombre_negocio,estado")
     .order("score", { ascending: false })
+    // TODO: tope de escaneo; revisar si la cartera supera 800 leads
     .limit(800);
   if (error) throw new Error(error.message);
   return ((data ?? []) as { id: string; nombre_negocio: string; estado: EstadoLead }[])

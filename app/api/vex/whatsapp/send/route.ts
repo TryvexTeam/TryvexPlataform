@@ -75,6 +75,15 @@ export async function POST(req: Request) {
   // Reservar ANTES de llamar a Meta: si dos aprobaciones llegan a la vez, el
   // unique parcial (lead_id, canal) WHERE estado='enviado' hace que solo una
   // reserva se inserte; la otra recibe 23505 y NUNCA llega a llamar a Meta.
+  //
+  // Caso de doble-fallo: si Meta falla Y el UPDATE que marca la fila como
+  // 'fallido' (más abajo, tras el error de resultado) también falla, la fila
+  // queda en estado='enviado' pero SIN wa_message_id. Esa fila sigue
+  // bloqueando el unique parcial de arriba, así que cualquier reintento
+  // futuro para el mismo (lead_id, canal) recibe 409 "Ya se le envió el
+  // primer contacto" aunque en realidad nunca se envió nada.
+  // Para detectar este caso: buscar filas outreach_messages con
+  // estado='enviado' AND wa_message_id IS NULL.
   const { data: reserva, error: errorReserva } = await admin
     .from("outreach_messages")
     .insert({
