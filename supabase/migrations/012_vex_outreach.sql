@@ -29,8 +29,10 @@ ALTER TABLE outreach_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vex_conversaciones ENABLE ROW LEVEL SECURITY;
 
 -- Equipo autenticado lee outreach; escribe el server (service role bypasea RLS)
+DROP POLICY IF EXISTS outreach_select ON outreach_messages;
 CREATE POLICY outreach_select ON outreach_messages FOR SELECT TO authenticated USING (true);
 -- Cada integrante ve solo su conversación con Vex
+DROP POLICY IF EXISTS vexconv_select ON vex_conversaciones;
 CREATE POLICY vexconv_select ON vex_conversaciones FOR SELECT TO authenticated
   USING (integrante_id IN (SELECT id FROM dim_integrantes WHERE auth_user_id = auth.uid()));
 GRANT SELECT ON outreach_messages, vex_conversaciones TO authenticated;
