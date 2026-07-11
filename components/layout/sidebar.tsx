@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Bot,
 } from 'lucide-react'
 import { TryvexLogo } from '@/components/shared/tryvex-logo'
 
@@ -32,6 +33,7 @@ const primaryNav = [
   { href: '/tareas',              label: 'Tareas',        icon: CheckSquare,     count: null },
   { href: '/reuniones',           label: 'Equipo',        icon: CalendarDays,    count: null },
   { href: '/cerebro',             label: 'Cerebro',       icon: BookOpen,        count: null },
+  { href: '/vex',                 label: 'Vex',           icon: Bot,             count: null },
 ]
 
 const systemNav = [
