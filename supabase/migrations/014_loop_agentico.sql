@@ -70,7 +70,8 @@ CREATE TABLE IF NOT EXISTS tarea_evidencias (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tarea_id      UUID NOT NULL REFERENCES tareas(id) ON DELETE CASCADE,
   tipo          TEXT NOT NULL CHECK (tipo IN ('exit_code','screenshot','url','log','test')),
-  payload       TEXT NOT NULL,              -- valor crudo: codigo de salida, URL, ruta, log
+  -- Evidencia vacia no es evidencia (review de Ariel, ronda 2).
+  payload       TEXT NOT NULL CHECK (btrim(payload) <> ''),
   descripcion   TEXT,
   created_by    UUID REFERENCES dim_integrantes(id) ON DELETE SET NULL,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -86,9 +87,27 @@ COMMENT ON TABLE tarea_evidencias IS
 -- ============================================================================
 CREATE OR REPLACE FUNCTION tareas_guardia_loop()
 RETURNS TRIGGER AS $$
+DECLARE
+  -- En INSERT no hay OLD: la tarea "viene de" sin_empezar (review de Ariel, ronda 2 — CRITICO:
+  -- sin esto, un INSERT directo en 'listo' nacia entregado saltandose todas las reglas).
+  estado_previo TEXT := CASE WHEN TG_OP = 'INSERT' THEN 'sin_empezar' ELSE OLD.estado END;
+  firmada_previa UUID := CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.firmada_por END;
 BEGIN
+  -- 0. Nadie nace probado ni entregado.
+  IF TG_OP = 'INSERT' AND NEW.estado IN ('probada','listo') THEN
+    RAISE EXCEPTION 'Una tarea no puede nacer en estado %: el ciclo empieza en sin_empezar/en_curso', NEW.estado;
+  END IF;
+
+  -- 0-bis. Firma ANTES de ejecutar (review de Ariel, ronda 2 — DISENO):
+  -- lo irreversible no se firma al entregar, se firma antes de tocarlo.
+  -- Cuando pedimos firma al final, el deploy/el mensaje al lead ya salio.
+  IF NEW.estado = 'en_curso' AND estado_previo <> 'en_curso'
+     AND NEW.requiere_firma_humana AND NEW.firmada_por IS NULL THEN
+    RAISE EXCEPTION 'Tarea % requiere firma humana ANTES de ejecutarse (irreversible): queda en bloqueada hasta el pulgar', NEW.id;
+  END IF;
+
   -- 1. `probada` exige al menos una evidencia registrada.
-  IF NEW.estado = 'probada' AND (OLD.estado IS DISTINCT FROM 'probada') THEN
+  IF NEW.estado = 'probada' AND (estado_previo IS DISTINCT FROM 'probada') THEN
     IF NOT EXISTS (SELECT 1 FROM tarea_evidencias WHERE tarea_id = NEW.id) THEN
       RAISE EXCEPTION 'Tarea % no puede pasar a probada: no tiene evidencia registrada', NEW.id;
     END IF;
@@ -98,9 +117,9 @@ BEGIN
   END IF;
 
   -- 2. `listo` (entregada) exige haber pasado por probada + retro escrita.
-  IF NEW.estado = 'listo' AND (OLD.estado IS DISTINCT FROM 'listo') THEN
-    IF OLD.estado <> 'probada' THEN
-      RAISE EXCEPTION 'Tarea % no puede entregarse: debe pasar por probada primero (estado actual: %)', NEW.id, OLD.estado;
+  IF NEW.estado = 'listo' AND (estado_previo IS DISTINCT FROM 'listo') THEN
+    IF estado_previo <> 'probada' THEN
+      RAISE EXCEPTION 'Tarea % no puede entregarse: debe pasar por probada primero (estado actual: %)', NEW.id, estado_previo;
     END IF;
     IF NEW.retro IS NULL OR btrim(NEW.retro) = '' THEN
       RAISE EXCEPTION 'Tarea % no puede entregarse: falta la retro', NEW.id;
@@ -113,7 +132,7 @@ BEGIN
   END IF;
 
   -- 4. Un agente no puede firmar por un humano.
-  IF NEW.firmada_por IS NOT NULL AND NEW.firmada_por IS DISTINCT FROM OLD.firmada_por THEN
+  IF NEW.firmada_por IS NOT NULL AND NEW.firmada_por IS DISTINCT FROM firmada_previa THEN
     IF EXISTS (SELECT 1 FROM dim_integrantes WHERE id = NEW.firmada_por AND es_agente) THEN
       RAISE EXCEPTION 'La firma humana de la tarea % no puede venir de un agente', NEW.id;
     END IF;
@@ -134,7 +153,7 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_tareas_guardia_loop ON tareas;
 CREATE TRIGGER trg_tareas_guardia_loop
-  BEFORE UPDATE ON tareas
+  BEFORE INSERT OR UPDATE ON tareas
   FOR EACH ROW EXECUTE FUNCTION tareas_guardia_loop();
 
 -- ============================================================================
@@ -153,8 +172,8 @@ BEGIN
        SET estado = 'huerfana',
            bloqueo_motivo = format('Heartbeat vencido: sin señal hace mas de %s s', ttl_segundos)
      WHERE estado = 'en_curso'
-       AND last_seen_at IS NOT NULL
-       AND last_seen_at < NOW() - (ttl_segundos || ' seconds')::INTERVAL
+       -- COALESCE: una tarea puesta en_curso a mano (sin heartbeat) tambien vence (review Ariel r2)
+       AND COALESCE(last_seen_at, updated_at) < NOW() - (ttl_segundos || ' seconds')::INTERVAL
     RETURNING 1
   )
   SELECT count(*) INTO n FROM vencidas;
@@ -171,6 +190,8 @@ BEGIN
   WITH siguiente AS (
     SELECT id FROM tareas
      WHERE estado IN ('sin_empezar','huerfana')
+       -- lo irreversible sin firmar no entra a la cola de ejecucion (review Ariel r2)
+       AND NOT (requiere_firma_humana AND firmada_por IS NULL)
      ORDER BY CASE prioridad WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, created_at
      FOR UPDATE SKIP LOCKED
      LIMIT 1
