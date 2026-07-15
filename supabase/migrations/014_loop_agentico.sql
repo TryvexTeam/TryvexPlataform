@@ -24,9 +24,15 @@ COMMENT ON COLUMN dim_integrantes.es_agente IS
 --                          \-> bloqueada (espera firma humana o desbloqueo)
 --     `listo` pasa a significar entregada-y-firmada.
 -- ============================================================================
+-- `huerfana`: el agente se murio/cerro sesion con la tarea tomada (review de Ariel, ronda 1).
+-- Sin esto, la primera tarea que alguien deje colgada queda en_curso para siempre.
 ALTER TABLE tareas DROP CONSTRAINT IF EXISTS tareas_estado_check;
 ALTER TABLE tareas ADD CONSTRAINT tareas_estado_check
-  CHECK (estado IN ('sin_empezar','en_curso','bloqueada','probada','listo'));
+  CHECK (estado IN ('sin_empezar','en_curso','bloqueada','probada','listo','huerfana'));
+
+-- Heartbeat: el runner que tiene la tarea lo actualiza mientras vive.
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS ttl_segundos INTEGER NOT NULL DEFAULT 900;
 
 -- Quien ejecuto y quien valido. Ajuste de Ariel: el que ejecuta NO valida.
 ALTER TABLE tareas ADD COLUMN IF NOT EXISTS ejecutado_por UUID REFERENCES dim_integrantes(id) ON DELETE SET NULL;
@@ -132,6 +138,58 @@ CREATE TRIGGER trg_tareas_guardia_loop
   FOR EACH ROW EXECUTE FUNCTION tareas_guardia_loop();
 
 -- ============================================================================
+-- (d-bis) Huerfanas y claim atomico — review de Ariel, ronda 1.
+--     Un agente que se cae no puede dejar la cola trancada, y dos agentes no
+--     pueden tomar la misma tarea.
+-- ============================================================================
+
+-- Marca huerfana toda tarea en_curso cuyo heartbeat vencio (last_seen_at + ttl).
+CREATE OR REPLACE FUNCTION marcar_huerfanas()
+RETURNS INTEGER AS $$
+DECLARE n INTEGER;
+BEGIN
+  WITH vencidas AS (
+    UPDATE tareas
+       SET estado = 'huerfana',
+           bloqueo_motivo = format('Heartbeat vencido: sin señal hace mas de %s s', ttl_segundos)
+     WHERE estado = 'en_curso'
+       AND last_seen_at IS NOT NULL
+       AND last_seen_at < NOW() - (ttl_segundos || ' seconds')::INTERVAL
+    RETURNING 1
+  )
+  SELECT count(*) INTO n FROM vencidas;
+  RETURN n;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Claim atomico: dos runners pueden llamar esto a la vez y solo UNO se lleva la tarea.
+-- FOR UPDATE SKIP LOCKED es lo que evita el trabajo duplicado que marca Ariel.
+CREATE OR REPLACE FUNCTION reclamar_tarea(p_agente UUID)
+RETURNS SETOF tareas AS $$
+BEGIN
+  RETURN QUERY
+  WITH siguiente AS (
+    SELECT id FROM tareas
+     WHERE estado IN ('sin_empezar','huerfana')
+     ORDER BY CASE prioridad WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, created_at
+     FOR UPDATE SKIP LOCKED
+     LIMIT 1
+  )
+  UPDATE tareas t
+     SET estado = 'en_curso',
+         ejecutado_por = p_agente,
+         last_seen_at = NOW(),
+         bloqueo_motivo = NULL
+    FROM siguiente s
+   WHERE t.id = s.id
+  RETURNING t.*;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION reclamar_tarea(UUID) IS
+  'Claim atomico de la cola. SKIP LOCKED garantiza que dos runners no tomen la misma tarea.';
+
+-- ============================================================================
 -- (e) RLS + grants — mismo patron que la 012/013.
 -- ============================================================================
 ALTER TABLE tarea_evidencias ENABLE ROW LEVEL SECURITY;
@@ -141,6 +199,14 @@ CREATE POLICY evidencias_select ON tarea_evidencias FOR SELECT TO authenticated 
 
 GRANT SELECT ON tarea_evidencias TO authenticated;
 GRANT ALL ON tarea_evidencias TO service_role;
+GRANT EXECUTE ON FUNCTION reclamar_tarea(UUID), marcar_huerfanas() TO service_role;
+
+-- ⚠️ DEUDA DE SEGURIDAD CONOCIDA (gap #3 de Spike, confirmado por Ariel):
+-- estas policies son INERTES mientras los 3 agentes compartan `service_role`,
+-- porque service_role bypasea RLS por diseno. Aislar credenciales por agente NO
+-- se arregla en una migracion: requiere JWT por agente (claim agent_id) o roles
+-- de Postgres separados, + cambio en cada infra. Va como 015 + tarea de infra.
+-- Se deja escrito para que no se pierda ni se venda como resuelto.
 
 -- ============================================================================
 -- (f) Vista de la bandeja de firmas — lo que el jefe ve en el celular.
