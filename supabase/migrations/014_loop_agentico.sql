@@ -250,7 +250,11 @@ LEFT JOIN dim_integrantes ej ON ej.id = t.ejecutado_por
 LEFT JOIN dim_integrantes va ON va.id = t.validado_por
 WHERE t.requiere_firma_humana
   AND t.firmada_por IS NULL
-  AND t.estado IN ('bloqueada','probada');
+  -- Ronda 3 de Ariel (deadlock silencioso): una irreversible sin firmar nace en
+  -- sin_empezar — los agentes no la toman (correcto) y la bandeja no la mostraba.
+  -- Regla robusta: TODO lo que requiere firma y no la tiene es visible, salvo lo
+  -- ya entregado (a 'listo' no se llega sin firma; lo impone el trigger).
+  AND t.estado <> 'listo';
 
 GRANT SELECT ON v_bandeja_firmas TO authenticated;
 
