@@ -1,0 +1,17 @@
+{
+  "name": "tryvex-wa-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Puente WhatsApp Web (no oficial) para el CRM de Tryvex — Botón 2. Servicio standalone, corre 24/7 separado de Next.js.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "heartbeat": "node heartbeat.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
+    "whatsapp-web.js": "^1.26.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
