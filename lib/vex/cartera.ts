@@ -43,26 +43,34 @@ export async function reporteCartera(
 }
 
 /**
- * Recomienda leads para contactar: sin contactar, con algún canal de contacto,
- * priorizados por score. Filtro opcional por nicho/localidad.
+ * Lista leads con nombres, priorizados por score. Filtro opcional por
+ * estado / nicho / localidad.
+ * - Por defecto (sin estado) devuelve los `sin_contactar` CON canal de contacto
+ *   → los que conviene contactar (la "recomendación" clásica).
+ * - Con `estado` explícito, lista los leads de ESE estado (ej. "quiénes son los
+ *   contactados") — sin exigir canal de contacto, porque acá el usuario quiere
+ *   VER quiénes son, no a quién contactar.
  */
 export async function recomendarLeads(
   sb: SupabaseClient,
-  opts: { nicho?: string; localidad?: string; cantidad?: number } = {}
+  opts: { nicho?: string; localidad?: string; cantidad?: number; estado?: EstadoLead } = {}
 ): Promise<LeadResumen[]> {
   const limite = Math.max(1, Math.min(opts.cantidad ?? 10, 50));
+  const estado = opts.estado ?? "sin_contactar";
   // Traemos amplio y filtramos en memoria para tolerar tildes y singular/plural
   // (la base es chica). ilike de Postgres no ignora acentos: "barberias" != "barberías".
   const { data, error } = await sb
     .from("fact_leads")
     .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales")
-    .eq("estado", "sin_contactar")
+    .eq("estado", estado)
     .order("score", { ascending: false })
     // TODO: tope de escaneo; revisar si la cartera supera 800 leads
     .limit(800);
   if (error) throw new Error(error.message);
 
-  let leads = ((data ?? []) as LeadResumen[]).filter((l) => l.telefono || l.redes_sociales);
+  let leads = (data ?? []) as LeadResumen[];
+  // Solo al RECOMENDAR a quién contactar exigimos canal; al LISTAR un estado, no.
+  if (!opts.estado) leads = leads.filter((l) => l.telefono || l.redes_sociales);
   if (opts.nicho) leads = leads.filter((l) => coincideTermino(l.nicho, opts.nicho));
   if (opts.localidad) leads = leads.filter((l) => coincideTermino(l.localidad, opts.localidad));
   return leads.slice(0, limite);
