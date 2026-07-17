@@ -12,6 +12,7 @@
 // Ver ENV-SETUP.md para las variables que lee este proceso.
 
 import http from 'node:http'
+import crypto from 'node:crypto'
 import pkg from 'whatsapp-web.js'
 import qrcodeTerminal from 'qrcode-terminal'
 import qrcodeImage from 'qrcode'
@@ -23,7 +24,6 @@ const env = process['env']
 const PORT = Number(env.WA_BRIDGE_PORT || 4600)
 const CHIP_ID = env.WA_BRIDGE_CHIP_ID || 'tryvex-principal'
 const SEND_INTERVAL_MS = Number(env.WA_BRIDGE_SEND_INTERVAL_MS || 60000)
-const INTERNAL_TOKEN = env.WA_BRIDGE_INTERNAL_TOKEN || ''
 
 // Nombres de variable propios de este proceso (no los mismos que usa Next.js)
 // para no chocar de config y para poder rotar la key de este servicio sin
@@ -36,9 +36,82 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1)
 }
 
+// Fail-closed, no fail-open. Hallazgo de la revision de seguridad (2026-07-17):
+// antes esto era `env.WA_BRIDGE_INTERNAL_TOKEN || ''` y los checks tenian la
+// forma `if (INTERNAL_TOKEN && valor !== INTERNAL_TOKEN)` -- si la variable
+// faltaba, INTERNAL_TOKEN quedaba en '' (falsy), el && cortaba, y TANTO /qr
+// como /send quedaban servidos sin ninguna autenticacion a quien sea que
+// llegue al puerto. Un typo o un archivo de entorno sin montar en el deploy
+// de manana hubiera dejado el numero real de Tryvex abierto a cualquiera con
+// la URL del tunel. Ahora el proceso ni arranca sin los dos tokens.
+//
+// Dos tokens separados (no uno solo): filtrar el de /qr (que se comparte por
+// chat para coordinar el escaneo remoto) no debe dar de regalo la capacidad
+// de /send (envio indefinido de WhatsApp real). Ver hallazgo de la revision
+// sobre "mismo token para pairing y para envio, sin scoping de privilegios".
+const SEND_TOKEN = env.WA_BRIDGE_INTERNAL_TOKEN || ''
+const QR_TOKEN = env.WA_BRIDGE_QR_TOKEN || ''
+
+if (!SEND_TOKEN || !QR_TOKEN) {
+  console.error(
+    '[wa-bridge] Faltan WA_BRIDGE_INTERNAL_TOKEN y/o WA_BRIDGE_QR_TOKEN. ' +
+    'Sin estos, /send y /qr quedarian sin autenticacion. Genera valores con ' +
+    '`node -e "console.log(require(\'crypto\').randomBytes(24).toString(\'hex\'))"` y agregalos a las variables de entorno. Ver ENV-SETUP.md.'
+  )
+  process.exit(1)
+}
+
+// Comparacion constant-time (defensa en profundidad contra timing attacks;
+// el riesgo practico es bajo pero el fix es gratis).
+function tokenValido(recibido, esperado) {
+  if (!recibido) return false
+  const a = Buffer.from(String(recibido))
+  const b = Buffer.from(esperado)
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
+}
+
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { persistSession: false },
 })
+
+// ---------------------------------------------------------------------------
+// Validacion de input (hallazgos de la revision de seguridad: nada de esto
+// se validaba antes -- telefono arbitrario, texto sin limite, atribucion sin
+// whitelist. Todo llega ya autenticado por token, pero el token es un secreto
+// compartido, no identidad por-usuario, asi que igual conviene acotar el daño
+// que puede hacer cualquier poseedor del token, sea legitimo o filtrado).
+// ---------------------------------------------------------------------------
+
+// Misma heuristica que lib/vex/telefono.ts del lado Next.js (duplicada a
+// proposito: wa-bridge es un proceso Node separado, con su propio
+// package.json, no comparte modulos con la app).
+function normalizarTelefono(telefono) {
+  if (!telefono) return null
+  let d = String(telefono).replace(/\D/g, '')
+  if (d.length < 8) return null
+  if (d.startsWith('56')) return d
+  if (d.length === 9) return '56' + d
+  if (d.length === 8) return '569' + d
+  return d
+}
+
+const TEXTO_MAX_LEN = 4096 // limite practico de WhatsApp, ver hallazgo "texto sin limite de longitud"
+const AGENTES_ENVIADOR = ['JARVIS', 'ARIEL', 'SPIKE']
+// enviado_por tambien acepta nombre de humano (migracion 015 lo documenta asi:
+// 'JARVIS'|'ARIEL'|'SPIKE'|nombre del humano) -- no es un enum cerrado, pero
+// tampoco texto libre sin cota: bloquea vacios, strings gigantes y caracteres
+// de control que no pintan en un nombre real.
+function enviadoPorValido(valor) {
+  if (typeof valor !== 'string') return false
+  const v = valor.trim()
+  if (v.length < 2 || v.length > 60) return false
+  if (AGENTES_ENVIADOR.includes(v.toUpperCase())) return true
+  return /^[\p{L}\s.'-]+$/u.test(v)
+}
+
+const MAX_BODY_BYTES = 8 * 1024 // el payload esperado es chico: telefono/texto/ids/enviado_por
+const MAX_COLA = 500 // tope de encolado -- ver hallazgo "cola sin cota superior"
 
 // ---------------------------------------------------------------------------
 // Cola de envio con throttle (1 mensaje cada SEND_INTERVAL_MS, ritmo humano).
@@ -224,8 +297,58 @@ async function resolverLeadPorTelefono(numero) {
 
 waClient.initialize()
 
+// Lee el body con un tope de bytes -- sin esto, un POST con un body enorme
+// se acumula entero en memoria del unico proceso que sostiene la sesion de
+// WhatsApp (hallazgo: "DoS por memoria"). Dos bugs encontrados y corregidos
+// en carne propia mientras se probaba esto (no teoricos, tumbaron el
+// proceso entero en Windows):
+//   1. Llamar req.destroy() DENTRO de un `for await (const chunk of req)`
+//      mientras el iterador sigue consumiendo el stream -> excepcion no
+//      controlada a nivel de runtime. Se cambio a un patron basado en
+//      eventos ('data'/'end'), sin async iterator.
+//   2. Llamar req.destroy() y DESPUES intentar responder (res.writeHead/
+//      res.end) sobre el socket ya destruido -> tira una excepcion sincrona
+//      dentro del handler async, que Node trata como promesa rechazada sin
+//      manejar y MATA EL PROCESO (comportamiento default desde Node 15+).
+//      Fix: nunca destruir el socket aca. Dejar que quien llama responda
+//      normal (413) y que el ciclo normal de request/response cierre la
+//      conexion -- no hace falta cortar el socket a mano para lograr el
+//      mismo resultado (rechazar el body demasiado grande).
+function leerBodyConLimite(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const contentLength = Number(req.headers['content-length'] || 0)
+    if (contentLength > maxBytes) {
+      reject(new Error('body excede el tamaño maximo permitido'))
+      return
+    }
+
+    let total = 0
+    let rechazado = false
+    const chunks = []
+    req.on('data', (chunk) => {
+      if (rechazado) return
+      total += chunk.length
+      if (total > maxBytes) {
+        rechazado = true
+        reject(new Error('body excede el tamaño maximo permitido'))
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (!rechazado) resolve(Buffer.concat(chunks).toString('utf-8'))
+    })
+    req.on('error', (err) => {
+      if (!rechazado) reject(err)
+    })
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Servidor HTTP interno — Next.js le habla por aca via app/api/wa/send/route.ts.
+// Bindeado a loopback a proposito (hallazgo: "escucha en 0.0.0.0, exposicion
+// que no depende del tunel"): cloudflared/cualquier tunel apunta a localhost
+// igual, no hace falta escuchar en todas las interfaces de red del host.
 // ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost')
@@ -239,9 +362,12 @@ const server = http.createServer(async (req, res) => {
   // Sirve el QR actual como pagina HTML (se abre directo en el navegador,
   // pensado para escaneo REMOTO cuando quien tiene el telefono no esta en la
   // misma maquina que corre el bridge). Token por query param porque lo abre
-  // un navegador humano, no un fetch con headers custom.
+  // un navegador humano, no un fetch con headers custom -- por eso es un
+  // token DISTINTO al de /send (QR_TOKEN, no SEND_TOKEN): que se filtre por
+  // historial de navegador o por el chat donde se comparte para coordinar el
+  // escaneo no debe dar de regalo la capacidad de mandar mensajes.
   if (req.method === 'GET' && url.pathname === '/qr') {
-    if (INTERNAL_TOKEN && url.searchParams.get('token') !== INTERNAL_TOKEN) {
+    if (!tokenValido(url.searchParams.get('token'), QR_TOKEN)) {
       res.writeHead(401, { 'Content-Type': 'text/plain' })
       res.end('token invalido')
       return
@@ -265,25 +391,32 @@ const server = http.createServer(async (req, res) => {
       <h2>Escanea con WhatsApp -> Dispositivos vinculados</h2>
       <img src="${dataUrl}" alt="QR de WhatsApp" />
       <p>Esta pagina se refresca sola cada 20s (el QR expira y se regenera solo).</p>
+      <p style="color:#888;font-size:0.85em">Cierra esta pestaña y avisa al equipo apenas termines de escanear -- el link deja de servir para nada mas una vez conectado, pero mejor cerrar el tunel igual.</p>
     </body></html>`)
     return
   }
 
   if (req.method === 'POST' && url.pathname === '/send') {
-    if (INTERNAL_TOKEN && req.headers['x-bridge-token'] !== INTERNAL_TOKEN) {
+    // Orden a proposito: auth -> tamaño del body -> forma del JSON -> validez
+    // de cada campo -> RECIEN AHI el chequeo de sesionLista/cola. Asi un
+    // request mal formado siempre da 400 (rechazo rapido, informativo),
+    // nunca queda enmascarado detras de un 503 de "sesion no lista" que no
+    // dice nada sobre si el request en si era valido.
+    if (!tokenValido(req.headers['x-bridge-token'], SEND_TOKEN)) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'token invalido' }))
       return
     }
 
-    if (!sesionLista) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Sesion de WhatsApp no esta lista todavia' }))
+    let body
+    try {
+      body = await leerBodyConLimite(req, MAX_BODY_BYTES)
+    } catch {
+      res.writeHead(413, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'body demasiado grande' }))
       return
     }
 
-    let body = ''
-    for await (const chunk of req) body += chunk
     let payload
     try {
       payload = JSON.parse(body)
@@ -295,15 +428,39 @@ const server = http.createServer(async (req, res) => {
 
     // Contrato acordado con Jarvis: { lead_id, telefono, texto, enviado_por }
     // (cliente_id y es_bot son opcionales, no los usa su panel todavia).
-    const { telefono, texto, lead_id, cliente_id, es_bot, enviado_por } = payload
-    if (!telefono || !texto || !enviado_por) {
+    const { texto, lead_id, cliente_id, es_bot, enviado_por } = payload
+
+    const telefono = normalizarTelefono(payload.telefono)
+    if (!telefono) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'faltan telefono, texto o enviado_por' }))
+      res.end(JSON.stringify({ error: 'telefono invalido o ausente' }))
+      return
+    }
+    if (typeof texto !== 'string' || texto.length === 0 || texto.length > TEXTO_MAX_LEN) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: `texto ausente o excede ${TEXTO_MAX_LEN} caracteres` }))
+      return
+    }
+    if (!enviadoPorValido(enviado_por)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'enviado_por invalido (agente conocido o nombre de humano, 2-60 caracteres)' }))
+      return
+    }
+
+    if (!sesionLista) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Sesion de WhatsApp no esta lista todavia' }))
+      return
+    }
+
+    if (colaEnvio.length >= MAX_COLA) {
+      res.writeHead(429, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: `cola llena (${MAX_COLA} pendientes), reintenta mas tarde` }))
       return
     }
 
     const resultado = await new Promise((resolve, reject) => {
-      encolarEnvio({ telefono, texto, lead_id, cliente_id, es_bot, enviado_por, resolve, reject })
+      encolarEnvio({ telefono, texto, lead_id, cliente_id, es_bot, enviado_por: enviado_por.trim(), resolve, reject })
     }).catch((err) => ({ error: err.message }))
 
     if (resultado?.error) {
@@ -321,6 +478,6 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'no encontrado' }))
 })
 
-server.listen(PORT, () => {
-  console.log(`[wa-bridge] servidor HTTP interno escuchando en :${PORT}`)
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`[wa-bridge] servidor HTTP interno escuchando en 127.0.0.1:${PORT}`)
 })
