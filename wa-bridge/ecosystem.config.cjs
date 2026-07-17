@@ -6,6 +6,7 @@ module.exports = {
     {
       name: 'tryvex-wa-bridge',
       script: 'index.js',
+      node_args: '--env-file=.env',
       cwd: __dirname,
       autorestart: true,
       restart_delay: 5000,
@@ -17,6 +18,7 @@ module.exports = {
     {
       name: 'tryvex-wa-heartbeat',
       script: 'heartbeat.js',
+      node_args: '--env-file=.env',
       cwd: __dirname,
       autorestart: true,
       restart_delay: 5000,

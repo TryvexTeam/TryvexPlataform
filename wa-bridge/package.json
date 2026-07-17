@@ -6,8 +6,8 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "heartbeat": "node heartbeat.js"
+    "start": "node --env-file=.env index.js",
+    "heartbeat": "node --env-file=.env heartbeat.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
