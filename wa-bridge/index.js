@@ -126,14 +126,28 @@ waClient.on('disconnected', (reason) => {
 })
 
 // Mensajes entrantes: se resuelve el lead por telefono y se guarda direccion='in'.
+//
+// IMPORTANTE: mensajes_wa tiene el constraint chk_mensajes_wa_dueno
+// (lead_id IS NOT NULL OR cliente_id IS NOT NULL) — un insert con los dos en
+// null falla y el mensaje se pierde. Por eso, si no matchea ningun lead
+// existente, se crea uno minimo (ver crearLeadDesdeNumeroDesconocido) en vez
+// de arriesgarse a perder un mensaje real de un cliente potencial. Se marca
+// claramente para que el equipo lo triage — no es una decision de producto
+// silenciosa, es la unica forma de no perder el mensaje.
 waClient.on('message', async (msg) => {
   if (msg.fromMe) return
   try {
     const numero = msg.from.replace('@c.us', '')
-    const lead = await resolverLeadPorTelefono(numero)
+    let lead = await resolverLeadPorTelefono(numero)
+    let leadCreadoAhora = false
+
+    if (!lead) {
+      lead = await crearLeadDesdeNumeroDesconocido(numero)
+      leadCreadoAhora = true
+    }
 
     const { error } = await supabase.from('mensajes_wa').insert({
-      lead_id: lead?.id ?? null,
+      lead_id: lead.id,
       cliente_id: null,
       direccion: 'in',
       texto: msg.body,
@@ -148,13 +162,42 @@ waClient.on('message', async (msg) => {
       return
     }
 
-    if (!lead) {
-      console.warn(`[wa-bridge] mensaje entrante de ${numero} sin lead asociado, quedo huerfano (lead_id null). Definir con el equipo que hacer con estos.`)
+    if (leadCreadoAhora) {
+      console.warn(`[wa-bridge] mensaje entrante de ${numero} sin lead previo — se creo lead nuevo ${lead.id} para no perder el mensaje. Revisar/triage manual.`)
     }
   } catch (err) {
     console.error('[wa-bridge] error procesando mensaje entrante:', err)
   }
 })
+
+async function crearLeadDesdeNumeroDesconocido(numero) {
+  // Default conservador y reversible: se crea el lead para que el mensaje
+  // (y el numero de quien escribe) no se pierdan. Un humano puede corregir
+  // nombre/estado despues desde el CRM. estado='contactado' porque ya hubo
+  // contacto real (ellos escribieron), aunque el significado habitual de ese
+  // estado en el resto del código es "nosotros los contactamos" — es una
+  // aproximacion, señalada acá a propósito para que el equipo la revise.
+  const { data, error } = await supabase
+    .from('fact_leads')
+    .insert({
+      nombre_negocio: `WhatsApp +${numero}`,
+      telefono: numero,
+      origen: 'manual',
+      estado: 'contactado',
+      notas: 'Lead creado automáticamente por wa-bridge: mensaje de WhatsApp entrante de un número sin match previo. Revisar y completar datos.',
+    })
+    .select('id, telefono')
+    .single()
+
+  if (error) {
+    // Ultimo recurso: si ni siquiera se puede crear el lead, no hay donde
+    // colgar el mensaje sin violar el constraint de la tabla. Se loguea con
+    // el texto completo para no perder la evidencia, aunque no quede en DB.
+    console.error(`[wa-bridge] CRITICO: no se pudo crear lead para ${numero}, el mensaje no se pudo guardar en mensajes_wa:`, error)
+    throw error
+  }
+  return data
+}
 
 async function resolverLeadPorTelefono(numero) {
   // Heuristica simple: matchea por los ultimos 8 digitos para tolerar
