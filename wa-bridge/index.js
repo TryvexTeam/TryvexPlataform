@@ -13,7 +13,8 @@
 
 import http from 'node:http'
 import pkg from 'whatsapp-web.js'
-import qrcode from 'qrcode-terminal'
+import qrcodeTerminal from 'qrcode-terminal'
+import qrcodeImage from 'qrcode'
 import { createClient } from '@supabase/supabase-js'
 
 const { Client, LocalAuth } = pkg
@@ -109,14 +110,17 @@ const waClient = new Client({
 })
 
 let sesionLista = false
+let ultimoQr = null
 
 waClient.on('qr', (qr) => {
+  ultimoQr = qr
   console.log('[wa-bridge] Escanea este QR con el telefono del numero de Tryvex (una sola vez):')
-  qrcode.generate(qr, { small: true })
+  qrcodeTerminal.generate(qr, { small: true })
 })
 
 waClient.on('ready', () => {
   sesionLista = true
+  ultimoQr = null
   console.log('[wa-bridge] Sesion de WhatsApp lista.')
 })
 
@@ -224,13 +228,48 @@ waClient.initialize()
 // Servidor HTTP interno — Next.js le habla por aca via app/api/wa/send/route.ts.
 // ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
-  if (req.method === 'GET' && req.url === '/health') {
+  const url = new URL(req.url, 'http://localhost')
+
+  if (req.method === 'GET' && url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true, sesionLista, colaPendiente: colaEnvio.length }))
     return
   }
 
-  if (req.method === 'POST' && req.url === '/send') {
+  // Sirve el QR actual como pagina HTML (se abre directo en el navegador,
+  // pensado para escaneo REMOTO cuando quien tiene el telefono no esta en la
+  // misma maquina que corre el bridge). Token por query param porque lo abre
+  // un navegador humano, no un fetch con headers custom.
+  if (req.method === 'GET' && url.pathname === '/qr') {
+    if (INTERNAL_TOKEN && url.searchParams.get('token') !== INTERNAL_TOKEN) {
+      res.writeHead(401, { 'Content-Type': 'text/plain' })
+      res.end('token invalido')
+      return
+    }
+
+    if (sesionLista) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end('<html><body style="font-family:sans-serif;text-align:center;margin-top:4em"><h2>Sesion ya conectada</h2><p>No hace falta escanear nada.</p></body></html>')
+      return
+    }
+
+    if (!ultimoQr) {
+      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end('<html><body style="font-family:sans-serif;text-align:center;margin-top:4em"><h2>Todavia no hay QR</h2><p>El bridge esta arrancando, recarga en unos segundos.</p></body></html>')
+      return
+    }
+
+    const dataUrl = await qrcodeImage.toDataURL(ultimoQr, { width: 400 })
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    res.end(`<html><head><meta http-equiv="refresh" content="20"></head><body style="font-family:sans-serif;text-align:center;margin-top:2em">
+      <h2>Escanea con WhatsApp -> Dispositivos vinculados</h2>
+      <img src="${dataUrl}" alt="QR de WhatsApp" />
+      <p>Esta pagina se refresca sola cada 20s (el QR expira y se regenera solo).</p>
+    </body></html>`)
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/send') {
     if (INTERNAL_TOKEN && req.headers['x-bridge-token'] !== INTERNAL_TOKEN) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'token invalido' }))
