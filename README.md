@@ -37,6 +37,13 @@ Completar en `.env.local`:
 | `ANTHROPIC_API_KEY` | console.anthropic.com (opcional) |
 | `SCRAPER_WEBHOOK_SECRET` | Generar con `openssl rand -hex 32` |
 
+Variables adicionales para habilitar "Enviar desde el CRM" en la vista de Leads (ver `wa-bridge/DEPLOY.md`):
+
+| Variable | Dónde obtenerla |
+|---|---|
+| `WA_BRIDGE_URL` | URL interna del servicio `wa-bridge/` (WhatsApp Web) |
+| `WA_BRIDGE_TOKEN` | Mismo valor que el token interno configurado en `wa-bridge/` |
+
 ### 3. Correr en desarrollo
 
 ```bash
