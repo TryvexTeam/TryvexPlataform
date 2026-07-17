@@ -44,7 +44,9 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "") or os.getenv("SUPABASE_SERVICE_KEY"
 HEADLESS = os.getenv("HEADLESS", "true").lower() != "false"
 
 LAT, LNG, ZOOM = -33.4489, -70.6693, 13
-MAX_POR_CATEGORIA = 20
+# Mira hasta 40 de la lista y saltea los conocidos → llega a más negocios NUEVOS
+# (antes 20, que cada día eran los mismos de siempre y solo se re-procesaban).
+MAX_POR_CATEGORIA = 40
 
 CATEGORIAS = [
     "restaurantes",
@@ -164,6 +166,26 @@ async def insertar_o_actualizar(supabase: Client, lead: dict) -> str:
     return "nuevo"
 
 
+def _norm_nombre(n: str) -> str:
+    """Normaliza un nombre para comparar (minúsculas, sin espacios de más)."""
+    return re.sub(r"\s+", " ", (n or "").strip().lower())
+
+
+async def nombres_existentes(supabase: Client, nicho: str) -> set:
+    """Nombres de negocio que YA están en el CRM para ese nicho (normalizados).
+    Se carga una vez por categoría para SALTEAR los conocidos sin abrirlos
+    (que el scraper no pierda tiempo re-procesando lo que ya tiene)."""
+    try:
+        res = await _in_thread(
+            lambda: supabase.table("fact_leads")
+            .select("nombre_negocio").eq("nicho", nicho).limit(5000).execute()
+        )
+        return {_norm_nombre(r["nombre_negocio"]) for r in (res.data or [])}
+    except Exception as e:
+        log.warning(f"No pude cargar existentes de '{nicho}': {e}")
+        return set()
+
+
 # ── Interacción con Google Maps ───────────────────────────────────────────────
 async def aceptar_cookies(page: Page) -> None:
     try:
@@ -195,17 +217,21 @@ async def scroll_panel(page: Page, veces: int = 4) -> None:
         await asyncio.sleep(0.6)
 
 
-async def obtener_hrefs_resultados(page: Page) -> list[str]:
-    hrefs: list[str] = []
+async def obtener_hrefs_resultados(page: Page) -> list[tuple[str, str]]:
+    """Devuelve [(nombre, href), ...] de la lista de Maps.
+    El nombre sale del aria-label del <a> SIN abrir el negocio → permite saltear
+    los que ya tenemos antes de gastar tiempo abriéndolos (no re-procesar)."""
+    out: list[tuple[str, str]] = []
     try:
         elements = await page.query_selector_all("a.hfpxzc")
         for el in elements[:MAX_POR_CATEGORIA]:
             href = await el.get_attribute("href")
+            nombre = (await el.get_attribute("aria-label")) or ""
             if href:
-                hrefs.append(href)
+                out.append((nombre.strip(), href))
     except Exception as e:
-        log.warning(f"Error obteniendo hrefs: {e}")
-    return hrefs
+        log.warning(f"Error obteniendo resultados: {e}")
+    return out
 
 
 # ── Extracción de datos por negocio ───────────────────────────────────────────
@@ -406,7 +432,7 @@ async def scrape_categoria(
     stop_file: str = "",
 ) -> dict:
     log.info(f"[{categoria}] Iniciando busqueda...")
-    stats_cat = {"nuevos": 0, "actualizados": 0, "descartados": 0, "top": []}
+    stats_cat = {"nuevos": 0, "actualizados": 0, "descartados": 0, "saltados": 0, "top": []}
 
     partes = [categoria]
     if comuna:
@@ -433,18 +459,28 @@ async def scrape_categoria(
 
     await aceptar_cookies(page)
     await delay()
-    await scroll_panel(page, veces=8)
+    await scroll_panel(page, veces=12)  # más scroll → más candidatos (miramos hasta 40)
 
-    hrefs = await obtener_hrefs_resultados(page)
-    log.info(f"[{categoria}] {len(hrefs)} resultados encontrados")
+    resultados = await obtener_hrefs_resultados(page)
+    log.info(f"[{categoria}] {len(resultados)} resultados encontrados")
 
-    if not hrefs:
+    if not resultados:
         return stats_cat
 
-    for i, href in enumerate(hrefs):
+    # Nombres que YA tenemos de este nicho → los salteamos SIN abrirlos, para no
+    # perder tiempo re-procesando lo conocido (pedido de Cristian: traer NUEVOS).
+    ya_tengo = await nombres_existentes(supabase, categoria)
+
+    for i, (nombre_lista, href) in enumerate(resultados):
         if stop_file and os.path.exists(stop_file):
             log.info(f"[{categoria}] Stop flag detectado, deteniendo.")
             break
+        # Saltear conocido ANTES de abrirlo (ahorra el goto + extracción).
+        if nombre_lista and _norm_nombre(nombre_lista) in ya_tengo:
+            stats_cat["saltados"] = stats_cat.get("saltados", 0) + 1
+            stats_global["saltados"] = stats_global.get("saltados", 0) + 1
+            log.debug(f"[{categoria}] #{i + 1} '{nombre_lista}' ya está, salteado")
+            continue
         try:
             await page.goto(href, wait_until="domcontentloaded", timeout=20000)
             await delay()
@@ -519,7 +555,8 @@ async def scrape_categoria(
         f"[{categoria}] Completado — "
         f"{stats_cat['nuevos']} nuevos, "
         f"{stats_cat['actualizados']} actualizados, "
-        f"{stats_cat['descartados']} descartados"
+        f"{stats_cat['descartados']} descartados, "
+        f"{stats_cat.get('saltados', 0)} ya-conocidos-salteados"
     )
     return stats_cat
 
@@ -593,6 +630,7 @@ async def main() -> None:
         "nuevos": 0,
         "actualizados": 0,
         "descartados": 0,
+        "saltados": 0,
         "por_categoria": {},
         "top_leads": [],
     }
@@ -662,6 +700,7 @@ async def main() -> None:
         "nuevos_leads": stats_global["nuevos"],
         "actualizados": stats_global["actualizados"],
         "descartados": stats_global["descartados"],
+        "saltados": stats_global.get("saltados", 0),
         "total_procesados": total_procesados,
         "por_categoria": stats_global["por_categoria"],
         "top_leads": top_leads,
@@ -671,6 +710,7 @@ async def main() -> None:
     log.info(f"  Nuevos leads:    {resumen['nuevos_leads']}")
     log.info(f"  Actualizados:    {resumen['actualizados']}")
     log.info(f"  Descartados:     {resumen['descartados']}")
+    log.info(f"  Ya conocidos (salteados, no re-procesados): {resumen['saltados']}")
     log.info(f"  Duracion:        {duracion_min} min")
     log.info("=" * 60)
 
