@@ -76,11 +76,14 @@ def _a_nuevo(v):
     if v.get("direccion"):               ctx.append(f"Dirección: {v['direccion']}")
     notas = " · ".join(ctx) or None
 
+    # OJO: el CRM cambió la escala en la migración 003 → score va de 1 a 10
+    # (constraint fact_leads_score_check: BETWEEN 1 AND 10). La BD vieja usa 0-100.
+    # Se convierte dividiendo por 10 y clampeando a [1,10].
     score = v.get("score")
     try:
-        score = max(0, min(100, int(score))) if score is not None else 0
+        score = max(1, min(10, round(int(score) / 10))) if score is not None else 5
     except (TypeError, ValueError):
-        score = 0
+        score = 5
 
     fila = {
         "nombre_negocio": nombre,
