@@ -48,6 +48,7 @@ async function ejecutarAccion(
           nicho: a.nicho,
           localidad: a.localidad,
           cantidad: a.cantidad,
+          estado: a.estado,
         }),
       };
 

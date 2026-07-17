@@ -6,7 +6,13 @@ export type Turno = { rol: "user" | "vex"; texto: string };
 
 export type Accion =
   | { tipo: "reporte" }
-  | { tipo: "recomendar"; nicho?: string; localidad?: string; cantidad?: number }
+  | {
+      tipo: "recomendar";
+      nicho?: string;
+      localidad?: string;
+      cantidad?: number;
+      estado?: (typeof ESTADOS_LEAD)[number];
+    }
   | { tipo: "marcar"; nombres: string[]; estado: (typeof ESTADOS_LEAD)[number] }
   | {
       tipo: "preparar_envio";
@@ -24,6 +30,7 @@ const AccionSchema = z.discriminatedUnion("tipo", [
     nicho: z.string().optional(),
     localidad: z.string().optional(),
     cantidad: z.number().optional(),
+    estado: z.enum(ESTADOS_LEAD).optional(),
   }),
   z.object({
     tipo: z.literal("marcar"),
@@ -73,8 +80,13 @@ Eres el clasificador de intenciones de Vex, el agente de outreach de Tryvex.
 Según la conversación, decide la(s) ACCIÓN(es) que pide el usuario en su último mensaje.
 
 Acciones posibles (campo "tipo"):
-- reporte: resumen de la cartera de leads (cuántos por estado).
-- recomendar: sugerir leads para contactar. Parámetros opcionales: nicho, localidad, cantidad.
+- reporte: resumen NUMÉRICO de la cartera (cuántos leads hay por estado). Usar solo cuando
+  piden totales/cuántos, NO cuando piden nombres.
+- recomendar: LISTAR leads con sus nombres. Parámetros opcionales: nicho, localidad, cantidad,
+  estado (uno de: ${ESTADOS_LEAD.join(", ")}). Usar SIEMPRE que el usuario quiera VER o saber
+  QUIÉNES / CUÁLES son los leads. Ejemplos: "mostrame los gimnasios" → {nicho:"gimnasios"};
+  "quiénes son los contactados" / "cuáles contactamos" → {estado:"contactado"}; "los interesados"
+  → {estado:"interesado"}. Sin estado, lista los sin_contactar (a quién conviene contactar).
 - marcar: cambiar el estado de uno o varios leads por nombre. Requiere "nombres" (array de
   strings con el/los nombres de negocio) y "estado" destino (uno de: ${ESTADOS_LEAD.join(", ")}).
 - preparar_envio: generar borradores de mensajes para enviar. Parámetros opcionales: nicho,
