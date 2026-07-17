@@ -42,6 +42,26 @@ const AccionSchema = z.discriminatedUnion("tipo", [
 
 const TOPE_ACCIONES = 5;
 
+/**
+ * Quita las claves con valor null/undefined de un objeto (superficial).
+ * Groq (llama) devuelve `null` para los parámetros no especificados
+ * (ej. {"tipo":"recomendar","nicho":"gimnasios","localidad":null,"cantidad":null}),
+ * pero el schema usa `.optional()` que acepta `undefined`, NO `null` → rechazaba
+ * TODA acción con parámetros opcionales y caía a `conversar` (bug del 17-jul:
+ * "Vex responde siempre lo mismo"). Al sacar los null, el opcional queda ausente
+ * y valida bien, sin que el código de abajo tenga que lidiar con null.
+ */
+function sinNulls(o: unknown): unknown {
+  if (o && typeof o === "object" && !Array.isArray(o)) {
+    return Object.fromEntries(
+      Object.entries(o as Record<string, unknown>).filter(
+        ([, v]) => v !== null && v !== undefined
+      )
+    );
+  }
+  return o;
+}
+
 function construirPrompt(mensaje: string, historial: Turno[]): string {
   const contexto = historial
     .slice(-20)
@@ -97,7 +117,7 @@ export async function clasificarIntencion(
 
   const validas: Accion[] = [];
   for (const a of acciones) {
-    const parsed = AccionSchema.safeParse(a);
+    const parsed = AccionSchema.safeParse(sinNulls(a));
     if (parsed.success) validas.push(parsed.data);
     if (validas.length >= TOPE_ACCIONES) break;
   }
