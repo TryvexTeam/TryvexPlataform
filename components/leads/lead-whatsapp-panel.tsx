@@ -36,9 +36,9 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
   useEffect(() => {
     let activo = true
     fetch(`/api/leads/${lead.id}/mensajes`)
-      .then((r) => (r.ok ? r.json() : { mensajes: [] }))
+      .then((r) => (r.ok ? r.json() : { data: [] }))
       .then((d) => {
-        if (activo) setMensajes(d.mensajes ?? [])
+        if (activo) setMensajes(d.data ?? [])
       })
       .catch(() => {})
       .finally(() => {

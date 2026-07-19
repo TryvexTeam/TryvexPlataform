@@ -1,0 +1,48 @@
+import { redirect } from 'next/navigation'
+import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
+import { IntegrantesRepository } from '@/lib/repos/integrantes'
+import { obtenerEstadoQr } from '@/lib/wa/qr'
+import { WhatsappVinculacion } from '@/components/settings/whatsapp-vinculacion'
+
+// El QR caduca cada ~20s: esta vista nunca se sirve desde caché.
+export const dynamic = 'force-dynamic'
+
+export default async function WhatsappSettingsPage() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const repo = new IntegrantesRepository(supabase)
+  const perfil = await repo.getByAuthUser(user.id)
+
+  if (!perfil) {
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">WhatsApp</h1>
+        <p className="text-neutral-500 mt-1">
+          No eres integrante activo. Contacta al administrador.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-6 max-w-2xl">
+      <Link
+        href="/settings"
+        className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 mb-4"
+      >
+        <ArrowLeft size={14} /> Configuración
+      </Link>
+      <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)] mb-1">WhatsApp</h1>
+      <p className="text-neutral-500 mb-6">
+        Estado del puente y vinculación del número que usa el CRM
+      </p>
+      <WhatsappVinculacion inicial={await obtenerEstadoQr()} />
+    </div>
+  )
+}
