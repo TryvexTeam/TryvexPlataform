@@ -1,6 +1,10 @@
 # wa-bridge — despliegue
 
-Corre como dos procesos separados, 24/7, en el VPS de Ariel (medido 2026-07-17: 7.8GB RAM, 7.3GB libres — de sobra para este proceso + el scraper, cada uno con su límite de systemd para que uno no pueda ahogar al otro):
+Corre como dos procesos separados, 24/7, en el VPS de Ariel/Cristian (medido 2026-07-17: 7.8GB RAM, 7.3GB libres — de sobra para este proceso + el scraper).
+
+**Casa temporal, no definitiva.** Acordado en #chatia (2026-07-17, condición de Cristian, dueño real del VPS): este VPS destraba el 24/7 hoy sin tarjeta, pero cuando la infra definitiva del equipo (droplet propio u otra cuenta neutral) esté lista, esto se migra ahí. No asumir que es la casa final al configurar nada.
+
+**Aislamiento obligatorio:** usuario Linux propio para este servicio (no compartir usuario con el scraper ni con ningún otro proceso del VPS), systemd separado, `MemoryMax` propio. El cerebro/núcleo de cada agente (memoria, identidad, credenciales privadas) NO vive acá — solo procesos acotados (este bridge, el scraper). Así ningún servicio puede leer los secretos de otro aunque compartan hardware.
 
 - `index.js` — el puente en sí (WhatsApp Web + servidor HTTP `/send`, `/qr`, `/health`).
 - `heartbeat.js` — el vigía. Corre como proceso **aparte** a propósito: si `index.js` se cuelga, el vigía sigue vivo y puede avisar por Discord.
