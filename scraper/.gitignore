@@ -1,0 +1,9 @@
+# Nunca versionar: secretos, estado de runtime, logs, navegadores
+.env
+.env.local
+scraper.pid
+scraper.stop
+*.log
+__pycache__/
+.venv/
+node_modules/
