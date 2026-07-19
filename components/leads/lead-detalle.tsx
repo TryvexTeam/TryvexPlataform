@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { LeadForm } from './lead-form'
+import { LeadWhatsappPanel } from './lead-whatsapp-panel'
 import type { Lead, Interaccion, LeadInsert } from '@/lib/types/lead'
 import { ESTADOS_LEAD } from '@/lib/types/lead'
 import { cn } from '@/lib/utils'
@@ -137,6 +138,11 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
       {lead.notas && (
         <div className="bg-neutral-50 rounded-lg p-3 mb-6 text-sm text-neutral-600">{lead.notas}</div>
       )}
+
+      <Separator className="mb-6" />
+
+      {/* Panel de WhatsApp: hilo + botones de contacto */}
+      <LeadWhatsappPanel lead={lead} enviadoPor={integranteId} />
 
       <Separator className="mb-6" />
 
