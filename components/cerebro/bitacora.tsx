@@ -14,6 +14,7 @@ import {
   type EntradaCerebro,
   type FuenteEntrada,
 } from '@/lib/types/cerebro'
+import { Markdown } from './markdown'
 import { NuevaNota } from './nueva-nota'
 
 interface EntidadActiva {
@@ -196,11 +197,7 @@ export function Bitacora({ entradasIniciales, entidades }: BitacoraProps) {
                         </span>
                       </div>
 
-                      {e.contenido && (
-                        <p className="text-[13px] text-[var(--tx-ink-secondary,var(--tx-ink-muted))] whitespace-pre-wrap line-clamp-4">
-                          {e.contenido}
-                        </p>
-                      )}
+                      {e.contenido && <Contenido texto={e.contenido} />}
 
                       <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px] text-[var(--tx-ink-muted)]">
                         <span
@@ -211,6 +208,7 @@ export function Bitacora({ entradasIniciales, entidades }: BitacoraProps) {
                         </span>
                         <span>{e.entidad_nombre}</span>
                         {e.autor_nombre && <span>· {e.autor_nombre}</span>}
+                        <EnlaceOriginal metadata={e.metadata} />
                       </div>
                     </li>
                   ))}
@@ -221,6 +219,49 @@ export function Bitacora({ entradasIniciales, entidades }: BitacoraProps) {
         </div>
       </section>
     </div>
+  )
+}
+
+/**
+ * Lo destilado de #chatia viene en markdown y puede ser largo. Se muestra
+ * recortado y se abre entero con un clic: el timeline sigue siendo escaneable.
+ */
+function Contenido({ texto }: { texto: string }) {
+  const [abierto, setAbierto] = useState(false)
+  const largo = texto.length > 320 || texto.split('\n').length > 5
+
+  return (
+    <div>
+      <div className={!abierto && largo ? 'max-h-[6.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]' : ''}>
+        <Markdown>{texto}</Markdown>
+      </div>
+      {largo && (
+        <button
+          onClick={() => setAbierto((v) => !v)}
+          className="mt-1 text-[11px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] underline underline-offset-2"
+          aria-expanded={abierto}
+        >
+          {abierto ? 'Ver menos' : 'Ver todo'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Puente al origen: el mensaje en Discord, el PR en GitHub. */
+function EnlaceOriginal({ metadata }: { metadata: Record<string, unknown> }) {
+  const url = typeof metadata?.url === 'string' ? metadata.url : null
+  if (!url || !/^https?:\/\//i.test(url)) return null
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline underline-offset-2 hover:text-[var(--tx-ink-primary)]"
+    >
+      Ver original
+    </a>
   )
 }
 
