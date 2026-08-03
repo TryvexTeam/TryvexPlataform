@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, AlertCircle } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { ClienteForm } from './cliente-form'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'

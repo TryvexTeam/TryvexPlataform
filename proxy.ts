@@ -7,6 +7,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/webhook|api/cron|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // sw.js, manifest y offline.html quedan fuera: el navegador los pide sin sesión
+    // (el service worker se registra antes del login y debe responder 200, no 307).
+    '/((?!_next/static|_next/image|favicon.ico|api/webhook|api/cron|sw\\.js|offline\\.html|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

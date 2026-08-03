@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { KanbanBoard } from '@/components/shared/kanban-board'
 import { Button } from '@/components/ui/button'
 import { ProyectoForm } from './proyecto-form'

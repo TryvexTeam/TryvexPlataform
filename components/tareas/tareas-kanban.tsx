@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Filter } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { KanbanBoard } from '@/components/shared/kanban-board'
 import { TareaCard } from './tarea-card'
 import { TareaForm } from './tarea-form'

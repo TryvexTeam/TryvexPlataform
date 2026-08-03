@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Evento, EventoInsert } from '@/lib/types/evento'
 import { TIPOS_EVENTO } from '@/lib/types/evento'
 import type { DisponibilidadIntegrante } from '@/lib/types/disponibilidad'

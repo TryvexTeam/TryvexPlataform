@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { CheckSquare, FileText, MessageCircle, X, Loader2 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/types/lead'
 

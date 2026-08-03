@@ -23,7 +23,7 @@ import {
   Building2,
   Plus,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ClienteForm } from './cliente-form'
 import { PagoForm } from './pago-form'
 import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'

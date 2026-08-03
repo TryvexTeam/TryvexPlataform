@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Celda, DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
 import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
 import { hashColorHex, getInitials, MEMBER_PALETTE } from '@/lib/utils/lead-utils'

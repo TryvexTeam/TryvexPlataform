@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Sliders, RotateCcw, ChevronDown, Check } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { useTheme, type GlowMode } from './theme-context'
 
 /* ─────────────────────────────────────────────────

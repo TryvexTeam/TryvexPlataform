@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { z } from 'zod'
 import { TareaInsertSchema, type TareaConResponsables } from '@/lib/types/tarea'
 import type { DisponibilidadIntegrante } from '@/lib/types/disponibilidad'

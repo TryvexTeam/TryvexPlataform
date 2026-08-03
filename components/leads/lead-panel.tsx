@@ -16,7 +16,7 @@ import {
   Trophy,
   XCircle
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Lead, Interaccion } from '@/lib/types/lead'
 import { RAZONES_PERDIDA } from '@/lib/types/lead'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
