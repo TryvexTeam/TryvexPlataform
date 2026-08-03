@@ -160,7 +160,9 @@ CREATE TRIGGER trg_touch_conversacion
 DO $$
 BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE mensajes;
-EXCEPTION WHEN duplicate_object THEN NULL;
+-- duplicate_object: ya estaba publicada. undefined_object: no existe la
+-- publicación en este proyecto; el chat funciona igual, solo sin tiempo real.
+EXCEPTION WHEN duplicate_object OR undefined_object THEN NULL;
 END $$;
 
 -- ── Grupo general ─────────────────────────────────────────────────────────

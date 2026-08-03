@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ArrowLeft, Pencil, Trash2, Phone, Mail, MapPin, Plus, FolderKanban, Check } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowLeft, Pencil, Trash2, Phone, Mail, MapPin, Plus, FolderKanban, Check, BookOpen } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -88,6 +89,9 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" render={<Link href={`/cerebro?entidad_tipo=cliente&entidad_id=${cliente.id}`} />}>
+            <BookOpen size={13} className="mr-1.5" /> Bitácora
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil size={13} className="mr-1.5" /> Editar
           </Button>
