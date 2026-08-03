@@ -1,0 +1,130 @@
+'use client'
+
+import { useState } from 'react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { toast } from '@/lib/toast'
+import { ENTIDAD_LABEL, type EntradaCerebro } from '@/lib/types/cerebro'
+
+interface EntidadOpcion {
+  entidad_tipo: string
+  entidad_id: string
+  entidad_nombre: string
+}
+
+interface NuevaNotaProps {
+  entidades: EntidadOpcion[]
+  onCreada: (entrada: EntradaCerebro) => void
+  children: React.ReactNode
+}
+
+/** Nota escrita a mano: lo que la base no puede deducir sola. */
+export function NuevaNota({ entidades, onCreada, children }: NuevaNotaProps) {
+  const [abierto, setAbierto] = useState(false)
+  const [titulo, setTitulo] = useState('')
+  const [contenido, setContenido] = useState('')
+  const [clave, setClave] = useState('equipo')
+  const [guardando, setGuardando] = useState(false)
+
+  const guardar = async () => {
+    if (!titulo.trim()) return
+    setGuardando(true)
+
+    const [entidad_tipo, entidad_id] = clave === 'equipo' ? ['equipo', null] : clave.split(':')
+
+    try {
+      const res = await fetch('/api/cerebro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entidad_tipo, entidad_id, titulo, contenido: contenido || undefined }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo guardar')
+
+      onCreada(json.data as EntradaCerebro)
+      toast.success('Anotado en la bitácora')
+      setAbierto(false)
+      setTitulo('')
+      setContenido('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error guardando la nota')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Dialog open={abierto} onOpenChange={setAbierto}>
+      <DialogTrigger render={children as React.ReactElement} />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Anotar en la bitácora</DialogTitle>
+          <DialogDescription>
+            Lo que la base no puede deducir sola: un acuerdo, un motivo, algo que dijo el cliente.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="nota-entidad">¿De qué se trata?</Label>
+            <select
+              id="nota-entidad"
+              value={clave}
+              onChange={(e) => setClave(e.target.value)}
+              className="w-full h-9 rounded-md border border-neutral-200 px-3 text-sm bg-transparent"
+            >
+              <option value="equipo">Equipo (general)</option>
+              {entidades.map((e) => (
+                <option key={`${e.entidad_tipo}:${e.entidad_id}`} value={`${e.entidad_tipo}:${e.entidad_id}`}>
+                  {ENTIDAD_LABEL[e.entidad_tipo as keyof typeof ENTIDAD_LABEL] ?? e.entidad_tipo} — {e.entidad_nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="nota-titulo">Título</Label>
+            <Input
+              id="nota-titulo"
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Acordamos entregar el 15"
+              maxLength={160}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="nota-contenido">Detalle (opcional)</Label>
+            <Textarea
+              id="nota-contenido"
+              value={contenido}
+              onChange={(e) => setContenido(e.target.value)}
+              placeholder="Contexto, condiciones, lo que haga falta recordar después."
+              rows={5}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setAbierto(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={!titulo.trim() || guardando}>
+            Guardar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

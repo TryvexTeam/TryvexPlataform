@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ArrowLeft, Pencil, Trash2, Globe, Phone, MapPin, Star, MessageSquare } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowLeft, Pencil, Trash2, Globe, Phone, MapPin, Star, MessageSquare, BookOpen } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -104,6 +105,9 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" render={<Link href={`/cerebro?entidad_tipo=lead&entidad_id=${lead.id}`} />}>
+            <BookOpen size={13} className="mr-1.5" /> Bitácora
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil size={13} className="mr-1.5" /> Editar
           </Button>
