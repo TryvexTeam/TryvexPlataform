@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Bot,
   Clock,
+  MessagesSquare,
 } from 'lucide-react'
 import { TryvexLogo } from '@/components/shared/tryvex-logo'
 
@@ -27,6 +28,7 @@ const MotionLink = motion.create(Link)
 
 const primaryNav = [
   { href: '/hoy',                 label: 'Hoy',           icon: Sun,             count: null },
+  { href: '/chat',                label: 'Chat',          icon: MessagesSquare,  count: null },
   { href: '/dashboard',           label: 'Dashboard',     icon: LayoutDashboard, count: null },
   { href: '/leads',               label: 'Leads',         icon: Users,           count: null },
   { href: '/clientes',            label: 'Clientes',      icon: Building2,       count: null },
