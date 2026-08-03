@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Bot,
+  Clock,
 } from 'lucide-react'
 import { TryvexLogo } from '@/components/shared/tryvex-logo'
 
@@ -34,6 +35,7 @@ const primaryNav = [
   { href: '/reuniones',           label: 'Equipo',        icon: CalendarDays,    count: null },
   { href: '/cerebro',             label: 'Cerebro',       icon: BookOpen,        count: null },
   { href: '/vex',                 label: 'Vex',           icon: Bot,             count: null },
+  { href: '/jornada',             label: 'Jornada',       icon: Clock,           count: null },
 ]
 
 const systemNav = [
@@ -166,29 +168,6 @@ export function Sidebar({ onNavigate, forceExpand = false }: SidebarProps) {
           filter: 'blur(60px)',
         }}
       />
-
-      {/* Workspace identity */}
-      <div
-        className={`flex items-center gap-2.5 mx-3 mb-1 mt-4 px-3 py-2 rounded-xl ${collapsed ? 'justify-center' : ''}`}
-        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
-      >
-        <div
-          style={{
-            width: 26, height: 26, borderRadius: '50%',
-            background: 'linear-gradient(135deg,#FF8A5B,#8B5CF6)',
-            display: 'grid', placeItems: 'center',
-            color: '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0,
-          }}
-        >
-          T
-        </div>
-        {!collapsed && (
-          <div className="min-w-0">
-            <div className="text-[12px] font-semibold text-[var(--tx-ink-primary)] truncate leading-tight">Tryvex CRM</div>
-            <div className="text-[10px] text-[var(--tx-ink-muted)] leading-tight">Pro</div>
-          </div>
-        )}
-      </div>
 
       {/* Top Header - Tryvex Logo */}
       <div className={`flex items-center pt-6 pb-4 ${collapsed ? 'justify-center px-0' : 'justify-between px-[18px]'}`}>

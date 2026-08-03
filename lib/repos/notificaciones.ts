@@ -78,6 +78,16 @@ export class NotificacionesRepository {
           link: input.link ?? null,
         }))
       )
+
+      // Misma notificación al celular / PC vía Web Push. Best-effort: si falla,
+      // la campanita in-app ya quedó guardada arriba.
+      const { enviarPush } = await import('@/lib/push/server')
+      await enviarPush(habilitados, {
+        titulo: input.titulo,
+        cuerpo: input.cuerpo,
+        link: input.link,
+        tag: input.tipo,
+      })
     } catch (err) {
       console.error('[notificar]', err instanceof Error ? err.message : err)
     }

@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Plus, LayoutList, Kanban, X } from 'lucide-react'
 import { ClienteForm } from './cliente-form'
 import { ClientesFeed } from './clientes-feed'

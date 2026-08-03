@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ProyectoInsertSchema, type Proyecto, type ProyectoInsert } from '@/lib/types/proyecto'
 import { nombreCliente, type Cliente } from '@/lib/types/cliente'
 import { Button } from '@/components/ui/button'

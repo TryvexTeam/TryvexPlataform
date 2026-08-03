@@ -69,6 +69,7 @@ export type Integrante = {
   especialidad: string | null
   avatar_url: string | null
   activo: boolean
+  es_admin: boolean
   color: string | null
   telefono: string | null
   horario: HorarioDia[] | null

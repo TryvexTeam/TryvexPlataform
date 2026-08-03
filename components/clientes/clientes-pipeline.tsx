@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { KanbanBoard, type KanbanColumn } from '@/components/shared/kanban-board'
 import { AlertTriangle, TrendingUp, FolderKanban } from 'lucide-react'
 import { nombreCliente, type Cliente } from '@/lib/types/cliente'

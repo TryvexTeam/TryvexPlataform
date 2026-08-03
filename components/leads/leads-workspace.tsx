@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { LeadsInbox } from './leads-inbox'
 import { LeadPanel } from './lead-panel'
 import { LeadTaskPanel } from './lead-task-panel'
