@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/lib/toast'
 import { ENTIDAD_LABEL, type EntradaCerebro } from '@/lib/types/cerebro'
+import { Markdown } from './markdown'
 
 interface EntidadOpcion {
   entidad_tipo: string
@@ -36,6 +37,7 @@ export function NuevaNota({ entidades, onCreada, children }: NuevaNotaProps) {
   const [contenido, setContenido] = useState('')
   const [clave, setClave] = useState('equipo')
   const [guardando, setGuardando] = useState(false)
+  const [previsualizando, setPrevisualizando] = useState(false)
 
   const guardar = async () => {
     if (!titulo.trim()) return
@@ -57,6 +59,7 @@ export function NuevaNota({ entidades, onCreada, children }: NuevaNotaProps) {
       setAbierto(false)
       setTitulo('')
       setContenido('')
+      setPrevisualizando(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error guardando la nota')
     } finally {
@@ -105,14 +108,36 @@ export function NuevaNota({ entidades, onCreada, children }: NuevaNotaProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="nota-contenido">Detalle (opcional)</Label>
-            <Textarea
-              id="nota-contenido"
-              value={contenido}
-              onChange={(e) => setContenido(e.target.value)}
-              placeholder="Contexto, condiciones, lo que haga falta recordar después."
-              rows={5}
-            />
+            <div className="flex items-baseline justify-between gap-2">
+              <Label htmlFor="nota-contenido">Detalle (opcional)</Label>
+              {contenido.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setPrevisualizando((v) => !v)}
+                  aria-pressed={previsualizando}
+                  className="text-[11px] text-[var(--tx-ink-muted)] underline underline-offset-2"
+                >
+                  {previsualizando ? 'Escribir' : 'Vista previa'}
+                </button>
+              )}
+            </div>
+
+            {previsualizando ? (
+              <div className="min-h-[7.5rem] rounded-md border border-neutral-200 px-3 py-2">
+                <Markdown>{contenido}</Markdown>
+              </div>
+            ) : (
+              <Textarea
+                id="nota-contenido"
+                value={contenido}
+                onChange={(e) => setContenido(e.target.value)}
+                placeholder="Contexto, condiciones, lo que haga falta recordar después."
+                rows={5}
+              />
+            )}
+            <p className="text-[11px] text-[var(--tx-ink-muted)]">
+              Acepta markdown: **negrita**, listas con `-`, {'>'} citas y [enlaces](https://tryvex.tech).
+            </p>
           </div>
         </div>
 

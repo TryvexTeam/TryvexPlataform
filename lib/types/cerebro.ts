@@ -10,6 +10,10 @@ export const FUENTES = [
   'nota',
   'scraper',
   'sistema',
+  // Externas: no salen de esta base, entran por la ingesta on-demand.
+  'chatia',
+  'github',
+  'contexto',
 ] as const
 
 export type EntidadTipo = (typeof ENTIDADES)[number]
@@ -56,6 +60,9 @@ export const FUENTE_LABEL: Record<FuenteEntrada, string> = {
   nota: 'Nota',
   scraper: 'Scraper',
   sistema: 'Sistema',
+  chatia: 'Equipo (#chatia)',
+  github: 'Código',
+  contexto: 'Contexto',
 }
 
 /** Color por fuente, para que el timeline se lea de un vistazo. */
@@ -68,6 +75,9 @@ export const FUENTE_COLOR: Record<FuenteEntrada, string> = {
   nota: 'oklch(70% 0.02 260)',
   scraper: 'oklch(68% 0.12 30)',
   sistema: 'oklch(60% 0.02 260)',
+  chatia: 'oklch(72% 0.15 265)',
+  github: 'oklch(74% 0.13 120)',
+  contexto: 'oklch(76% 0.13 60)',
 }
 
 export const ENTIDAD_LABEL: Record<EntidadTipo, string> = {

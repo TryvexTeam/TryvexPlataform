@@ -55,3 +55,7 @@ capture.js
 .claude/settings.local.json
 .claude/skills/
 workspace/
+
+# Crudo de la ingesta al cerebro: conversación interna del equipo.
+# El repo es público — esto nunca se versiona.
+/.cerebro/
