@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { CalendarDays, Clock } from 'lucide-react'
 import { CalendarioSemana } from './calendario-semana'
 import { DisponibilidadGrid } from './disponibilidad-grid'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 
 const TABS = [
   { id: 'calendario', label: 'Calendario', icon: CalendarDays },
@@ -13,6 +14,9 @@ const TABS = [
 type TabId = typeof TABS[number]['id']
 
 export function EquipoTabs() {
+  // Mantiene el calendario del equipo al día sin recargar.
+  useDatosVivos(['reuniones', 'disponibilidad', 'jornadas', 'dim_integrantes'])
+
   const [tab, setTab] = useState<TabId>('calendario')
 
   return (

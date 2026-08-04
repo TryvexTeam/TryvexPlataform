@@ -12,6 +12,7 @@ import { ClientePanel } from './cliente-panel'
 import { RevenueHeader } from './revenue-header'
 import type { Cliente, ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 
 type View = 'lista' | 'pipeline'
 
@@ -22,6 +23,9 @@ interface ClientesWorkspaceProps {
 }
 
 export function ClientesWorkspace({ clientes, proyectos, ventas }: ClientesWorkspaceProps) {
+  // Mantiene clientes al día sin recargar.
+  useDatosVivos(['dim_clientes', 'dim_proyectos', 'fact_ventas'])
+
   const router = useRouter()
   const [view, setView] = useState<View>('lista')
   const [selectedId, setSelectedId] = useState<string | null>(null)

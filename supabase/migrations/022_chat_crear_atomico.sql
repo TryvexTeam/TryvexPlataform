@@ -22,7 +22,7 @@ RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $abrir_dm$
 DECLARE
   mi_id   UUID := mi_integrante_id();
   clave   TEXT;
@@ -65,7 +65,7 @@ BEGIN
   ON CONFLICT DO NOTHING;
 
   RETURN conv_id;
-END $$;
+END $abrir_dm$;
 
 -- ── Crear un grupo ────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION crear_grupo(p_nombre TEXT, p_miembros UUID[])
@@ -73,7 +73,7 @@ RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $crear_grupo$
 DECLARE
   mi_id   UUID := mi_integrante_id();
   conv_id UUID;
@@ -98,7 +98,7 @@ BEGIN
   ON CONFLICT DO NOTHING;
 
   RETURN conv_id;
-END $$;
+END $crear_grupo$;
 
 REVOKE ALL ON FUNCTION abrir_dm(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION crear_grupo(TEXT, UUID[]) FROM PUBLIC;

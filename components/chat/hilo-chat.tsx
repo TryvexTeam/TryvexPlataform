@@ -28,6 +28,7 @@ export function HiloChat({ conversacion, miIntegranteId, enLinea, onMensajeEnvia
   const [enviando, setEnviando] = useState(false)
   const [cargando, setCargando] = useState(true)
   const finRef = useRef<HTMLDivElement>(null)
+  const cajaRef = useRef<HTMLTextAreaElement>(null)
 
   const porId = new Map<string, MiembroChat>(conversacion.miembros.map((m) => [m.integrante_id, m]))
   const titulo = tituloConversacion(conversacion, miIntegranteId)
@@ -82,6 +83,21 @@ export function HiloChat({ conversacion, miIntegranteId, enLinea, onMensajeEnvia
   useEffect(() => {
     finRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensajes.length])
+
+  /**
+   * La caja crece con el texto. Con `rows={1}` fijo, un Shift+Enter metía el salto
+   * pero la altura no cambiaba: la línea nueva empujaba a la anterior fuera de
+   * vista y parecía que el texto desaparecía.
+   *
+   * Se baja a 'auto' antes de medir porque scrollHeight nunca decrece por sí solo:
+   * sin eso la caja crecería y no volvería a achicarse al borrar.
+   */
+  useEffect(() => {
+    const caja = cajaRef.current
+    if (!caja) return
+    caja.style.height = 'auto'
+    caja.style.height = `${caja.scrollHeight}px`
+  }, [borrador])
 
   const enviar = async () => {
     const contenido = borrador.trim()
@@ -195,6 +211,7 @@ export function HiloChat({ conversacion, miIntegranteId, enLinea, onMensajeEnvia
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)' }}
         >
           <textarea
+            ref={cajaRef}
             value={borrador}
             onChange={(e) => setBorrador(e.target.value)}
             onKeyDown={(e) => {
@@ -207,7 +224,7 @@ export function HiloChat({ conversacion, miIntegranteId, enLinea, onMensajeEnvia
             rows={1}
             placeholder="Escribe un mensaje…"
             aria-label="Escribe un mensaje"
-            className="flex-1 bg-transparent resize-none outline-none text-[14px] text-[var(--tx-ink-primary)] max-h-32"
+            className="flex-1 bg-transparent resize-none outline-none text-[14px] text-[var(--tx-ink-primary)] max-h-40 overflow-y-auto"
           />
           <button
             onClick={enviar}

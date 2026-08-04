@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { textoPlano } from '@/lib/markdown/mini'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 import type { Conversacion, Mensaje } from '@/lib/types/chat'
 import { tituloConversacion } from '@/lib/types/chat'
 import { AvatarChat } from './avatar-chat'
@@ -38,6 +39,10 @@ export function ChatWorkspace({
   miIntegranteId,
   conversacionInicialId,
 }: ChatWorkspaceProps) {
+  // El hilo abierto ya escuchaba lo suyo, pero la bandeja no: un mensaje en OTRA
+  // conversación no aparecía hasta recargar.
+  useDatosVivos(['mensajes', 'conversaciones', 'conversacion_miembros'])
+
   const idInicial = conversacionInicialId ?? conversacionesIniciales[0]?.id ?? null
   const [conversaciones, setConversaciones] = useState(() =>
     conversacionesIniciales.map((c) => (c.id === idInicial ? { ...c, no_leidos: 0 } : c)),
