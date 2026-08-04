@@ -10,6 +10,8 @@ import { AvatarChat } from './avatar-chat'
 import { HiloChat } from './hilo-chat'
 import { NuevaConversacion } from './nueva-conversacion'
 import { usePresencia } from './use-presencia'
+import { useDisponibilidad } from './use-disponibilidad'
+import { estadoVisible } from '@/lib/types/presencia'
 
 export interface IntegranteChat {
   id: string
@@ -18,9 +20,17 @@ export interface IntegranteChat {
   color: string | null
 }
 
+export interface AgenteChat {
+  id: string
+  nombre: string
+  color: string | null
+  avatar_url: string | null
+}
+
 interface ChatWorkspaceProps {
   conversacionesIniciales: Conversacion[]
   equipo: IntegranteChat[]
+  agentes?: AgenteChat[]
   miIntegranteId: string
   /** Conversación a abrir de entrada (viene del ?c= de una notificación push). */
   conversacionInicialId?: string
@@ -36,6 +46,7 @@ const FECHA_CORTA = new Intl.DateTimeFormat('es-CL', {
 export function ChatWorkspace({
   conversacionesIniciales,
   equipo,
+  agentes = [],
   miIntegranteId,
   conversacionInicialId,
 }: ChatWorkspaceProps) {
@@ -50,6 +61,9 @@ export function ChatWorkspace({
   const [activaId, setActivaId] = useState<string | null>(idInicial)
   const [abriendo, setAbriendo] = useState(false)
   const enLinea = usePresencia(miIntegranteId)
+  // Presence dice "tiene la pestaña abierta"; la disponibilidad sale del turno
+  // marcado y del calendario. Se muestran juntas.
+  const disponibilidad = useDisponibilidad()
 
   const activa = useMemo(
     () => conversaciones.find((c) => c.id === activaId) ?? null,
@@ -112,9 +126,10 @@ export function ChatWorkspace({
       className="flex h-full min-h-0 rounded-xl overflow-hidden"
       style={{ border: '1px solid var(--border)' }}
     >
-      {/* Bandeja */}
+      {/* Bandeja. En un teléfono no caben las dos columnas: se muestra esta o el
+          hilo, nunca ambas. */}
       <aside
-        className="w-[300px] shrink-0 flex flex-col min-h-0"
+        className={`${activaId ? 'hidden md:flex' : 'flex'} w-full md:w-[300px] shrink-0 flex-col min-h-0`}
         style={{ borderRight: '1px solid var(--border)' }}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
@@ -136,7 +151,9 @@ export function ChatWorkspace({
             conversaciones.map((c) => {
               const titulo = tituloConversacion(c, miIntegranteId)
               const otro = c.miembros.find((m) => m.integrante_id !== miIntegranteId)
-              const activoAhora = c.tipo === 'dm' && otro ? enLinea.has(otro.integrante_id) : false
+              const estadoOtro = otro
+                ? estadoVisible(disponibilidad.get(otro.integrante_id), enLinea.has(otro.integrante_id))
+                : undefined
               const seleccionada = c.id === activaId
 
               return (
@@ -150,7 +167,7 @@ export function ChatWorkspace({
                     nombre={titulo}
                     avatarUrl={otro?.avatar_url}
                     color={otro?.color}
-                    enLinea={activoAhora}
+                    estado={c.tipo === 'dm' ? estadoOtro : undefined}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
@@ -163,7 +180,7 @@ export function ChatWorkspace({
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[12px] text-[var(--tx-ink-muted)] truncate">
-                        {c.ultimo_mensaje ? textoPlano(c.ultimo_mensaje.contenido) : 'Sin mensajes'}
+                        {vistaPrevia(c.ultimo_mensaje)}
                       </span>
                       {c.no_leidos > 0 && (
                         <span
@@ -183,14 +200,17 @@ export function ChatWorkspace({
       </aside>
 
       {/* Hilo */}
-      <section className="flex-1 min-w-0 min-h-0">
+      <section className={`${activaId ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 min-h-0`}>
         {activa ? (
           <HiloChat
             key={activa.id}
             conversacion={activa}
             miIntegranteId={miIntegranteId}
             enLinea={enLinea}
+            disponibilidad={disponibilidad}
+            agentes={agentes}
             onMensajeEnviado={alEnviar}
+            onVolver={() => setActivaId(null)}
           />
         ) : (
           <div className="h-full grid place-items-center text-sm text-[var(--tx-ink-muted)]">
@@ -200,4 +220,20 @@ export function ChatWorkspace({
       </section>
     </div>
   )
+}
+
+/**
+ * Qué se lee en la bandeja. Un mensaje que es solo una foto no tiene texto que
+ * mostrar, así que se describe; y el markdown va sin sus marcas.
+ */
+function vistaPrevia(mensaje: Mensaje | null): string {
+  if (!mensaje) return 'Sin mensajes'
+  if (mensaje.contenido?.trim()) return textoPlano(mensaje.contenido)
+
+  const cuantos = mensaje.adjuntos?.length ?? 0
+  if (cuantos === 0) return 'Sin mensajes'
+  if (cuantos === 1) {
+    return mensaje.adjuntos![0].tipo_mime.startsWith('image/') ? '📷 Imagen' : '📎 Archivo'
+  }
+  return `📎 ${cuantos} archivos`
 }

@@ -2,7 +2,9 @@ import { z } from 'zod'
 
 export const EnviarMensajeSchema = z.object({
   conversacion_id: z.string().uuid(),
-  contenido: z.string().trim().min(1, 'El mensaje está vacío').max(4000, 'Máximo 4000 caracteres'),
+  // Vacío se permite: un mensaje que es solo una foto es un mensaje válido. Que
+  // no venga ni texto ni archivo lo rechaza el route, que sí ve los adjuntos.
+  contenido: z.string().trim().max(4000, 'Máximo 4000 caracteres').optional(),
 })
 
 export const CrearConversacionSchema = z
@@ -24,7 +26,33 @@ export const CrearConversacionSchema = z
 export type EnviarMensajeInput = z.infer<typeof EnviarMensajeSchema>
 export type CrearConversacionInput = z.infer<typeof CrearConversacionSchema>
 
-export type TipoConversacion = 'dm' | 'grupo'
+export type TipoConversacion = 'dm' | 'grupo' | 'agentes'
+
+export type AdjuntoMensaje = {
+  id: string
+  nombre: string
+  tipo_mime: string
+  bytes: number
+  ancho: number | null
+  alto: number | null
+}
+
+/** ¿Se pinta como imagen o como tarjeta de archivo? */
+export function esImagen(adjunto: AdjuntoMensaje): boolean {
+  return adjunto.tipo_mime.startsWith('image/')
+}
+
+/** El adjunto se sirve por endpoint propio: revalida permiso en cada pedido y la
+ *  URL no vence a mitad de la conversación, como pasaría con una firmada. */
+export function urlAdjunto(id: string): string {
+  return `/api/chat/adjuntos/${id}`
+}
+
+export function pesoLegible(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 export type MiembroChat = {
   integrante_id: string
@@ -37,11 +65,15 @@ export type MiembroChat = {
 export type Mensaje = {
   id: string
   conversacion_id: string
-  autor_id: string
-  contenido: string
+  /** Nulo cuando escribió un agente: entonces viene `agente_id`. */
+  autor_id: string | null
+  agente_id?: string | null
+  /** Nulo cuando el mensaje es solo un adjunto. */
+  contenido: string | null
   created_at: string
   editado_at: string | null
   eliminado_at: string | null
+  adjuntos?: AdjuntoMensaje[]
 }
 
 export type Conversacion = {

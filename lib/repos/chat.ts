@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { Conversacion, Mensaje, MiembroChat, TipoConversacion } from '@/lib/types/chat'
+import type { AdjuntoMensaje, Conversacion, Mensaje, MiembroChat, TipoConversacion } from '@/lib/types/chat'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -89,28 +89,51 @@ export class ChatRepository {
     }))
   }
 
+  /**
+   * Los adjuntos vienen en el mismo viaje: pedirlos aparte serían N consultas más
+   * por hilo. La `ruta` no se expone al cliente — se sirve por endpoint propio.
+   *
+   * Si la tabla todavía no existe se reintenta sin ella. Suena defensivo de más,
+   * pero es un caso verificado: Vercel despliega solo al mergear a `main` y las
+   * migraciones se corren a mano, así que existe una ventana real en la que el
+   * código nuevo convive con la base vieja. Sin este resguardo, en esa ventana el
+   * chat entero deja de cargar con un PGRST200 — se rompe lo que ya funcionaba
+   * por una función que todavía no está.
+   */
   async listMensajes(conversacionId: string, limite = 100): Promise<Mensaje[]> {
-    const { data, error } = await this.sb
-      .from('mensajes')
-      .select('*')
-      .eq('conversacion_id', conversacionId)
-      .order('created_at', { ascending: false })
-      .limit(limite)
+    const consulta = (columnas: string) =>
+      this.sb
+        .from('mensajes')
+        .select(columnas)
+        .eq('conversacion_id', conversacionId)
+        .order('created_at', { ascending: false })
+        .limit(limite)
+
+    let { data, error } = await consulta('*, mensaje_adjuntos(id, nombre, tipo_mime, bytes, ancho, alto)')
+
+    // PGRST200: no existe la relación. Es "falta la migración", no "falló la consulta".
+    if (error?.code === 'PGRST200') {
+      ;({ data, error } = await consulta('*'))
+    }
     if (error) throw new Error(error.message)
+
     // Se piden los más nuevos, se muestran en orden cronológico.
-    return ((data ?? []) as Mensaje[]).reverse()
+    return ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[])
+      .map(({ mensaje_adjuntos, ...m }) => ({ ...m, adjuntos: mensaje_adjuntos ?? [] }))
+      .reverse()
   }
 
-  async enviar(conversacionId: string, autorId: string, contenido: string): Promise<Mensaje> {
+  async enviar(conversacionId: string, autorId: string, contenido: string | null): Promise<Mensaje> {
+    const texto = contenido?.trim() || null
     const { data, error } = await this.sb
       .from('mensajes')
-      .insert({ conversacion_id: conversacionId, autor_id: autorId, contenido: contenido.trim() })
+      .insert({ conversacion_id: conversacionId, autor_id: autorId, contenido: texto })
       .select()
       .single()
     if (error) throw new Error(error.message)
 
     await this.marcarLeida(conversacionId, autorId)
-    return data as Mensaje
+    return { ...(data as Mensaje), adjuntos: [] }
   }
 
   async marcarLeida(conversacionId: string, integranteId: string): Promise<void> {

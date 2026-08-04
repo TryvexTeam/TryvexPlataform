@@ -104,3 +104,54 @@ describe('textoPlano', () => {
     expect(textoPlano('mirá [el PR](https://github.com/x/y/pull/1)')).toBe('mirá el PR')
   })
 })
+
+describe('sabor chat (Discord)', () => {
+  test('respeta cada salto de línea en vez de juntar las líneas', () => {
+    const [bloque] = parsearMarkdown('primera\nsegunda', { chat: true })
+    expect(bloque).toMatchObject({ tipo: 'parrafo' })
+    expect(bloque.tipo === 'parrafo' && bloque.contenido).toEqual([
+      { tipo: 'texto', texto: 'primera' },
+      { tipo: 'salto', texto: '' },
+      { tipo: 'texto', texto: 'segunda' },
+    ])
+  })
+
+  test('sin modo chat las junta, como manda markdown', () => {
+    const [bloque] = parsearMarkdown('primera\nsegunda')
+    expect(bloque.tipo === 'parrafo' && bloque.contenido).toEqual([
+      { tipo: 'texto', texto: 'primera segunda' },
+    ])
+  })
+
+  test('enlaza una URL escrita a secas', () => {
+    expect(parsearInline('mirá https://tryvex.tech')).toEqual([
+      { tipo: 'texto', texto: 'mirá ' },
+      { tipo: 'enlace', texto: 'https://tryvex.tech', href: 'https://tryvex.tech' },
+    ])
+  })
+
+  test('deja fuera del enlace el punto final de la oración', () => {
+    expect(parsearInline('anda https://tryvex.tech.')).toEqual([
+      { tipo: 'texto', texto: 'anda ' },
+      { tipo: 'enlace', texto: 'https://tryvex.tech', href: 'https://tryvex.tech' },
+      { tipo: 'texto', texto: '.' },
+    ])
+  })
+
+  test('no toca la URL que ya viene dentro de un enlace con texto', () => {
+    expect(parsearInline('[el sitio](https://tryvex.tech)')).toEqual([
+      { tipo: 'enlace', texto: 'el sitio', href: 'https://tryvex.tech' },
+    ])
+  })
+
+  test('reconoce el spoiler', () => {
+    expect(parsearInline('la clave es ||1234||')).toEqual([
+      { tipo: 'texto', texto: 'la clave es ' },
+      { tipo: 'spoiler', texto: '1234' },
+    ])
+  })
+
+  test('la vista previa no revela el spoiler', () => {
+    expect(textoPlano('la clave es ||1234||')).toBe('la clave es ▮▮▮')
+  })
+})

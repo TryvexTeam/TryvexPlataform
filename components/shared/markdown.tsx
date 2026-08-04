@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, Fragment, useContext } from 'react'
+import { createContext, Fragment, useContext, useState } from 'react'
 import { parsearInline, parsearMarkdown, type BloqueMd, type NodoInline } from '@/lib/markdown/mini'
 
 interface MarkdownProps {
@@ -12,6 +12,8 @@ interface MarkdownProps {
    * va sobre el acento). Con esto el markdown no impone el suyo y hereda.
    */
   heredaColor?: boolean
+  /** Modo chat, como Discord: cada salto de línea se respeta tal cual se escribió. */
+  chat?: boolean
 }
 
 const HeredaColor = createContext(false)
@@ -20,11 +22,11 @@ const HeredaColor = createContext(false)
  * Pinta markdown. Arma nodos de React a partir del parser: nada de HTML crudo,
  * así que un mensaje de Discord o del chat no puede inyectar nada.
  */
-export function Markdown({ children, className, heredaColor = false }: MarkdownProps) {
-  const bloques = parsearMarkdown(children)
+export function Markdown({ children, className, heredaColor = false, chat = false }: MarkdownProps) {
+  const bloques = parsearMarkdown(children, { chat })
   const base = heredaColor
-    ? 'tx-md leading-relaxed'
-    : 'tx-md text-[13px] leading-relaxed text-[var(--tx-ink-secondary,var(--tx-ink-muted))]'
+    ? 'tx-md leading-relaxed min-w-0 break-words'
+    : 'tx-md text-[13px] leading-relaxed min-w-0 break-words text-[var(--tx-ink-secondary,var(--tx-ink-muted))]'
 
   return (
     <HeredaColor.Provider value={heredaColor}>
@@ -115,6 +117,10 @@ function Inline({ nodos }: { nodos: NodoInline[] }) {
             return <em key={i}>{nodo.texto}</em>
           case 'tachado':
             return <del key={i}>{nodo.texto}</del>
+          case 'salto':
+            return <br key={i} />
+          case 'spoiler':
+            return <Spoiler key={i} texto={nodo.texto} />
           case 'codigo':
             return (
               <code key={i} className="px-1 py-0.5 rounded bg-black/25 text-[12px] font-mono">
@@ -128,7 +134,8 @@ function Inline({ nodos }: { nodos: NodoInline[] }) {
                 href={nodo.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`underline underline-offset-2 hover:opacity-80 ${hereda ? '' : 'text-[var(--tx-ink-primary)]'}`}
+                // Una URL larga no tiene espacios donde cortar: sin esto empuja la burbuja.
+                className={`underline underline-offset-2 break-all hover:opacity-80 ${hereda ? '' : 'text-[var(--tx-ink-primary)]'}`}
               >
                 {nodo.texto}
               </a>
@@ -138,6 +145,25 @@ function Inline({ nodos }: { nodos: NodoInline[] }) {
         }
       })}
     </>
+  )
+}
+
+/** `||texto||`: tapado hasta que alguien decide mirarlo, como en Discord. */
+function Spoiler({ texto }: { texto: string }) {
+  const [visible, setVisible] = useState(false)
+
+  if (visible) return <span className="rounded px-1 bg-current/10">{texto}</span>
+
+  return (
+    <button
+      type="button"
+      onClick={() => setVisible(true)}
+      aria-label="Mostrar contenido oculto"
+      className="rounded px-1 bg-current/25 hover:bg-current/35 transition-colors"
+    >
+      {/* El texto va presente pero invisible: así el ancho no cambia al revelarlo. */}
+      <span className="invisible">{texto}</span>
+    </button>
   )
 }
 
