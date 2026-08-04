@@ -5,14 +5,14 @@
 
 **Proyecto**: Tryvex App (CRM: Leads → Clientes → Proyectos → Tareas)
 **Stack**: Next.js 16 + React 19 + Supabase + shadcn/ui + dnd-kit + Anthropic SDK
-**Last updated**: 2026-05-27
-**Total nodes**: 0 sessions
+**Last updated**: 2026-08-03
+**Total nodes**: 1 session
 
 ---
 
 ## Sessions
 
-*(vacío — se poblará con cada sesión de trabajo significativa)*
+- [2026-08-03 — Cerebro, chat y móvil](sessions/2026-08-03-chat-cerebro-y-movil.md) — el cerebro deja de ser ciego a la conversación, el chat llega a nivel Slack, el móvil deja de ser inusable. Migraciones 021-027, PRs #32 a #42.
 
 ---
 

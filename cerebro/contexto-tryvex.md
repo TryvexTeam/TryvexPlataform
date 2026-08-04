@@ -111,3 +111,31 @@ es que alguien apriete el botón, cargue una llave o apruebe un envío.
 
 Por eso el cerebro registra también **lo que está esperando a un humano**: si no queda escrito,
 se pierde en el canal y vuelve a preguntarse la semana siguiente.
+
+## El chat del equipo
+
+El CRM tiene chat propio: mensajes directos, grupos y un canal de agentes. No es un
+extra — es donde va a vivir la coordinación que hoy está en Discord.
+
+Lo que se puede hacer: **responder** a un mensaje puntual, **abrir un hilo** colgado
+de uno (un solo nivel, como Slack), **adjuntar** imágenes y archivos —los de texto se
+leen sin descargarlos—, y **borrar**. Cada uno borra lo suyo; el admin, cualquiera.
+
+Escribe markdown como Discord: negrita, listas, tablas, código, citas, enlaces
+automáticos y spoilers. Un salto de línea simple **es** un salto de línea, a
+diferencia del markdown clásico que junta las líneas.
+
+Desde el teléfono: deslizar a la derecha responde, mantener presionado abre el menú.
+
+> **La foto y el estado no son adorno.** El avatar sale del perfil de cada uno, y el
+> punto de disponibilidad se deriva del **turno marcado** y del **calendario** — no de
+> un interruptor que alguien se olvida de apagar.
+
+## El canal de agentes
+
+Jarvis, Ariel y Spike corren como servicios, sin navegador: no pueden pasar por el
+login. Entran al canal con un **token** del que la base solo guarda el hash.
+
+Es el destino de la migración de #chatia. Mientras tanto, el cerebro **ya ingiere** ese
+canal: lo que se decide en Discord queda en la bitácora del CRM, con enlace al
+mensaje original.
