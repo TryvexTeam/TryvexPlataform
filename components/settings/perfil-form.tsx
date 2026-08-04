@@ -17,6 +17,7 @@ import {
   type HorarioDia,
   type Notificaciones,
 } from '@/lib/types/integrante'
+import { AvatarUploader } from './avatar-uploader'
 import { cn } from '@/lib/utils'
 
 interface PerfilFormProps {
@@ -102,7 +103,9 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
           <CardTitle className="flex items-center gap-2 text-base"><User size={16} /> Perfil</CardTitle>
           <CardDescription>Cómo te ve el resto del equipo</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
+          <AvatarUploader nombre={nombre || perfil.nombre} color={color} avatarInicial={perfil.avatar_url} />
+
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Nombre</Label>

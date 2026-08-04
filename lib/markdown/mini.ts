@@ -17,6 +17,9 @@ export type NodoInline =
   | { tipo: 'tachado'; texto: string }
   | { tipo: 'codigo'; texto: string }
   | { tipo: 'enlace'; texto: string; href: string }
+  | { tipo: 'spoiler'; texto: string }
+  /** Salto de línea dentro de un párrafo. Solo aparece en modo chat. */
+  | { tipo: 'salto'; texto: '' }
 
 export type BloqueMd =
   | { tipo: 'titulo'; nivel: 1 | 2 | 3; contenido: NodoInline[] }
@@ -31,8 +34,10 @@ const ESQUEMAS_OK = /^(https?:\/\/|mailto:|\/)/i
 
 // El destino admite un nivel de paréntesis anidados: sin eso, un
 // `(javascript:alert(1))` corta en el primer `)` y deja basura suelta en el texto.
+// El orden importa: `||` y `~~` van antes que `*`/`_` para que no los parta a medias.
+// La URL suelta va última, para no pisar la que ya viene dentro de un [texto](url).
 const INLINE =
-  /(\[[^\]\n]+\]\((?:[^()\s]|\([^()\s]*\))+\))|(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(\*[^*\n]+\*)|(_[^_\n]+_)|(~~[^~\n]+~~)/
+  /(\[[^\]\n]+\]\((?:[^()\s]|\([^()\s]*\))+\))|(`[^`\n]+`)|(\|\|[^\n]+?\|\|)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(_[^_\n]+_)|(https?:\/\/[^\s<>()]+)/
 
 /** Parte una línea en trozos con formato. Lo que no matchea queda como texto. */
 export function parsearInline(linea: string): NodoInline[] {
@@ -57,10 +62,18 @@ export function parsearInline(linea: string): NodoInline[] {
       else nodos.push({ tipo: 'texto', texto })
     } else if (token.startsWith('`')) {
       nodos.push({ tipo: 'codigo', texto: token.slice(1, -1) })
+    } else if (token.startsWith('||')) {
+      nodos.push({ tipo: 'spoiler', texto: token.slice(2, -2) })
     } else if (token.startsWith('**') || token.startsWith('__')) {
       nodos.push({ tipo: 'fuerte', texto: token.slice(2, -2) })
     } else if (token.startsWith('~~')) {
       nodos.push({ tipo: 'tachado', texto: token.slice(2, -2) })
+    } else if (/^https?:\/\//.test(token)) {
+      // URL escrita a secas. Se recorta la puntuación final: nadie quiere el punto
+      // de "mirá https://tryvex.tech." dentro del enlace.
+      const limpia = token.replace(/[.,;:!?]+$/, '')
+      nodos.push({ tipo: 'enlace', texto: limpia, href: limpia })
+      if (limpia.length < token.length) nodos.push({ tipo: 'texto', texto: token.slice(limpia.length) })
     } else {
       nodos.push({ tipo: 'enfasis', texto: token.slice(1, -1) })
     }
@@ -71,8 +84,19 @@ export function parsearInline(linea: string): NodoInline[] {
   return nodos.filter((n) => n.tipo !== 'texto' || n.texto.length > 0)
 }
 
+export interface OpcionesMd {
+  /**
+   * Modo chat, como Discord: un salto de línea simple ES un salto de línea.
+   *
+   * En markdown clásico dos líneas seguidas se juntan en un párrafo, y en un chat
+   * eso arruina el mensaje: quien escribe tres líneas cortas las ve pegadas en un
+   * bloque. Acá cada Enter se respeta tal como se escribió.
+   */
+  chat?: boolean
+}
+
 /** Convierte el texto completo en bloques listos para pintar. */
-export function parsearMarkdown(fuente: string): BloqueMd[] {
+export function parsearMarkdown(fuente: string, opciones: OpcionesMd = {}): BloqueMd[] {
   const lineas = fuente.replace(/\r\n/g, '\n').split('\n')
   const bloques: BloqueMd[] = []
   let i = 0
@@ -151,7 +175,18 @@ export function parsearMarkdown(fuente: string): BloqueMd[] {
       cuerpo.push(lineas[i])
       i++
     }
-    bloques.push({ tipo: 'parrafo', contenido: parsearInline(cuerpo.join(' ')) })
+
+    if (opciones.chat) {
+      // Cada línea conserva su salto, con un marcador entre medio.
+      const contenido: NodoInline[] = []
+      cuerpo.forEach((linea, indice) => {
+        if (indice > 0) contenido.push({ tipo: 'salto', texto: '' })
+        contenido.push(...parsearInline(linea))
+      })
+      bloques.push({ tipo: 'parrafo', contenido })
+    } else {
+      bloques.push({ tipo: 'parrafo', contenido: parsearInline(cuerpo.join(' ')) })
+    }
   }
 
   return bloques
@@ -182,7 +217,8 @@ export function textoPlano(fuente: string): string {
 }
 
 function inlineAPlano(nodos: NodoInline[]): string {
-  return nodos.map((n) => n.texto).join('')
+  // El spoiler no se revela en la vista previa de la bandeja: para eso está oculto.
+  return nodos.map((n) => (n.tipo === 'spoiler' ? '▮▮▮' : n.tipo === 'salto' ? ' ' : n.texto)).join('')
 }
 
 /** ¿Vale la pena tratarlo como markdown, o es texto plano y basta? */

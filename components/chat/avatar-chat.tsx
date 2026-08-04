@@ -1,10 +1,15 @@
 'use client'
 
+import { PRESENCIA_COLOR, PRESENCIA_LABEL, type EstadoPresencia } from '@/lib/types/presencia'
+
 interface AvatarChatProps {
   nombre: string
   avatarUrl?: string | null
   color?: string | null
+  /** Atajo para "disponible": equivale a estado="disponible". */
   enLinea?: boolean
+  /** Disponibilidad real. Si viene, manda sobre `enLinea`. */
+  estado?: EstadoPresencia
   size?: number
 }
 
@@ -17,9 +22,16 @@ function iniciales(nombre: string): string {
     .join('')
 }
 
-/** Avatar con el punto verde de "activo", igual que en Instagram. */
-export function AvatarChat({ nombre, avatarUrl, color, enLinea = false, size = 44 }: AvatarChatProps) {
+/**
+ * Avatar con el punto de disponibilidad.
+ *
+ * El punto ya no es verde-o-nada: distingue disponible, en reunión y en pausa.
+ * Fuera de turno no lleva punto — un gris permanente es ruido, no información.
+ */
+export function AvatarChat({ nombre, avatarUrl, color, enLinea = false, estado, size = 44 }: AvatarChatProps) {
   const punto = Math.max(10, Math.round(size * 0.28))
+  const resuelto: EstadoPresencia | null = estado ?? (enLinea ? 'disponible' : null)
+  const muestraPunto = resuelto !== null && resuelto !== 'fuera_de_turno' && resuelto !== 'inactivo'
 
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
@@ -48,16 +60,16 @@ export function AvatarChat({ nombre, avatarUrl, color, enLinea = false, size = 4
         </div>
       )}
 
-      {enLinea && (
+      {muestraPunto && resuelto && (
         <span
           className="absolute bottom-0 right-0 rounded-full"
           style={{
             width: punto,
             height: punto,
-            background: 'oklch(72% 0.17 145)',
+            background: PRESENCIA_COLOR[resuelto],
             border: '2px solid var(--tx-bg-primary)',
           }}
-          title={`${nombre} está activo`}
+          title={`${nombre} — ${PRESENCIA_LABEL[resuelto]}`}
         />
       )}
     </div>
