@@ -2,6 +2,7 @@
 
 import { Flame, CalendarClock, UserPlus, type LucideIcon } from 'lucide-react'
 import Link from 'next/link'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 
 /* Íconos resueltos en el cliente — los Server Components pasan solo el nombre
    (las funciones no son serializables a través del boundary RSC) */
@@ -43,6 +44,9 @@ export function HoySeccion({
   emptyEmoji,
   emptyAction,
 }: HoySeccionProps) {
+  // Mantiene la vista de hoy al día sin recargar.
+  useDatosVivos(['tareas', 'reuniones', 'fact_leads'])
+
   const Icon = ICONS[icon] ?? Flame
   return (
     <section

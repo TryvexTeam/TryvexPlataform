@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { DashFeed, FeedItem } from './dash-feed'
 import { DashReader, DashStats } from './dash-reader'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 
 interface DashWorkspaceProps {
   items: FeedItem[]
@@ -10,6 +11,9 @@ interface DashWorkspaceProps {
 }
 
 export function DashWorkspace({ items, stats }: DashWorkspaceProps) {
+  // Mantiene el dashboard al día sin recargar.
+  useDatosVivos(['tareas', 'fact_leads', 'dim_clientes', 'reuniones'])
+
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const selected = items.find(i => i.id === selectedId) ?? null

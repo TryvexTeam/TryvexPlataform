@@ -8,7 +8,7 @@ import { KanbanBoard } from '@/components/shared/kanban-board'
 import { TareaCard } from './tarea-card'
 import { TareaForm } from './tarea-form'
 import { Button } from '@/components/ui/button'
-import { createClient } from '@/lib/supabase/client'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 import type { TareaConResponsables, TareaInsert } from '@/lib/types/tarea'
 
 const COLUMNS = [
@@ -29,18 +29,9 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
   const [formOpen, setFormOpen] = useState(false)
   const [soloMias, setSoloMias] = useState(false)
 
-  // Realtime
-  useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel('tareas-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tareas' }, () => {
-        router.refresh()
-      })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [router])
+  // Realtime + red de seguridad al volver a la pestaña. Antes solo escuchaba
+  // `tareas`, que no estaba publicada: el canal decía SUBSCRIBED y no llegaba nada.
+  useDatosVivos(['tareas', 'tarea_responsables'])
 
   // Sync cuando el server revalida
   useEffect(() => {

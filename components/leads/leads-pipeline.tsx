@@ -10,7 +10,7 @@ import { LeadForm } from './lead-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { createClient } from '@/lib/supabase/client'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 import type { Lead, LeadInsert } from '@/lib/types/lead'
 import { ESTADOS_LEAD } from '@/lib/types/lead'
 import { cn } from '@/lib/utils'
@@ -30,17 +30,8 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
 
   useEffect(() => { setLeads(initialLeads) }, [initialLeads])
 
-  // Realtime
-  useEffect(() => {
-    const supabase = createClient()
-    const ch = supabase
-      .channel('leads-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'fact_leads' }, () => {
-        router.refresh()
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
-  }, [router])
+  // `fact_leads` tampoco estaba publicada: el canal decía SUBSCRIBED sin recibir nada.
+  useDatosVivos(['fact_leads', 'interacciones_lead'])
 
   const leadsFiltrados = leads.filter((l) =>
     l.nombre_negocio.toLowerCase().includes(search.toLowerCase())

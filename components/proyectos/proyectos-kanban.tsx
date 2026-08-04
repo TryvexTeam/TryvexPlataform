@@ -11,6 +11,7 @@ import type { Proyecto, ProyectoInsert } from '@/lib/types/proyecto'
 import type { Cliente } from '@/lib/types/cliente'
 import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
 import { cn } from '@/lib/utils'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 
 interface ProyectosKanbanProps {
   initialProyectos: Proyecto[]
@@ -51,6 +52,9 @@ function ProyectoCard({ proyecto, onClick }: { proyecto: Proyecto; onClick?: () 
 }
 
 export function ProyectosKanban({ initialProyectos, clientes }: ProyectosKanbanProps) {
+  // Mantiene proyectos al día sin recargar.
+  useDatosVivos(['dim_proyectos', 'tareas'])
+
   const router = useRouter()
   const [proyectos, setProyectos] = useState<Proyecto[]>(initialProyectos)
   const [formOpen, setFormOpen] = useState(false)
