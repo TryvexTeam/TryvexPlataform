@@ -44,20 +44,12 @@ ALTER TABLE mensaje_adjuntos ENABLE ROW LEVEL SECURITY;
 
 -- Se ve el adjunto si se ve el mensaje. La pertenencia ya la resuelve la 019.
 DROP POLICY IF EXISTS "ver adjuntos de mis conversaciones" ON mensaje_adjuntos;
-CREATE POLICY "ver adjuntos de mis conversaciones"
-  ON mensaje_adjuntos FOR SELECT TO authenticated
-  USING (EXISTS (
-    SELECT 1 FROM mensajes m
-    WHERE m.id = mensaje_id AND es_miembro_conversacion(m.conversacion_id)
-  ));
+-- En una línea a propósito: el SQL Editor de Supabase mutila los paréntesis de
+-- una subconsulta repartida en varias líneas y aborta con 42601.
+CREATE POLICY "ver adjuntos de mis conversaciones" ON mensaje_adjuntos FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM mensajes m WHERE m.id = mensaje_id AND es_miembro_conversacion(m.conversacion_id)));
 
 DROP POLICY IF EXISTS "adjuntar a mi mensaje" ON mensaje_adjuntos;
-CREATE POLICY "adjuntar a mi mensaje"
-  ON mensaje_adjuntos FOR INSERT TO authenticated
-  WITH CHECK (EXISTS (
-    SELECT 1 FROM mensajes m
-    WHERE m.id = mensaje_id AND m.autor_id = mi_integrante_id()
-  ));
+CREATE POLICY "adjuntar a mi mensaje" ON mensaje_adjuntos FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM mensajes m WHERE m.id = mensaje_id AND m.autor_id = mi_integrante_id()));
 
 -- RLS sin GRANT = 42501: Postgres evalúa privilegios ANTES que las policies.
 GRANT SELECT, INSERT ON mensaje_adjuntos TO authenticated;
@@ -123,6 +115,15 @@ ALTER TABLE conversaciones DROP CONSTRAINT IF EXISTS conversaciones_tipo_check;
 ALTER TABLE conversaciones ADD CONSTRAINT conversaciones_tipo_check
   CHECK (tipo IN ('dm', 'grupo', 'agentes'));
 
+-- La 019 escribió `CHECK (tipo = 'grupo' OR dm_key IS NOT NULL)`, que en un mundo
+-- de dos tipos significaba "el DM necesita su clave". Con un tercer tipo pasa a
+-- significar "todo lo que no sea grupo necesita dm_key", y el canal de agentes
+-- —que no es ni una cosa ni la otra— quedaba rechazado con 23514.
+-- Se reescribe diciendo lo que siempre quiso decir: solo el DM lleva dm_key.
+ALTER TABLE conversaciones DROP CONSTRAINT IF EXISTS dm_con_key;
+ALTER TABLE conversaciones ADD CONSTRAINT dm_con_key
+  CHECK (tipo <> 'dm' OR dm_key IS NOT NULL);
+
 -- Un agente no tiene navegador ni sesión: no puede pasar por el login del CRM.
 -- Se identifica con un token que vive acá, hasheado. El texto plano se muestra
 -- una sola vez al crearlo y no se guarda nunca.
@@ -144,9 +145,7 @@ ALTER TABLE agentes ENABLE ROW LEVEL SECURITY;
 -- El equipo ve quiénes son los agentes; el token nunca sale de la base porque
 -- lo que se guarda es su hash.
 DROP POLICY IF EXISTS "ver agentes" ON agentes;
-CREATE POLICY "ver agentes"
-  ON agentes FOR SELECT TO authenticated
-  USING (EXISTS (SELECT 1 FROM dim_integrantes WHERE auth_user_id = auth.uid() AND activo = true));
+CREATE POLICY "ver agentes" ON agentes FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM dim_integrantes WHERE auth_user_id = auth.uid() AND activo = true));
 
 GRANT SELECT ON agentes TO authenticated;
 
