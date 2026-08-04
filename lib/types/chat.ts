@@ -4,8 +4,19 @@ export const EnviarMensajeSchema = z.object({
   conversacion_id: z.string().uuid(),
   // Vacío se permite: un mensaje que es solo una foto es un mensaje válido. Que
   // no venga ni texto ni archivo lo rechaza el route, que sí ve los adjuntos.
-  contenido: z.string().trim().max(4000, 'Máximo 4000 caracteres').optional(),
+  // 4000 se quedaba corto: los agentes mandan informes largos y quedaban
+  // rebotados sin poder partirlos. La columna es TEXT, el tope es de cordura.
+  contenido: z.string().trim().max(20000, 'Máximo 20.000 caracteres').optional(),
+  /** Cita a un mensaje puntual del hilo. */
+  responder_a: z.string().uuid().optional(),
+  /** Cuelga el mensaje de un hilo en vez del flujo principal. */
+  hilo_padre: z.string().uuid().optional(),
 })
+
+export const LARGO_MAXIMO_MENSAJE = 20000
+
+/** A partir de acá la burbuja se recorta y ofrece "Ver más". */
+export const LARGO_PARA_RECORTAR = 1200
 
 export const CrearConversacionSchema = z
   .object({
@@ -42,6 +53,25 @@ export function esImagen(adjunto: AdjuntoMensaje): boolean {
   return adjunto.tipo_mime.startsWith('image/')
 }
 
+/**
+ * Archivos que se pueden leer en el chat sin bajarlos.
+ *
+ * El tipo MIME no alcanza: un .md o un .log subido desde Windows llega como
+ * `application/octet-stream` y quedaba como un archivo mudo que había que
+ * descargar para saber qué decía. Por eso también se mira la extensión.
+ */
+const EXTENSIONES_TEXTO =
+  /\.(txt|md|log|csv|json|ya?ml|sql|ts|tsx|js|jsx|py|sh|env|ini|conf|toml|xml|html?|css)$/i
+
+export function esTexto(adjunto: AdjuntoMensaje): boolean {
+  if (adjunto.tipo_mime.startsWith('text/')) return true
+  if (/^application\/(json|xml|x-yaml|sql)/.test(adjunto.tipo_mime)) return true
+  return EXTENSIONES_TEXTO.test(adjunto.nombre)
+}
+
+/** Un preview no puede traerse un log de 20MB al navegador. */
+export const MAX_BYTES_PREVIEW = 256 * 1024
+
 /** El adjunto se sirve por endpoint propio: revalida permiso en cada pedido y la
  *  URL no vence a mitad de la conversación, como pasaría con una firmada. */
 export function urlAdjunto(id: string): string {
@@ -74,6 +104,12 @@ export type Mensaje = {
   editado_at: string | null
   eliminado_at: string | null
   adjuntos?: AdjuntoMensaje[]
+  /** Mensaje citado. */
+  responder_a?: string | null
+  /** Hilo del que cuelga. Nulo = va en el flujo principal. */
+  hilo_padre?: string | null
+  /** Cuántas respuestas tiene este mensaje en su hilo. */
+  respuestas?: number
 }
 
 export type Conversacion = {

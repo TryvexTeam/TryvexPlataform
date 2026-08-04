@@ -17,7 +17,20 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: '#0f0f14',
+  // Extiende la página bajo el notch. Exige compensar con env(safe-area-inset-*),
+  // que es lo que hacen .pt-safe / .pb-safe en globals.css.
   viewportFit: 'cover',
+  width: 'device-width',
+  initialScale: 1,
+  // Se deja llegar hasta 5x a propósito. Bloquear el zoom arregla el síntoma y
+  // rompe la accesibilidad de quien necesita agrandar; el zoom molesto de iPhone
+  // no es este, es el automático al enfocar un campo de menos de 16px — y eso se
+  // corrige con el tamaño de fuente, no prohibiendo ampliar.
+  maximumScale: 5,
+  userScalable: true,
+  // El teclado achica el área visible en vez de tapar el contenido: sin esto, al
+  // escribir en el chat el campo queda debajo del teclado.
+  interactiveWidget: 'resizes-content',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

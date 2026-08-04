@@ -31,6 +31,8 @@ interface ChatWorkspaceProps {
   conversacionesIniciales: Conversacion[]
   equipo: IntegranteChat[]
   agentes?: AgenteChat[]
+  /** Eliminar cualquier mensaje, no solo el propio. */
+  soyAdmin?: boolean
   miIntegranteId: string
   /** Conversación a abrir de entrada (viene del ?c= de una notificación push). */
   conversacionInicialId?: string
@@ -47,6 +49,7 @@ export function ChatWorkspace({
   conversacionesIniciales,
   equipo,
   agentes = [],
+  soyAdmin = false,
   miIntegranteId,
   conversacionInicialId,
 }: ChatWorkspaceProps) {
@@ -209,6 +212,7 @@ export function ChatWorkspace({
             enLinea={enLinea}
             disponibilidad={disponibilidad}
             agentes={agentes}
+            soyAdmin={soyAdmin}
             onMensajeEnviado={alEnviar}
             onVolver={() => setActivaId(null)}
           />
