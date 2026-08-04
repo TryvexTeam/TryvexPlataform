@@ -1208,6 +1208,9 @@
 
 /* Alto de la barra inferior más su zona segura: lo que el contenido debe dejar
    libre para que el último mensaje no quede tapado por la navegación. */
+/* 5.5rem = 88px: los 56px reales de la barra (ranuras min-h-14, más su pb-safe)
+   más ~32px de aire. Con los 64px anteriores el contenido quedaba a 8px del nav,
+   es decir pegado o directamente tapado por el botón de acción de cada vista. */
 .pb-nav-movil {
-  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 }

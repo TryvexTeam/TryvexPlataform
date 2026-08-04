@@ -46,8 +46,15 @@ export async function updateSession(request: NextRequest) {
   const isPublicRoute =
     pathname.startsWith('/login') ||
     pathname.startsWith('/signup') ||
+    pathname.startsWith('/recuperar') ||          // pedir el link de contraseña nueva
+    pathname.startsWith('/auth/confirmar') ||     // canje del token del correo
+    pathname.startsWith('/api/auth/recuperar') ||
     pathname.startsWith('/api/invitaciones/')  // validación de token no requiere sesión
 
+  // /nueva-password queda deliberadamente FUERA de las públicas: se llega con la
+  // sesión de recuperación ya abierta, así que necesita sesión. Si estuviera en la
+  // lista, la regla de "usuario logueado en ruta pública → dashboard" de más abajo
+  // lo rebotaría justo cuando acaba de canjear el link.
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'

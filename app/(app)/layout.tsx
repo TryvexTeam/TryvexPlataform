@@ -8,6 +8,7 @@ import { AuthProvider } from '@/components/layout/auth-provider'
 import { ThemeProvider } from '@/components/dashboard/theme-context'
 import { DynamicGlows } from '@/components/layout/dynamic-glows'
 import { AppShell } from '@/components/layout/app-shell'
+import { PermisosRepository, puede } from '@/lib/repos/permisos'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -31,6 +32,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const email = integrante?.email ?? user.email ?? ''
   const avatarUrl = integrante?.avatar_url ?? null
 
+  // Solo para decidir qué links mostrar en el menú. El candado real está en la RLS y
+  // en cada ruta: esconder un link no protege nada, solo evita ofrecer un callejón.
+  const permisos = await new PermisosRepository(supabase).misPermisos(user.id)
+
   return (
     <AuthProvider>
       <ThemeProvider>
@@ -51,7 +56,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
           {/* Sidebar desktop */}
           <aside className="hidden md:flex shrink-0 relative z-10">
-            <Sidebar />
+            <Sidebar
+              puedeVerFinanzas={puede(permisos, 'ver_finanzas')}
+              esSuperadmin={permisos?.es_superadmin ?? false}
+            />
           </aside>
 
           {/* Main content */}

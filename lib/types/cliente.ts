@@ -13,6 +13,8 @@ export const ClienteInsertSchema = z.object({
   mantencion_mensual_usd: z.number().nullable().optional(),
   estado: z.enum(['activo', 'pausado', 'cancelado']).default('activo'),
   notas: z.string().nullable().optional(),
+  /** Da por cerrado el saldo del valor inicial sin borrar lo acordado (migración 030). */
+  saldo_inicial_saldado: z.boolean().optional(),
 })
 
 export const ClienteUpdateSchema = ClienteInsertSchema.partial()
@@ -34,6 +36,7 @@ export type Cliente = {
   mantencion_mensual_usd: number | null
   estado: 'activo' | 'pausado' | 'cancelado'
   notas: string | null
+  saldo_inicial_saldado: boolean
   created_at: string
   updated_at: string
 }

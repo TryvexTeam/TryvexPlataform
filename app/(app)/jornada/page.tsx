@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { JornadasRepository } from '@/lib/repos/jornadas'
+import { PermisosRepository, puede } from '@/lib/repos/permisos'
 import { RelojJornada } from '@/components/jornada/reloj-jornada'
 import { TablaJornadas } from '@/components/jornada/tabla-jornadas'
 import type { JornadaResumen } from '@/lib/types/jornada'
@@ -38,10 +39,16 @@ export default async function JornadaPage() {
   const repo = new JornadasRepository(supabase)
   const { desde, hasta } = rangoMesActual()
 
+  // La sección "Equipo" ya no depende de es_admin sino del permiso suelto: el dueño
+  // puede dar visibilidad de la jornada del equipo sin convertir a nadie en admin
+  // de todo lo demás.
+  const perfilPermisos = await new PermisosRepository(supabase).misPermisos(user.id)
+  const veEquipo = puede(perfilPermisos, 'ver_jornadas_equipo')
+
   const [abierta, propias, equipo] = await Promise.all([
     repo.getAbierta(perfil.id),
     repo.listPropias(perfil.id, desde, hasta),
-    perfil.es_admin ? repo.listEquipo(desde, hasta) : Promise.resolve([]),
+    veEquipo ? repo.listEquipo(desde, hasta) : Promise.resolve([]),
   ])
 
   return (
@@ -65,7 +72,7 @@ export default async function JornadaPage() {
         <TablaJornadas filas={propias} mostrarPersona={false} />
       </section>
 
-      {perfil.es_admin && (
+      {veEquipo && (
         <section>
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-sm font-medium text-neutral-800">Equipo — este mes</h2>

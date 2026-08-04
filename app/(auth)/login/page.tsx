@@ -75,6 +75,11 @@ export default function LoginPage() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Entrando...' : 'Entrar'}
           </Button>
+          <p className="text-center text-sm">
+            <Link href="/recuperar" className="text-neutral-500 hover:text-neutral-900 hover:underline">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </p>
           <p className="text-center text-sm text-neutral-500">
             ¿No tienes cuenta?{' '}
             <Link href="/signup" className="text-neutral-900 font-medium hover:underline">

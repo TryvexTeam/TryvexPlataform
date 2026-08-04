@@ -1,0 +1,69 @@
+import { createClient } from '@/lib/supabase/server'
+import type { IntegrantePermisos, Permiso } from '@/lib/types/permisos'
+import { normalizarPermisos } from '@/lib/types/permisos'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SB = any
+
+const CAMPOS = 'id, nombre, email, activo, es_superadmin, ver_jornadas_equipo, ver_finanzas, gestionar_finanzas'
+
+export class PermisosRepository {
+  private sb: SB
+
+  constructor(supabase: Awaited<ReturnType<typeof createClient>>) {
+    this.sb = supabase as SB
+  }
+
+  /** Permisos de quien está usando la app. null si no es integrante. */
+  async misPermisos(authUserId: string): Promise<IntegrantePermisos | null> {
+    const { data, error } = await this.sb
+      .from('dim_integrantes')
+      .select(CAMPOS)
+      .eq('auth_user_id', authUserId)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    return (data as IntegrantePermisos) ?? null
+  }
+
+  async listEquipo(): Promise<IntegrantePermisos[]> {
+    const { data, error } = await this.sb
+      .from('dim_integrantes')
+      .select(CAMPOS)
+      .eq('activo', true)
+      .order('nombre')
+    if (error) throw new Error(error.message)
+    return (data ?? []) as IntegrantePermisos[]
+  }
+
+  /**
+   * Cambia los permisos de un integrante.
+   *
+   * La autorización real no está aquí: la impone el trigger `guardar_flags_privilegio`
+   * de la migración 028, que rechaza el UPDATE si quien lo hace no es el dueño. Esta
+   * capa es conveniencia y mensajes claros, no el candado.
+   */
+  async actualizar(integranteId: string, cambios: Partial<Record<Permiso, boolean>>): Promise<void> {
+    const { error } = await this.sb
+      .from('dim_integrantes')
+      .update(normalizarPermisos(cambios))
+      .eq('id', integranteId)
+
+    if (error) {
+      if (error.message.includes('solo_superadmin_cambia_permisos') || error.code === '42501') {
+        throw new Error('solo_superadmin')
+      }
+      throw new Error(error.message)
+    }
+  }
+}
+
+/** Helper de servidor: ¿este integrante puede ver esta sección? */
+export function puede(
+  perfil: Pick<IntegrantePermisos, 'es_superadmin' | 'ver_jornadas_equipo' | 'ver_finanzas' | 'gestionar_finanzas'> | null,
+  permiso: Permiso,
+): boolean {
+  if (!perfil) return false
+  if (perfil.es_superadmin) return true
+  if (permiso === 'ver_finanzas') return perfil.ver_finanzas || perfil.gestionar_finanzas
+  return perfil[permiso]
+}
