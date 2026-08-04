@@ -157,6 +157,34 @@ export function parsearMarkdown(fuente: string): BloqueMd[] {
   return bloques
 }
 
+/**
+ * El texto sin marcas, en una línea. Para la vista previa de la bandeja del chat:
+ * ahí un `**hola**` tiene que leerse "hola", no con los asteriscos.
+ */
+export function textoPlano(fuente: string): string {
+  return parsearMarkdown(fuente)
+    .map((bloque) => {
+      switch (bloque.tipo) {
+        case 'codigo':
+          return bloque.texto
+        case 'separador':
+          return ''
+        case 'lista':
+          return bloque.items.map(inlineAPlano).join(' · ')
+        default:
+          return inlineAPlano(bloque.contenido)
+      }
+    })
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function inlineAPlano(nodos: NodoInline[]): string {
+  return nodos.map((n) => n.texto).join('')
+}
+
 /** ¿Vale la pena tratarlo como markdown, o es texto plano y basta? */
 export function pareceMarkdown(texto: string): boolean {
   return /(^|\n)\s*(#{1,3}\s|[-*+]\s|\d+[.)]\s|>\s|```)|\*\*|__|`[^`\n]+`|\[[^\]\n]+\]\(/.test(texto)

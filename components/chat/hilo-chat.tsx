@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
 import { tituloConversacion } from '@/lib/types/chat'
+import { Markdown } from '@/components/shared/markdown'
 import { AvatarChat } from './avatar-chat'
 
 interface HiloChatProps {
@@ -164,14 +165,18 @@ export function HiloChat({ conversacion, miIntegranteId, enLinea, onMensajeEnvia
                     </span>
                   )}
                   <div
-                    className="px-3.5 py-2 text-[14px] leading-snug whitespace-pre-wrap break-words"
+                    className="px-3.5 py-2 text-[14px] leading-snug break-words"
                     style={{
                       borderRadius: 18,
                       background: mio ? 'var(--tx-accent)' : 'rgba(255,255,255,0.06)',
                       color: mio ? 'var(--tx-accent-fg)' : 'var(--tx-ink-primary)',
                     }}
                   >
-                    {m.contenido}
+                    {/* heredaColor: el mensaje propio va sobre el acento y el markdown
+                        no puede imponer el suyo o quedaría ilegible. */}
+                    <Markdown heredaColor className="text-[14px]">
+                      {m.contenido}
+                    </Markdown>
                   </div>
                   <span className="text-[10px] text-[var(--tx-ink-muted)] px-1 mt-0.5">
                     {HORA.format(new Date(m.created_at))}

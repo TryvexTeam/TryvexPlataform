@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { claveDm, type Conversacion, type Mensaje, type MiembroChat, type TipoConversacion } from '@/lib/types/chat'
+import type { Conversacion, Mensaje, MiembroChat, TipoConversacion } from '@/lib/types/chat'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -123,60 +123,28 @@ export class ChatRepository {
   }
 
   /** Abre el DM con esa persona o devuelve el que ya existía. */
+  /**
+   * Crear el hilo y sumar los miembros va en una sola transacción del servidor
+   * (`abrir_dm`, migración 022). Hacerlo en dos viajes devolvía 500: al pedir la
+   * fila recién creada, PostgREST la somete a la policy de SELECT y el creador
+   * todavía no es miembro.
+   */
   async abrirDm(miId: string, otroId: string): Promise<string> {
     if (miId === otroId) throw new Error('no_dm_conmigo_mismo')
-    const key = claveDm(miId, otroId)
 
-    const { data: existente } = await this.sb
-      .from('conversaciones')
-      .select('id')
-      .eq('dm_key', key)
-      .maybeSingle()
-    if (existente) return (existente as { id: string }).id
-
-    const { data, error } = await this.sb
-      .from('conversaciones')
-      .insert({ tipo: 'dm', dm_key: key, creada_por: miId })
-      .select('id')
-      .single()
+    const { data, error } = await this.sb.rpc('abrir_dm', { otro_id: otroId })
     if (error) throw new Error(error.message)
-
-    const conversacionId = (data as { id: string }).id
-    await this.sumarMiembros(conversacionId, miId, [otroId])
-    return conversacionId
+    return data as string
   }
 
+  /** Mismo motivo que `abrirDm`: alta y miembros en una transacción (migración 022). */
   async crearGrupo(miId: string, nombre: string, miembros: string[]): Promise<string> {
-    const { data, error } = await this.sb
-      .from('conversaciones')
-      .insert({ tipo: 'grupo', nombre: nombre.trim(), creada_por: miId })
-      .select('id')
-      .single()
+    const { data, error } = await this.sb.rpc('crear_grupo', {
+      p_nombre: nombre.trim(),
+      p_miembros: miembros,
+    })
     if (error) throw new Error(error.message)
-
-    const conversacionId = (data as { id: string }).id
-    await this.sumarMiembros(conversacionId, miId, miembros)
-    return conversacionId
-  }
-
-  /**
-   * Dos inserts, no uno: la policy deja sumar a otros solo si ya se es miembro,
-   * y dentro de un mismo statement la función de pertenencia todavía no ve la
-   * fila propia recién insertada.
-   */
-  private async sumarMiembros(conversacionId: string, miId: string, otros: string[]): Promise<void> {
-    const { error: errMio } = await this.sb
-      .from('conversacion_miembros')
-      .insert({ conversacion_id: conversacionId, integrante_id: miId })
-    if (errMio) throw new Error(errMio.message)
-
-    const restantes = [...new Set(otros)].filter((id) => id !== miId)
-    if (restantes.length === 0) return
-
-    const { error } = await this.sb
-      .from('conversacion_miembros')
-      .insert(restantes.map((integrante_id) => ({ conversacion_id: conversacionId, integrante_id })))
-    if (error) throw new Error(error.message)
+    return data as string
   }
 
   async esMiembro(conversacionId: string, integranteId: string): Promise<boolean> {
