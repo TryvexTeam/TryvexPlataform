@@ -79,6 +79,8 @@ export type Mensaje = {
 export type Conversacion = {
   id: string
   tipo: TipoConversacion
+  /** Foto del hilo. Solo la tienen los que llevan nombre propio. */
+  avatar_url?: string | null
   nombre: string | null
   ultimo_mensaje_at: string
   miembros: MiembroChat[]
@@ -91,9 +93,26 @@ export function claveDm(a: string, b: string): string {
   return [a, b].sort().join(':')
 }
 
+/**
+ * La foto del hilo. En un DM es la de la otra persona; en un grupo o canal, la
+ * suya propia — antes se mostraba la de un miembro cualquiera, que no significa
+ * nada cuando son seis.
+ */
+export function avatarConversacion(
+  conv: Conversacion,
+  miIntegranteId: string,
+): { url: string | null; color: string | null } {
+  if (conv.tipo !== 'dm') return { url: conv.avatar_url ?? null, color: null }
+  const otro = conv.miembros.find((m) => m.integrante_id !== miIntegranteId)
+  return { url: otro?.avatar_url ?? null, color: otro?.color ?? null }
+}
+
 /** En un DM el título es la otra persona; en un grupo, su nombre. */
 export function tituloConversacion(conv: Conversacion, miIntegranteId: string): string {
-  if (conv.tipo === 'grupo') return conv.nombre ?? 'Grupo'
+  // Solo el DM se titula con la otra persona. El resto lleva su propio nombre —
+  // preguntar por 'grupo' dejaba al canal de agentes cayendo en la rama del DM y
+  // titulándose con el nombre de un integrante cualquiera.
+  if (conv.tipo !== 'dm') return conv.nombre ?? (conv.tipo === 'agentes' ? 'Agentes' : 'Grupo')
   const otro = conv.miembros.find((m) => m.integrante_id !== miIntegranteId)
   return otro?.nombre ?? 'Mensaje directo'
 }

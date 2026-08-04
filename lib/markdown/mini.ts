@@ -27,6 +27,7 @@ export type BloqueMd =
   | { tipo: 'lista'; ordenada: boolean; items: NodoInline[][] }
   | { tipo: 'cita'; contenido: NodoInline[] }
   | { tipo: 'codigo'; texto: string; lenguaje: string | null }
+  | { tipo: 'tabla'; encabezados: NodoInline[][]; filas: NodoInline[][][] }
   | { tipo: 'separador' }
 
 /** Solo esquemas navegables: un `javascript:` en un enlace no se renderiza como tal. */
@@ -95,6 +96,22 @@ export interface OpcionesMd {
   chat?: boolean
 }
 
+/** La línea que separa el encabezado del cuerpo: |---|:--:|---:| */
+const SEPARADOR_TABLA = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/
+
+/**
+ * Parte una fila en celdas. Las barras de los extremos son opcionales, que es
+ * como las escriben tanto la gente como los agentes.
+ */
+function celdas(linea: string): NodoInline[][] {
+  return linea
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((c) => parsearInline(c.trim()))
+}
+
 /** Convierte el texto completo en bloques listos para pintar. */
 export function parsearMarkdown(fuente: string, opciones: OpcionesMd = {}): BloqueMd[] {
   const lineas = fuente.replace(/\r\n/g, '\n').split('\n')
@@ -147,6 +164,21 @@ export function parsearMarkdown(fuente: string, opciones: OpcionesMd = {}): Bloq
         i++
       }
       bloques.push({ tipo: 'cita', contenido: parsearInline(cuerpo.join(' ')) })
+      continue
+    }
+
+    // Tabla: una fila de celdas y debajo la línea separadora (|---|---|).
+    // Los agentes del equipo mandan tablas todo el tiempo; sin esto se leían como
+    // una sopa de barras verticales.
+    if (linea.includes('|') && i + 1 < lineas.length && SEPARADOR_TABLA.test(lineas[i + 1])) {
+      const encabezados = celdas(linea)
+      i += 2
+      const filas: NodoInline[][][] = []
+      while (i < lineas.length && lineas[i].includes('|') && lineas[i].trim() !== '') {
+        filas.push(celdas(lineas[i]))
+        i++
+      }
+      bloques.push({ tipo: 'tabla', encabezados, filas })
       continue
     }
 
@@ -206,6 +238,10 @@ export function textoPlano(fuente: string): string {
           return ''
         case 'lista':
           return bloque.items.map(inlineAPlano).join(' · ')
+        case 'tabla':
+          return [bloque.encabezados, ...bloque.filas]
+            .map((fila) => fila.map(inlineAPlano).join(' · '))
+            .join(' | ')
         default:
           return inlineAPlano(bloque.contenido)
       }

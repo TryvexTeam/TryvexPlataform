@@ -89,7 +89,10 @@ export async function POST(req: Request) {
       .filter((id) => id !== perfil.id)
 
     if (destinatarios.length > 0) {
-      const titulo = conv?.tipo === 'grupo' ? `${perfil.nombre} en ${conv.nombre}` : perfil.nombre
+      // En cualquier hilo con nombre propio (grupo o canal de agentes) conviene
+      // decir dónde se dijo; en un DM el nombre de quien escribe ya alcanza.
+      const titulo =
+        conv && conv.tipo !== 'dm' ? `${perfil.nombre} en ${conv.nombre}` : perfil.nombre
       const { enviarPush } = await import('@/lib/push/server')
       await enviarPush(destinatarios, {
         titulo,
