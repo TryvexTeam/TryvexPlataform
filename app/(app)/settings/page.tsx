@@ -28,7 +28,8 @@ export default async function SettingsPage() {
   }
 
   return (
-    <div className="p-6">
+    // pb-24 en móvil: el nav inferior fijo tapaba el botón "Guardar cambios" del perfil.
+    <div className="p-6 pb-24 md:pb-6">
       <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)] mb-1">Configuración</h1>
       <p className="text-neutral-500 mb-6">Tu perfil, color de calendario, horario y notificaciones</p>
       <Link

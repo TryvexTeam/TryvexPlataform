@@ -21,6 +21,8 @@ import {
   Bot,
   Clock,
   MessagesSquare,
+  Wallet,
+  ShieldCheck,
 } from 'lucide-react'
 import { TryvexLogo } from '@/components/shared/tryvex-logo'
 
@@ -45,9 +47,17 @@ const systemNav = [
   { href: '/admin/invitaciones',  label: 'Invitaciones',  icon: Mail,            count: null },
 ]
 
+// Secciones con permiso propio. Ocultarlas no es seguridad — de eso se encargan la RLS
+// y las rutas —, es no ofrecer una puerta que se va a cerrar en la cara.
+const finanzasNav = { href: '/finanzas',        label: 'Finanzas', icon: Wallet,      count: null }
+const accesosNav  = { href: '/admin/permisos',  label: 'Accesos',  icon: ShieldCheck, count: null }
+
 interface SidebarProps {
   onNavigate?: () => void
   forceExpand?: boolean
+  /** Tiene 'ver_finanzas' (o 'gestionar_finanzas', que lo incluye). */
+  puedeVerFinanzas?: boolean
+  esSuperadmin?: boolean
 }
 
 function SidebarGroup({
@@ -127,9 +137,17 @@ function NavItem({
   )
 }
 
-export function Sidebar({ onNavigate, forceExpand = false }: SidebarProps) {
+export function Sidebar({
+  onNavigate,
+  forceExpand = false,
+  puedeVerFinanzas = false,
+  esSuperadmin = false,
+}: SidebarProps) {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
+
+  const itemsPrimarios = puedeVerFinanzas ? [...primaryNav, finanzasNav] : primaryNav
+  const itemsSistema = esSuperadmin ? [...systemNav, accesosNav] : systemNav
 
   useEffect(() => {
     if (forceExpand) return
@@ -209,7 +227,7 @@ export function Sidebar({ onNavigate, forceExpand = false }: SidebarProps) {
           defaultOpen={true}
           collapsed={collapsed}
         >
-          {primaryNav.map(({ href, label, icon, count }) => (
+          {itemsPrimarios.map(({ href, label, icon, count }) => (
             <NavItem
               key={href}
               href={href}
@@ -234,7 +252,7 @@ export function Sidebar({ onNavigate, forceExpand = false }: SidebarProps) {
           defaultOpen={true}
           collapsed={collapsed}
         >
-          {systemNav.map(({ href, label, icon, count }) => (
+          {itemsSistema.map(({ href, label, icon, count }) => (
             <NavItem
               key={href}
               href={href}

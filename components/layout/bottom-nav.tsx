@@ -19,6 +19,7 @@ import {
   Settings,
   Sun,
   Users,
+  Wallet,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -52,6 +53,7 @@ const TODAS = [
     { href: '/cerebro', label: 'Cerebro', icon: Brain },
     { href: '/vex', label: 'Vex', icon: Bot },
     { href: '/jornada', label: 'Jornada', icon: Clock },
+    { href: '/finanzas', label: 'Finanzas', icon: Wallet },
   ]},
   { grupo: 'Sistema', items: [
     { href: '/settings', label: 'Configuración', icon: Settings },

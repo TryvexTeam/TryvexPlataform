@@ -20,7 +20,7 @@ export function RevenueHeader({ clientes, ventas }: RevenueHeaderProps) {
   // Por cobrar agregado: saldo del valor inicial + pagos pendientes, por cliente
   const totalPendiente = clientes.reduce((sum, c) => {
     const ventasCliente = ventas.filter((v) => v.cliente_id === c.id)
-    return sum + resumenFinanciero(ventasCliente, c.valor_inicial_usd).porCobrar
+    return sum + resumenFinanciero(ventasCliente, c.valor_inicial_usd, c.saldo_inicial_saldado).porCobrar
   }, 0)
   const hayAtrasados = ventas.some((v) => v.estado_pago === 'atrasado')
 

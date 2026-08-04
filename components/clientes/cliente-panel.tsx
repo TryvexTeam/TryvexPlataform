@@ -22,10 +22,14 @@ import {
   TrendingUp,
   Building2,
   Plus,
+  Ban,
+  RotateCcw,
+  Check,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { ClienteForm } from './cliente-form'
 import { PagoForm } from './pago-form'
+import { ConfirmarDialog } from './confirmar-dialog'
 import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
@@ -68,10 +72,24 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
   const [editOpen, setEditOpen] = useState(false)
   const [pagoOpen, setPagoOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'proyectos' | 'pagos'>('overview')
+  // Id del pago que se está por descartar; null = diálogo cerrado.
+  const [descartarId, setDescartarId] = useState<string | null>(null)
+  const [saldoOpen, setSaldoOpen] = useState(false)
 
   const color = getColor(nombreCliente(cliente))
-  const { totalCobrado, porCobrar } = resumenFinanciero(ventas, cliente.valor_inicial_usd)
+  const { totalCobrado, porCobrar } = resumenFinanciero(
+    ventas,
+    cliente.valor_inicial_usd,
+    cliente.saldo_inicial_saldado,
+  )
   const pendientes = ventas.filter((v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado')
+
+  // Saldo del valor inicial que aún se arrastra: lo acordado menos lo cobrado como inicial.
+  const cobradoInicial = ventas
+    .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
+    .reduce((s, v) => s + (v.monto_usd ?? 0), 0)
+  const saldoArrastrado = Math.max(0, (cliente.valor_inicial_usd ?? 0) - cobradoInicial)
+  const mostrarSaldoInicial = saldoArrastrado > 0 || cliente.saldo_inicial_saldado
   const hayAtrasados = ventas.some((v) => v.estado_pago === 'atrasado')
   const proyActivos = proyectos.filter((p) => p.estado !== 'cerrado' && p.estado !== 'entregado')
 
@@ -91,6 +109,31 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
     await fetch(`/api/clientes/${cliente.id}`, { method: 'DELETE' })
     toast.success('Cliente eliminado')
     onClose()
+    router.refresh()
+  }
+
+  /** Descartar no borra: el pago queda 'cancelado' y visible tachado, para dejar rastro. */
+  async function handleDescartar(ventaId: string) {
+    const res = await fetch(`/api/pagos/${ventaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado_pago: 'cancelado' }),
+    })
+    if (!res.ok) { toast.error('No se pudo descartar el pago'); return }
+    toast.success('Pago descartado')
+    onUpdate()
+    router.refresh()
+  }
+
+  async function handleSaldoInicial(saldado: boolean) {
+    const res = await fetch(`/api/clientes/${cliente.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saldo_inicial_saldado: saldado }),
+    })
+    if (!res.ok) { toast.error('No se pudo actualizar el saldo'); return }
+    toast.success(saldado ? 'Saldo inicial dado por saldado' : 'Saldo inicial reactivado')
+    onUpdate()
     router.refresh()
   }
 
@@ -456,6 +499,44 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
                     </div>
                   </div>
                 )}
+
+                {/* Saldo inicial arrastrado: sin este interruptor el aviso de "nos debe"
+                    no se apaga nunca aunque se anulen todos los pagos pendientes. */}
+                {mostrarSaldoInicial && (
+                  <div
+                    className="rounded-xl p-3.5 space-y-2.5"
+                    style={{
+                      background: 'oklch(100% 0 0 / 3%)',
+                      border: '1px solid oklch(100% 0 0 / 7%)',
+                    }}
+                  >
+                    <div>
+                      <p className="text-[12px] font-semibold" style={{ color: 'var(--tx-ink-primary)' }}>
+                        Saldo del valor inicial
+                      </p>
+                      <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--tx-ink-muted)' }}>
+                        {cliente.saldo_inicial_saldado
+                          ? `Dado por saldado. El valor acordado ($${(cliente.valor_inicial_usd ?? 0).toLocaleString()}) se conserva para reportes.`
+                          : `Quedan $${saldoArrastrado.toLocaleString()} del valor acordado sin cobrar.`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setSaldoOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors"
+                      style={{
+                        background: 'oklch(100% 0 0 / 5%)',
+                        border: '1px solid oklch(100% 0 0 / 12%)',
+                        color: 'var(--tx-ink-secondary)',
+                      }}
+                    >
+                      {cliente.saldo_inicial_saldado ? (
+                        <><RotateCcw size={11} /> Reactivar saldo pendiente</>
+                      ) : (
+                        <><Check size={11} /> Dar por saldado</>
+                      )}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -567,6 +648,8 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
                         style={{
                           background: 'oklch(100% 0 0 / 4%)',
                           border: '1px solid oklch(100% 0 0 / 8%)',
+                          // Los cancelados no se esconden: se descartan, no se borran.
+                          opacity: v.estado_pago === 'cancelado' ? 0.55 : 1,
                         }}
                       >
                         <div
@@ -576,7 +659,13 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
                           <StatusIcon size={12} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[12px] font-semibold capitalize" style={{ color: 'var(--tx-ink-primary)' }}>
+                          <p
+                            className="text-[12px] font-semibold capitalize"
+                            style={{
+                              color: 'var(--tx-ink-primary)',
+                              textDecoration: v.estado_pago === 'cancelado' ? 'line-through' : undefined,
+                            }}
+                          >
                             {v.tipo}
                             {v.fecha_emision && (
                               <span className="font-normal ml-2" style={{ color: 'var(--tx-ink-muted)' }}>
@@ -589,9 +678,29 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
                             {v.metodo_pago && ` · ${v.metodo_pago}`}
                           </p>
                         </div>
-                        <p className="text-[14px] font-bold tabular-nums shrink-0" style={{ color: 'var(--tx-ink-primary)' }}>
+                        <p
+                          className="text-[14px] font-bold tabular-nums shrink-0"
+                          style={{
+                            color: 'var(--tx-ink-primary)',
+                            textDecoration: v.estado_pago === 'cancelado' ? 'line-through' : undefined,
+                          }}
+                        >
                           {v.monto_usd ? `$${v.monto_usd.toLocaleString()}` : '—'}
                         </p>
+                        {(v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado') && (
+                          <button
+                            onClick={() => setDescartarId(v.id)}
+                            title="Descartar este pago"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors"
+                            style={{
+                              background: 'oklch(63% 0.21 22 / 8%)',
+                              border: '1px solid oklch(63% 0.21 22 / 20%)',
+                              color: 'oklch(72% 0.21 22)',
+                            }}
+                          >
+                            <Ban size={12} />
+                          </button>
+                        )}
                       </motion.div>
                     )
                   })
@@ -601,6 +710,29 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
           </AnimatePresence>
         </div>
       </motion.div>
+
+      <ConfirmarDialog
+        open={descartarId !== null}
+        onOpenChange={(o) => !o && setDescartarId(null)}
+        titulo="¿Descartar este pago?"
+        descripcion="Queda registrado como cancelado y deja de contar en lo que el cliente debe. No se borra: seguirá visible tachado en el historial."
+        confirmar="Descartar"
+        destructivo
+        onConfirmar={async () => { if (descartarId) await handleDescartar(descartarId) }}
+      />
+
+      <ConfirmarDialog
+        open={saldoOpen}
+        onOpenChange={setSaldoOpen}
+        titulo={cliente.saldo_inicial_saldado ? '¿Reactivar el saldo pendiente?' : '¿Dar por saldado el valor inicial?'}
+        descripcion={
+          cliente.saldo_inicial_saldado
+            ? 'El saldo del valor inicial vuelve a contar como monto por cobrar.'
+            : 'El saldo deja de contar como monto por cobrar. El valor acordado no se borra y sigue disponible para reportes.'
+        }
+        confirmar={cliente.saldo_inicial_saldado ? 'Reactivar' : 'Dar por saldado'}
+        onConfirmar={() => handleSaldoInicial(!cliente.saldo_inicial_saldado)}
+      />
 
       <ClienteForm
         open={editOpen}

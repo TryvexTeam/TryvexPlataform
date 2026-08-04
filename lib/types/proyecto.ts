@@ -83,7 +83,18 @@ export type ResumenFinanciero = {
   proximoCobro: string | null
 }
 
-export function resumenFinanciero(ventas: Venta[], valorInicialUsd?: number | null): ResumenFinanciero {
+/**
+ * @param saldoInicialSaldado Cuando el cliente ya no debe el valor acordado (se condonó,
+ * se cobró fuera del sistema o nunca se llegó a facturar), el saldo inicial deja de
+ * arrastrarse y vale 0. El `valor_inicial_usd` NO se borra: sigue siendo el valor
+ * acordado del trato y se necesita para reportes. Sin este interruptor, anular todos
+ * los pagos pendientes no apagaba nunca el aviso de "monto pendiente".
+ */
+export function resumenFinanciero(
+  ventas: Venta[],
+  valorInicialUsd?: number | null,
+  saldoInicialSaldado?: boolean,
+): ResumenFinanciero {
   const totalCobrado = ventas
     .filter((v) => v.estado_pago === 'pagado')
     .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
@@ -98,7 +109,7 @@ export function resumenFinanciero(ventas: Venta[], valorInicialUsd?: number | nu
   const cobradoInicial = ventas
     .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
     .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
-  const saldoInicial = Math.max(0, (valorInicialUsd ?? 0) - cobradoInicial)
+  const saldoInicial = saldoInicialSaldado ? 0 : Math.max(0, (valorInicialUsd ?? 0) - cobradoInicial)
   const pendienteInicialRegistrado = pendientes
     .filter((v) => v.tipo === 'inicial')
     .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)

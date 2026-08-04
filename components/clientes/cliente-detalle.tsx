@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import Link from 'next/link'
-import { ArrowLeft, Pencil, Trash2, Phone, Mail, MapPin, Plus, FolderKanban, Check, BookOpen } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Phone, Mail, MapPin, Plus, FolderKanban, Check, BookOpen, Ban, RotateCcw } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ClienteForm } from './cliente-form'
 import { PagoForm } from './pago-form'
+import { ConfirmarDialog } from './confirmar-dialog'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
@@ -34,6 +34,9 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
   const [pagoOpen, setPagoOpen] = useState(false)
+  // Id del pago que se está por descartar; null = diálogo cerrado.
+  const [descartarId, setDescartarId] = useState<string | null>(null)
+  const [saldoOpen, setSaldoOpen] = useState(false)
 
   async function handleEdit(data: ClienteInsert) {
     const res = await fetch(`/api/clientes/${cliente.id}`, {
@@ -64,7 +67,41 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
     router.refresh()
   }
 
-  const { totalCobrado, porCobrar, proximoCobro } = resumenFinanciero(ventas, cliente.valor_inicial_usd)
+  /** Descartar no borra: el pago queda 'cancelado' y visible tachado, para dejar rastro. */
+  async function handleDescartar(ventaId: string) {
+    const res = await fetch(`/api/pagos/${ventaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado_pago: 'cancelado' }),
+    })
+    if (!res.ok) { toast.error('No se pudo descartar el pago'); return }
+    toast.success('Pago descartado')
+    router.refresh()
+  }
+
+  async function handleSaldoInicial(saldado: boolean) {
+    const res = await fetch(`/api/clientes/${cliente.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saldo_inicial_saldado: saldado }),
+    })
+    if (!res.ok) { toast.error('No se pudo actualizar el saldo'); return }
+    toast.success(saldado ? 'Saldo inicial dado por saldado' : 'Saldo inicial reactivado')
+    router.refresh()
+  }
+
+  const { totalCobrado, porCobrar, proximoCobro } = resumenFinanciero(
+    ventas,
+    cliente.valor_inicial_usd,
+    cliente.saldo_inicial_saldado,
+  )
+
+  // Saldo del valor inicial que aún se arrastra: lo acordado menos lo cobrado como inicial.
+  const cobradoInicial = ventas
+    .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
+    .reduce((s, v) => s + (v.monto_usd ?? 0), 0)
+  const saldoArrastrado = Math.max(0, (cliente.valor_inicial_usd ?? 0) - cobradoInicial)
+  const mostrarSaldoInicial = saldoArrastrado > 0 || cliente.saldo_inicial_saldado
 
   return (
     <div>
@@ -124,6 +161,30 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
           </div>
         ))}
       </div>
+
+      {/* Saldo inicial arrastrado: sin este interruptor el aviso de "nos debe" no se
+          apaga nunca aunque se anulen todos los pagos pendientes. */}
+      {mostrarSaldoInicial && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 p-3">
+          <div className="text-sm">
+            <p className="font-medium text-neutral-800">Saldo del valor inicial</p>
+            <p className="text-xs text-neutral-500">
+              {cliente.saldo_inicial_saldado
+                ? `Dado por saldado. El valor acordado ($${(cliente.valor_inicial_usd ?? 0).toLocaleString()}) se conserva para reportes.`
+                : `Quedan $${saldoArrastrado.toLocaleString()} del valor acordado sin cobrar.`}
+            </p>
+          </div>
+          {cliente.saldo_inicial_saldado ? (
+            <Button size="sm" variant="outline" onClick={() => setSaldoOpen(true)}>
+              <RotateCcw size={13} className="mr-1.5" /> Reactivar saldo pendiente
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setSaldoOpen(true)}>
+              <Check size={13} className="mr-1.5" /> Dar por saldado
+            </Button>
+          )}
+        </div>
+      )}
 
       {cliente.notas && (
         <div className="bg-neutral-50 rounded-lg p-3 mb-6 text-sm text-neutral-600">{cliente.notas}</div>
@@ -192,7 +253,8 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {ventas.map((v) => (
-                  <tr key={v.id}>
+                  // Los cancelados no se esconden: se descartan, no se borran.
+                  <tr key={v.id} className={cn(v.estado_pago === 'cancelado' && 'opacity-60 line-through')}>
                     <td className="px-3 py-2 capitalize text-neutral-700">
                       {v.tipo}
                       {v.descripcion && <span className="block text-xs text-neutral-400 normal-case">{v.descripcion}</span>}
@@ -210,9 +272,19 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
                     </td>
                     <td className="px-3 py-2 text-right">
                       {(v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado') && (
-                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => handleMarcarPagado(v.id)}>
-                          <Check size={12} className="mr-1" /> Pagado
-                        </Button>
+                        <span className="inline-flex gap-1.5 no-underline">
+                          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => handleMarcarPagado(v.id)}>
+                            <Check size={12} className="mr-1" /> Pagado
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs text-red-600 hover:text-red-700"
+                            onClick={() => setDescartarId(v.id)}
+                          >
+                            <Ban size={12} className="mr-1" /> Descartar
+                          </Button>
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -222,6 +294,29 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
           </div>
         )}
       </div>
+
+      <ConfirmarDialog
+        open={descartarId !== null}
+        onOpenChange={(o) => !o && setDescartarId(null)}
+        titulo="¿Descartar este pago?"
+        descripcion="Queda registrado como cancelado y deja de contar en lo que el cliente debe. No se borra: seguirá visible tachado en el historial."
+        confirmar="Descartar"
+        destructivo
+        onConfirmar={async () => { if (descartarId) await handleDescartar(descartarId) }}
+      />
+
+      <ConfirmarDialog
+        open={saldoOpen}
+        onOpenChange={setSaldoOpen}
+        titulo={cliente.saldo_inicial_saldado ? '¿Reactivar el saldo pendiente?' : '¿Dar por saldado el valor inicial?'}
+        descripcion={
+          cliente.saldo_inicial_saldado
+            ? 'El saldo del valor inicial vuelve a contar como monto por cobrar.'
+            : 'El saldo deja de contar como monto por cobrar. El valor acordado no se borra y sigue disponible para reportes.'
+        }
+        confirmar={cliente.saldo_inicial_saldado ? 'Reactivar' : 'Dar por saldado'}
+        onConfirmar={() => handleSaldoInicial(!cliente.saldo_inicial_saldado)}
+      />
 
       <ClienteForm open={editOpen} onOpenChange={setEditOpen} cliente={cliente} onSubmit={handleEdit} />
       <PagoForm open={pagoOpen} onOpenChange={setPagoOpen} clienteId={cliente.id} proyectos={proyectos} onCreated={() => router.refresh()} />

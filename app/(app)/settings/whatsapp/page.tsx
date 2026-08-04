@@ -31,7 +31,8 @@ export default async function WhatsappSettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl">
+    // pb-24 en móvil: mismo problema que en Configuración, el nav inferior fijo tapa el final.
+    <div className="p-6 pb-24 md:pb-6 max-w-2xl">
       <Link
         href="/settings"
         className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 mb-4"
