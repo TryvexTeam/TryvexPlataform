@@ -54,6 +54,7 @@ export default async function ChatPage({
         <ChatWorkspace
           conversacionesIniciales={conversaciones}
           agentes={agentes}
+          soyAdmin={perfil.es_admin}
           equipo={equipo.map((i) => ({
             id: i.id,
             nombre: i.nombre,

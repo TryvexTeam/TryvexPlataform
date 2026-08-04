@@ -57,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {/* Main content */}
           <div className="flex flex-col flex-1 min-w-0 relative z-10">
             <Topbar nombre={nombre} email={email} avatarUrl={avatarUrl} />
-            <main className="flex-1 overflow-y-auto overflow-x-hidden pb-16 md:pb-0 h-full">
+            <main className="flex-1 overflow-y-auto overflow-x-hidden pb-nav-movil md:pb-0 h-full">
               <PageTransition>{children}</PageTransition>
             </main>
           </div>

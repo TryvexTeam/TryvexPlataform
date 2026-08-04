@@ -15,6 +15,9 @@ import {
 import { Markdown } from '@/components/shared/markdown'
 import { AvatarChat } from './avatar-chat'
 import { AdjuntosMensaje } from './adjuntos-mensaje'
+import { AccionesMensaje } from './acciones-mensaje'
+import { CitaMensaje } from './cita-mensaje'
+import { PanelHilo } from './panel-hilo'
 import type { AgenteChat } from './chat-workspace'
 
 interface HiloChatProps {
@@ -23,6 +26,8 @@ interface HiloChatProps {
   enLinea: Set<string>
   disponibilidad: Map<string, PresenciaIntegrante>
   agentes?: AgenteChat[]
+  /** Habilita eliminar cualquier mensaje, no solo el propio. */
+  soyAdmin?: boolean
   onMensajeEnviado?: (mensaje: Mensaje) => void
   /** Vuelve a la bandeja. Solo se ve en móvil, donde el hilo ocupa la pantalla. */
   onVolver?: () => void
@@ -42,6 +47,7 @@ export function HiloChat({
   enLinea,
   disponibilidad,
   agentes = [],
+  soyAdmin = false,
   onMensajeEnviado,
   onVolver,
 }: HiloChatProps) {
@@ -49,6 +55,8 @@ export function HiloChat({
   const [borrador, setBorrador] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [porEnviar, setPorEnviar] = useState<File[]>([])
+  const [citando, setCitando] = useState<Mensaje | null>(null)
+  const [hiloAbierto, setHiloAbierto] = useState<Mensaje | null>(null)
   const [cargando, setCargando] = useState(true)
   const finRef = useRef<HTMLDivElement>(null)
   const cajaRef = useRef<HTMLTextAreaElement>(null)
@@ -139,13 +147,18 @@ export function HiloChat({
         const cuerpo = new FormData()
         cuerpo.append('conversacion_id', conversacion.id)
         if (contenido) cuerpo.append('contenido', contenido)
+        if (citando) cuerpo.append('responder_a', citando.id)
         for (const f of porEnviar) cuerpo.append('archivos', f)
         res = await fetch('/api/chat/mensajes', { method: 'POST', body: cuerpo })
       } else {
         res = await fetch('/api/chat/mensajes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conversacion_id: conversacion.id, contenido }),
+          body: JSON.stringify({
+            conversacion_id: conversacion.id,
+            contenido,
+            responder_a: citando?.id,
+          }),
         })
       }
 
@@ -156,11 +169,29 @@ export function HiloChat({
       setMensajes((previos) => (previos.some((m) => m.id === mensaje.id) ? previos : [...previos, mensaje]))
       setBorrador('')
       setPorEnviar([])
+      setCitando(null)
       onMensajeEnviado?.(mensaje)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error enviando el mensaje')
     } finally {
       setEnviando(false)
+    }
+  }
+
+  /** Borrado suave: el mensaje queda tachado en vez de desaparecer sin rastro. */
+  const borrar = async (mensaje: Mensaje) => {
+    if (!confirm('¿Eliminar este mensaje? Queda marcado como eliminado para todos.')) return
+    try {
+      const res = await fetch(`/api/chat/mensajes/${mensaje.id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo eliminar')
+      setMensajes((previos) =>
+        previos.map((m) =>
+          m.id === mensaje.id ? { ...m, contenido: null, eliminado_at: new Date().toISOString() } : m,
+        ),
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error eliminando el mensaje')
     }
   }
 
@@ -170,7 +201,8 @@ export function HiloChat({
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 w-full">
+    <div className="flex h-full min-h-0 w-full">
+    <div className="flex flex-col h-full min-h-0 flex-1 min-w-0">
       <header className="flex items-center gap-3 px-3 sm:px-5 py-3 border-b border-[var(--border)] shrink-0">
         {onVolver && (
           <button
@@ -238,7 +270,7 @@ export function HiloChat({
                   </div>
                 )}
 
-                <div className={`max-w-[85%] sm:max-w-[68%] min-w-0 ${mio ? 'items-end' : 'items-start'} flex flex-col`}>
+                <div className={`max-w-[85%] sm:max-w-[68%] min-w-0 ${mio ? 'items-end' : 'items-start'} flex flex-col group`}>
                   {!mio && conversacion.tipo !== 'dm' && !encadenado && (
                     <span className="flex items-center gap-1.5 text-[11px] text-[var(--tx-ink-muted)] px-1 mb-0.5">
                       {autor?.nombre ?? 'Sin nombre'}
@@ -262,6 +294,15 @@ export function HiloChat({
                       color: mio ? 'var(--tx-accent-fg)' : 'var(--tx-ink-primary)',
                     }}
                   >
+                    {m.responder_a && (
+                      <CitaMensaje
+                        citado={mensajes.find((x) => x.id === m.responder_a)}
+                        autor={(() => {
+                          const c = mensajes.find((x) => x.id === m.responder_a)
+                          return c?.autor_id ? porId.get(c.autor_id) : undefined
+                        })()}
+                      />
+                    )}
                     {m.adjuntos && m.adjuntos.length > 0 && (
                       <div className={m.contenido ? 'mb-1.5' : ''}>
                         <AdjuntosMensaje adjuntos={m.adjuntos} />
@@ -269,15 +310,38 @@ export function HiloChat({
                     )}
                     {/* heredaColor: el mensaje propio va sobre el acento y el markdown
                         no puede imponer el suyo o quedaría ilegible. */}
-                    {m.contenido && (
-                      <Markdown chat heredaColor className="text-[14px]">
-                        {m.contenido}
-                      </Markdown>
+                    {m.eliminado_at ? (
+                      <span className="text-[13px] italic opacity-60">Mensaje eliminado</span>
+                    ) : (
+                      m.contenido && (
+                        <Markdown chat heredaColor className="text-[14px]">
+                          {m.contenido}
+                        </Markdown>
+                      )
                     )}
                   </div>
-                  <span className="text-[10px] text-[var(--tx-ink-muted)] px-1 mt-0.5">
-                    {HORA.format(new Date(m.created_at))}
-                  </span>
+                  {(m.respuestas ?? 0) > 0 && (
+                    <button
+                      onClick={() => setHiloAbierto(m)}
+                      className="mt-1 text-[11px] font-medium text-[var(--tx-accent-2)] hover:underline"
+                    >
+                      {m.respuestas} {m.respuestas === 1 ? 'respuesta' : 'respuestas'}
+                    </button>
+                  )}
+
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[10px] text-[var(--tx-ink-muted)] px-1">
+                      {HORA.format(new Date(m.created_at))}
+                    </span>
+                    {!m.eliminado_at && (
+                      <AccionesMensaje
+                        puedeBorrar={mio || soyAdmin}
+                        onResponder={() => setCitando(m)}
+                        onAbrirHilo={() => setHiloAbierto(m)}
+                        onBorrar={() => borrar(m)}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             )
@@ -287,6 +351,27 @@ export function HiloChat({
       </div>
 
       <div className="shrink-0 border-t border-[var(--border)] p-3">
+        {citando && (
+          <div
+            className="flex items-start gap-2 mb-2 rounded-lg px-3 py-2"
+            style={{ background: 'rgba(255,255,255,0.05)' }}
+          >
+            <div className="min-w-0 flex-1 text-[var(--tx-ink-primary)]">
+              <CitaMensaje
+                citado={citando}
+                autor={citando.autor_id ? porId.get(citando.autor_id) : undefined}
+              />
+            </div>
+            <button
+              onClick={() => setCitando(null)}
+              aria-label="Cancelar respuesta"
+              className="shrink-0 p-0.5 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+            >
+              <XIcon className="size-4" />
+            </button>
+          </div>
+        )}
+
         {porEnviar.length > 0 && (
           <ul className="flex flex-wrap gap-2 mb-2">
             {porEnviar.map((f, i) => (
@@ -352,7 +437,9 @@ export function HiloChat({
             rows={1}
             placeholder="Escribe un mensaje…"
             aria-label="Escribe un mensaje"
-            className="flex-1 bg-transparent resize-none outline-none text-[14px] text-[var(--tx-ink-primary)] max-h-40 overflow-y-auto"
+            // text-base (16px) en móvil: por debajo de 16px iOS hace zoom automático al
+            // enfocar el campo, y la pantalla queda descolocada. En escritorio vuelve a 14.
+            className="flex-1 bg-transparent resize-none outline-none text-base sm:text-[14px] text-[var(--tx-ink-primary)] max-h-40 overflow-y-auto"
           />
           <button
             onClick={enviar}
@@ -364,6 +451,21 @@ export function HiloChat({
           </button>
         </div>
       </div>
+    </div>
+
+      {hiloAbierto && (
+        <PanelHilo
+          conversacion={conversacion}
+          padre={hiloAbierto}
+          miembros={porId}
+          onCerrar={() => setHiloAbierto(null)}
+          onRespondido={(padreId) =>
+            setMensajes((previos) =>
+              previos.map((m) => (m.id === padreId ? { ...m, respuestas: (m.respuestas ?? 0) + 1 } : m)),
+            )
+          }
+        />
+      )}
     </div>
   )
 }

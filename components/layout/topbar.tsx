@@ -100,7 +100,9 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
 
   return (
     <header
-      className="h-12 shrink-0 flex items-center justify-between px-4"
+      // pt-safe/px-safe: sin esto la barra queda bajo la Dynamic Island y no se
+      // puede tocar. `h-12` pasa a ser alto MÍNIMO para que el inset la empuje.
+      className="min-h-12 shrink-0 flex items-center justify-between px-4 pt-safe px-safe"
       style={{
         position: 'relative',
         zIndex: 50,

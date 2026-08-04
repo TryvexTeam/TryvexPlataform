@@ -113,6 +113,8 @@ export class ChatRepository {
         .from('mensajes')
         .select(columnas)
         .eq('conversacion_id', conversacionId)
+        // Lo que cuelga de un hilo vive dentro de ese hilo, no en el flujo.
+        .is('hilo_padre', null)
         .order('created_at', { ascending: false })
         .limit(limite)
 
@@ -125,16 +127,74 @@ export class ChatRepository {
     if (error) throw new Error(error.message)
 
     // Se piden los más nuevos, se muestran en orden cronológico.
-    return ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[])
+    const mensajes = ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[])
       .map(({ mensaje_adjuntos, ...m }) => ({ ...m, adjuntos: mensaje_adjuntos ?? [] }))
       .reverse()
+
+    return this.conContadorDeHilo(mensajes)
   }
 
-  async enviar(conversacionId: string, autorId: string, contenido: string | null): Promise<Mensaje> {
+  /**
+   * Las respuestas de un hilo, colgadas de un mensaje.
+   */
+  async listHilo(padreId: string): Promise<Mensaje[]> {
+    const { data, error } = await this.sb
+      .from('mensajes')
+      .select('*, mensaje_adjuntos(id, nombre, tipo_mime, bytes, ancho, alto)')
+      .eq('hilo_padre', padreId)
+      .order('created_at', { ascending: true })
+    if (error) throw new Error(error.message)
+
+    return ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[]).map(
+      ({ mensaje_adjuntos, ...m }) => ({ ...m, adjuntos: mensaje_adjuntos ?? [] }),
+    )
+  }
+
+  /**
+   * Cuántas respuestas tiene cada mensaje. Va en una sola consulta y no una por
+   * mensaje: con cien mensajes en pantalla, lo segundo son cien viajes.
+   */
+  private async conContadorDeHilo(mensajes: Mensaje[]): Promise<Mensaje[]> {
+    const ids = mensajes.map((m) => m.id)
+    if (ids.length === 0) return mensajes
+
+    const { data, error } = await this.sb.from('mensajes').select('hilo_padre').in('hilo_padre', ids)
+    // La columna todavía puede no existir (migración pendiente): sin contador,
+    // pero sin romper el hilo entero.
+    if (error) return mensajes
+
+    const cuenta = new Map<string, number>()
+    for (const f of (data ?? []) as { hilo_padre: string }[]) {
+      cuenta.set(f.hilo_padre, (cuenta.get(f.hilo_padre) ?? 0) + 1)
+    }
+    return mensajes.map((m) => ({ ...m, respuestas: cuenta.get(m.id) ?? 0 }))
+  }
+
+  /** Borrado suave: el hueco queda, la respuesta que lo citaba no se rompe. */
+  async eliminar(mensajeId: string): Promise<void> {
+    const { error } = await this.sb
+      .from('mensajes')
+      .update({ eliminado_at: new Date().toISOString(), contenido: null })
+      .eq('id', mensajeId)
+    if (error) throw new Error(error.message)
+  }
+
+  async enviar(
+    conversacionId: string,
+    autorId: string,
+    contenido: string | null,
+    extra?: { responder_a?: string; hilo_padre?: string },
+  ): Promise<Mensaje> {
     const texto = contenido?.trim() || null
     const { data, error } = await this.sb
       .from('mensajes')
-      .insert({ conversacion_id: conversacionId, autor_id: autorId, contenido: texto })
+      .insert({
+        conversacion_id: conversacionId,
+        autor_id: autorId,
+        contenido: texto,
+        responder_a: extra?.responder_a ?? null,
+        hilo_padre: extra?.hilo_padre ?? null,
+      })
       .select()
       .single()
     if (error) throw new Error(error.message)

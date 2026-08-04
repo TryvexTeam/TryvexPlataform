@@ -13,13 +13,18 @@ export async function GET(req: Request) {
   const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
   if (!perfil) return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
 
-  const conversacionId = new URL(req.url).searchParams.get('conversacion')
+  const params = new URL(req.url).searchParams
+  const conversacionId = params.get('conversacion')
   if (!conversacionId) return NextResponse.json({ success: false, error: 'Falta la conversación' }, { status: 400 })
 
   const repo = new ChatRepository(supabase)
   if (!(await repo.esMiembro(conversacionId, perfil.id))) {
     return NextResponse.json({ success: false, error: 'No perteneces a esa conversación' }, { status: 403 })
   }
+
+  // ?hilo=<uuid> devuelve las respuestas de ese mensaje en vez del flujo.
+  const hilo = params.get('hilo')
+  if (hilo) return NextResponse.json({ success: true, data: await repo.listHilo(hilo) })
 
   const mensajes = await repo.listMensajes(conversacionId)
   await repo.marcarLeida(conversacionId, perfil.id)
@@ -47,6 +52,8 @@ export async function POST(req: Request) {
     crudo = {
       conversacion_id: form.get('conversacion_id'),
       contenido: (form.get('contenido') as string) || undefined,
+      responder_a: (form.get('responder_a') as string) || undefined,
+      hilo_padre: (form.get('hilo_padre') as string) || undefined,
     }
     archivos = form.getAll('archivos').filter((f): f is File => f instanceof File)
   } else {
@@ -61,7 +68,7 @@ export async function POST(req: Request) {
     )
   }
 
-  const { conversacion_id, contenido } = parsed.data
+  const { conversacion_id, contenido, responder_a, hilo_padre } = parsed.data
 
   // Un mensaje sin texto ni archivo no es nada. El schema deja el texto opcional
   // porque solo acá se sabe si vino un adjunto.
@@ -75,7 +82,10 @@ export async function POST(req: Request) {
   const repo = new ChatRepository(supabase)
 
   try {
-    const mensaje = await repo.enviar(conversacion_id, perfil.id, contenido ?? null)
+    const mensaje = await repo.enviar(conversacion_id, perfil.id, contenido ?? null, {
+      responder_a,
+      hilo_padre,
+    })
 
     if (archivos.length > 0) {
       mensaje.adjuntos = await guardarAdjuntos(mensaje.id, conversacion_id, archivos)
