@@ -37,15 +37,11 @@ CREATE TRIGGER trg_hilo_un_nivel BEFORE INSERT ON mensajes FOR EACH ROW EXECUTE 
 -- nadie usaba). Así la respuesta que citaba ese mensaje no queda huérfana, y
 -- queda rastro de que hubo algo — un mensaje que desaparece sin dejar hueco es
 -- peor que uno tachado.
-CREATE OR REPLACE FUNCTION soy_admin()
-RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $fn$
-  SELECT COALESCE((SELECT es_admin FROM dim_integrantes WHERE auth_user_id = auth.uid()), false);
-$fn$;
-
-REVOKE ALL ON FUNCTION soy_admin() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION soy_admin() TO authenticated;
-
 -- La 019 solo dejaba editar el mensaje propio. El admin puede borrar cualquiera:
 -- si algo no debe estar en el chat del equipo, alguien tiene que poder sacarlo.
+--
+-- Sin función `soy_admin()` a propósito: el chequeo va inline. Una función más
+-- es una sentencia más para que el SQL Editor mutile, y acá no aporta nada —
+-- `mi_integrante_id()` ya es SECURITY DEFINER y resuelve quién soy sin recursión.
 DROP POLICY IF EXISTS "editar mensaje propio" ON mensajes;
-CREATE POLICY "editar mensaje propio" ON mensajes FOR UPDATE TO authenticated USING (autor_id = mi_integrante_id() OR soy_admin()) WITH CHECK (autor_id = mi_integrante_id() OR soy_admin());
+CREATE POLICY "editar mensaje propio" ON mensajes FOR UPDATE TO authenticated USING (autor_id = mi_integrante_id() OR EXISTS (SELECT 1 FROM dim_integrantes i WHERE i.id = mi_integrante_id() AND i.es_admin)) WITH CHECK (autor_id = mi_integrante_id() OR EXISTS (SELECT 1 FROM dim_integrantes i WHERE i.id = mi_integrante_id() AND i.es_admin));

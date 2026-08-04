@@ -19,6 +19,9 @@ import { createClient } from '@/lib/supabase/client'
  * Con la publicación sana los eventos llegan al instante y las redes casi nunca
  * disparan; sin ella, la app sigue sintiéndose viva.
  */
+/** Sufijo incremental para que dos montajes nunca compartan canal. */
+let contadorCanales = 0
+
 export function useDatosVivos(tablas: string[], opciones?: { intervaloMs?: number }) {
   const router = useRouter()
   const intervaloMs = opciones?.intervaloMs ?? 45_000
@@ -34,7 +37,15 @@ export function useDatosVivos(tablas: string[], opciones?: { intervaloMs?: numbe
     }
 
     const supabase = createClient()
-    const canal = supabase.channel(`vivos-${clave}`)
+
+    // Nombre único por montaje, y no `vivos-<tablas>`.
+    //
+    // supabase-js cachea los canales por nombre y `removeChannel` es asíncrono.
+    // React monta el efecto, lo limpia y lo vuelve a montar: en la segunda vuelta
+    // `channel()` devolvía el MISMO canal, ya suscrito, y agregarle un `.on()`
+    // lanzaba "cannot add postgres_changes callbacks after subscribe()".
+    // Ese error tumbaba la página entera — así se cayó /hoy.
+    const canal = supabase.channel(`vivos-${clave}-${++contadorCanales}`)
     for (const tabla of clave.split(',')) {
       canal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, refrescar)
     }

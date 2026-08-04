@@ -170,13 +170,33 @@ export class ChatRepository {
     return mensajes.map((m) => ({ ...m, respuestas: cuenta.get(m.id) ?? 0 }))
   }
 
-  /** Borrado suave: el hueco queda, la respuesta que lo citaba no se rompe. */
+  /**
+   * Borra el mensaje de verdad: la fila desaparece de la base.
+   *
+   * Consecuencias que vienen de las claves foráneas de la 026, y son deliberadas:
+   *   · `responder_a` es ON DELETE SET NULL → la respuesta que lo citaba sobrevive
+   *     y muestra "Mensaje eliminado" en la cita.
+   *   · `hilo_padre` es ON DELETE CASCADE → borrar el mensaje que abrió un hilo
+   *     se lleva todas sus respuestas. Un hilo sin su origen no se entiende.
+   */
   async eliminar(mensajeId: string): Promise<void> {
-    const { error } = await this.sb
-      .from('mensajes')
-      .update({ eliminado_at: new Date().toISOString(), contenido: null })
-      .eq('id', mensajeId)
+    const { error } = await this.sb.from('mensajes').delete().eq('id', mensajeId)
     if (error) throw new Error(error.message)
+  }
+
+  /**
+   * Las rutas de storage de un mensaje y de todo lo que caiga con él.
+   *
+   * Se piden ANTES de borrar: una vez que la fila se va, el CASCADE se lleva las
+   * de `mensaje_adjuntos` y ya no hay forma de saber qué archivos quedaron
+   * colgados en el bucket. Nadie los ve, pero siguen ocupando espacio.
+   */
+  async rutasAdjuntosDe(mensajeId: string): Promise<string[]> {
+    const { data: hijos } = await this.sb.from('mensajes').select('id').eq('hilo_padre', mensajeId)
+    const ids = [mensajeId, ...((hijos ?? []) as { id: string }[]).map((h) => h.id)]
+
+    const { data } = await this.sb.from('mensaje_adjuntos').select('ruta').in('mensaje_id', ids)
+    return ((data ?? []) as { ruta: string }[]).map((a) => a.ruta)
   }
 
   async enviar(

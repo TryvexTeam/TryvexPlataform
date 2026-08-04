@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { PresenciaIntegrante } from '@/lib/types/presencia'
 
+// Nombre único por montaje: supabase-js cachea los canales por nombre y
+// removeChannel es asíncrono, así que un remonte reusaba uno ya suscrito y
+// agregarle callbacks lanzaba un error que tumbaba la página.
+let contadorCanales = 0
+
 /**
  * Disponibilidad real del equipo: turno marcado + calendario.
  *
@@ -33,7 +38,7 @@ export function useDisponibilidad(): Map<string, PresenciaIntegrante> {
 
     const supabase = createClient()
     const canal = supabase
-      .channel('disponibilidad-equipo')
+      .channel(`disponibilidad-equipo-${++contadorCanales}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jornadas' }, cargar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reuniones' }, cargar)
       .subscribe()
