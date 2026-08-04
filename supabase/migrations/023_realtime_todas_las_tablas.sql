@@ -8,64 +8,40 @@
 --   tareas      → Realtime NO
 --   fact_leads  → Realtime NO
 --
--- El código YA se suscribe a `tareas` y a `fact_leads` (tareas-kanban.tsx,
--- leads-pipeline.tsx). El canal responde SUBSCRIBED y todo parece sano, pero no
--- llega un solo evento: esas tablas nunca entraron a la publicación. La 019
+-- El código YA se suscribía a `tareas` y a `fact_leads` (tareas-kanban.tsx,
+-- leads-pipeline.tsx). El canal respondía SUBSCRIBED y todo parecía sano, pero no
+-- llegaba un solo evento: esas tablas nunca entraron a la publicación. La 019
 -- publicó únicamente `mensajes`, que es lo que necesitaba el chat.
 --
 -- Es el peor tipo de falla: silenciosa. Suscribirse a una tabla no publicada no
 -- da error, simplemente no pasa nada nunca.
+--
+-- Escrito sin format()/%I ni bloques DO: el SQL Editor de Supabase mutiló ambas
+-- formas (42601) y, como corre todo en una transacción, un solo error revertía
+-- el script entero.
+--
+-- `mensajes` y `notificaciones` NO van en la lista: ya estaban publicadas.
+-- Incluirlas hacía fallar el ALTER completo con 42710 y, por la transacción, no
+-- se agregaba ninguna de las otras once. Confirmado leyendo la publicación:
+--
+--   SELECT tablename FROM pg_publication_tables WHERE pubname = 'supabase_realtime';
+--   -> mensajes, notificaciones
 
-DO $$
-DECLARE
-  t TEXT;
-BEGIN
-  -- Sin la publicación no hay nada que hacer, y no es motivo para abortar toda
-  -- la migración: el CRM funciona igual, solo que sin tiempo real.
-  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
-    RAISE NOTICE 'No existe la publicación supabase_realtime: se omite el tiempo real.';
-    RETURN;
-  END IF;
+ALTER PUBLICATION supabase_realtime ADD TABLE tareas, tarea_responsables, fact_leads, reuniones, dim_clientes, dim_proyectos, conversaciones, conversacion_miembros, jornadas, cerebro_entradas, interacciones_lead;
 
-  FOREACH t IN ARRAY ARRAY[
-    'tareas',          -- el kanban ya escuchaba, sin recibir nada
-    'fact_leads',      -- el pipeline igual
-    'notificaciones',  -- la campana igual
-    'reuniones',       -- el calendario, que ni siquiera escuchaba
-    'dim_clientes',
-    'dim_proyectos',
-    'conversaciones',  -- para que la bandeja del chat se ordene sola
-    'conversacion_miembros',
-    'jornadas',        -- entrada y salida de turno, para la presencia real
-    'cerebro_entradas' -- la bitácora se alimenta sola: que se vea al momento
-  ]
-  LOOP
-    -- Se agrega una por una: si alguna ya estaba, no arrastra a las demás.
-    BEGIN
-      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', t);
-    EXCEPTION
-      WHEN duplicate_object THEN NULL;  -- ya publicada
-      WHEN undefined_table  THEN NULL;  -- no existe en este proyecto
-    END;
-  END LOOP;
-END $$;
-
--- Realtime respeta RLS, pero solo si la réplica lleva la fila completa: sin esto
--- un UPDATE llega sin las columnas viejas y el filtro del cliente no puede
--- decidir si el cambio le corresponde.
-DO $$
-DECLARE
-  t TEXT;
-BEGIN
-  FOREACH t IN ARRAY ARRAY[
-    'tareas','fact_leads','notificaciones','reuniones',
-    'dim_clientes','dim_proyectos','conversaciones','conversacion_miembros',
-    'jornadas','cerebro_entradas','mensajes'
-  ]
-  LOOP
-    BEGIN
-      EXECUTE format('ALTER TABLE %I REPLICA IDENTITY FULL', t);
-    EXCEPTION WHEN undefined_table THEN NULL;
-    END;
-  END LOOP;
-END $$;
+-- Realtime respeta RLS, pero solo si la réplica lleva la fila entera: sin esto un
+-- UPDATE llega sin las columnas viejas y el filtro no puede decidir si el cambio
+-- le corresponde a quien escucha.
+ALTER TABLE tareas REPLICA IDENTITY FULL;
+ALTER TABLE tarea_responsables REPLICA IDENTITY FULL;
+ALTER TABLE fact_leads REPLICA IDENTITY FULL;
+ALTER TABLE notificaciones REPLICA IDENTITY FULL;
+ALTER TABLE reuniones REPLICA IDENTITY FULL;
+ALTER TABLE dim_clientes REPLICA IDENTITY FULL;
+ALTER TABLE dim_proyectos REPLICA IDENTITY FULL;
+ALTER TABLE conversaciones REPLICA IDENTITY FULL;
+ALTER TABLE conversacion_miembros REPLICA IDENTITY FULL;
+ALTER TABLE jornadas REPLICA IDENTITY FULL;
+ALTER TABLE cerebro_entradas REPLICA IDENTITY FULL;
+ALTER TABLE interacciones_lead REPLICA IDENTITY FULL;
+ALTER TABLE mensajes REPLICA IDENTITY FULL;
