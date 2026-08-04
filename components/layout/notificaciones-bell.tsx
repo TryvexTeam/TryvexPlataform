@@ -10,6 +10,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
+// Nombre único por montaje: supabase-js cachea los canales por nombre y
+// removeChannel es asíncrono, así que un remonte reusaba uno ya suscrito y
+// agregarle callbacks lanzaba un error que tumbaba la página.
+let contadorCanales = 0
+
 interface Notif {
   id: string
   tipo: string
@@ -62,7 +67,7 @@ export function NotificacionesBell() {
     if (!integranteId) return
     const supabase = createClient()
     const channel = supabase
-      .channel('notificaciones-bell')
+      .channel(`notificaciones-bell-${++contadorCanales}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notificaciones', filter: `integrante_id=eq.${integranteId}` },

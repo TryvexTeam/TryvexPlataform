@@ -43,7 +43,20 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   // La policy de la 026 ya cubre esto, pero se comprueba también acá: el día que
   // alguien llame esta ruta con service role, el permiso sigue estando.
   try {
-    await new ChatRepository(supabase).eliminar(id)
+    const repo = new ChatRepository(supabase)
+
+    // Las rutas se piden ANTES de borrar: al irse la fila, el CASCADE se lleva
+    // las de `mensaje_adjuntos` y ya no hay forma de saber qué archivos quedaron
+    // colgados en el bucket. Nadie los vería, pero seguirían ocupando espacio.
+    const rutas = await repo.rutasAdjuntosDe(id)
+
+    await repo.eliminar(id)
+
+    if (rutas.length > 0) {
+      const { createAdminClient } = await import('@/lib/supabase/server')
+      await createAdminClient().storage.from('adjuntos-chat').remove(rutas)
+    }
+
     return NextResponse.json({ success: true })
   } catch (err) {
     return NextResponse.json(

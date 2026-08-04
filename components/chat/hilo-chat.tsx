@@ -16,6 +16,7 @@ import { Markdown } from '@/components/shared/markdown'
 import { AvatarChat } from './avatar-chat'
 import { AdjuntosMensaje } from './adjuntos-mensaje'
 import { AccionesMensaje } from './acciones-mensaje'
+import { GestosMensaje } from './gestos-mensaje'
 import { CitaMensaje } from './cita-mensaje'
 import { PanelHilo } from './panel-hilo'
 import type { AgenteChat } from './chat-workspace'
@@ -180,16 +181,19 @@ export function HiloChat({
 
   /** Borrado suave: el mensaje queda tachado en vez de desaparecer sin rastro. */
   const borrar = async (mensaje: Mensaje) => {
-    if (!confirm('¿Eliminar este mensaje? Queda marcado como eliminado para todos.')) return
+    const conHilo = (mensaje.respuestas ?? 0) > 0
+    const aviso = conHilo
+      ? `Se elimina el mensaje y sus ${mensaje.respuestas} respuestas. No se puede deshacer.`
+      : 'Se elimina para todos y no se puede deshacer.'
+    if (!confirm(aviso)) return
     try {
       const res = await fetch(`/api/chat/mensajes/${mensaje.id}`, { method: 'DELETE' })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo eliminar')
-      setMensajes((previos) =>
-        previos.map((m) =>
-          m.id === mensaje.id ? { ...m, contenido: null, eliminado_at: new Date().toISOString() } : m,
-        ),
-      )
+      // Se va de la lista, no queda tachado: la fila ya no existe en la base.
+      // Si abrió un hilo, el CASCADE se llevó también sus respuestas.
+      setMensajes((previos) => previos.filter((m) => m.id !== mensaje.id && m.hilo_padre !== mensaje.id))
+      if (hiloAbierto?.id === mensaje.id) setHiloAbierto(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error eliminando el mensaje')
     }
@@ -253,7 +257,14 @@ export function HiloChat({
               i > 0 && previo.autor_id === m.autor_id && previo.agente_id === m.agente_id
 
             return (
-              <div key={m.id} className={`flex gap-2 min-w-0 ${mio ? 'justify-end' : 'justify-start'}`}>
+              <GestosMensaje
+                key={m.id}
+                puedeBorrar={mio || soyAdmin}
+                onResponder={() => setCitando(m)}
+                onAbrirHilo={() => setHiloAbierto(m)}
+                onBorrar={() => borrar(m)}
+              >
+              <div className={`flex gap-2 min-w-0 ${mio ? 'justify-end' : 'justify-start'}`}>
                 {/* La foto va en todos los hilos, no solo en grupos: es la cara de
                     quien habla y en un DM también se quiere ver. El hueco de 28px
                     mantiene alineadas las burbujas encadenadas. */}
@@ -333,17 +344,20 @@ export function HiloChat({
                     <span className="text-[10px] text-[var(--tx-ink-muted)] px-1">
                       {HORA.format(new Date(m.created_at))}
                     </span>
-                    {!m.eliminado_at && (
+                    {/* Solo con mouse: en el teléfono se usa deslizar o mantener
+                        presionado, que no requieren apuntar a un botón de 28px. */}
+                    <span className="hidden md:contents">
                       <AccionesMensaje
                         puedeBorrar={mio || soyAdmin}
                         onResponder={() => setCitando(m)}
                         onAbrirHilo={() => setHiloAbierto(m)}
                         onBorrar={() => borrar(m)}
                       />
-                    )}
+                    </span>
                   </div>
                 </div>
               </div>
+              </GestosMensaje>
             )
           })
         )}
