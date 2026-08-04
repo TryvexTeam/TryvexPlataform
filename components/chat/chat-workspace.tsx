@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { toast } from '@/lib/toast'
+import { textoPlano } from '@/lib/markdown/mini'
 import type { Conversacion, Mensaje } from '@/lib/types/chat'
 import { tituloConversacion } from '@/lib/types/chat'
 import { AvatarChat } from './avatar-chat'
@@ -157,7 +158,7 @@ export function ChatWorkspace({
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[12px] text-[var(--tx-ink-muted)] truncate">
-                        {c.ultimo_mensaje?.contenido ?? 'Sin mensajes'}
+                        {c.ultimo_mensaje ? textoPlano(c.ultimo_mensaje.contenido) : 'Sin mensajes'}
                       </span>
                       {c.no_leidos > 0 && (
                         <span

@@ -14,7 +14,7 @@ import {
   type EntradaCerebro,
   type FuenteEntrada,
 } from '@/lib/types/cerebro'
-import { Markdown } from './markdown'
+import { Markdown } from '@/components/shared/markdown'
 import { NuevaNota } from './nueva-nota'
 
 interface EntidadActiva {

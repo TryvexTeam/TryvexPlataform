@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { pareceMarkdown, parsearInline, parsearMarkdown } from './mini'
+import { pareceMarkdown, parsearInline, parsearMarkdown, textoPlano } from './mini'
 
 describe('parsearInline', () => {
   test('separa negrita del texto que la rodea', () => {
@@ -88,5 +88,19 @@ describe('pareceMarkdown', () => {
 
   test('no se activa con texto corriente', () => {
     expect(pareceMarkdown('Llamé al cliente y quedó de responder mañana.')).toBe(false)
+  })
+})
+
+describe('textoPlano', () => {
+  test('quita las marcas para la vista previa del chat', () => {
+    expect(textoPlano('**Listo** el _deploy_')).toBe('Listo el deploy')
+  })
+
+  test('aplana una lista en una línea', () => {
+    expect(textoPlano('- uno\n- dos')).toBe('uno · dos')
+  })
+
+  test('conserva el texto de un enlace, no la URL', () => {
+    expect(textoPlano('mirá [el PR](https://github.com/x/y/pull/1)')).toBe('mirá el PR')
   })
 })

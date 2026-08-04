@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/lib/toast'
 import { ENTIDAD_LABEL, type EntradaCerebro } from '@/lib/types/cerebro'
-import { Markdown } from './markdown'
+import { Markdown } from '@/components/shared/markdown'
 
 interface EntidadOpcion {
   entidad_tipo: string
