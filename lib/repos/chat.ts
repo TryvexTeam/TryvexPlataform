@@ -77,11 +77,18 @@ export class ChatRepository {
       }
     }
 
-    type ConvRow = { id: string; tipo: TipoConversacion; nombre: string | null; ultimo_mensaje_at: string }
+    type ConvRow = {
+      id: string
+      tipo: TipoConversacion
+      nombre: string | null
+      avatar_url: string | null
+      ultimo_mensaje_at: string
+    }
     return ((convs.data ?? []) as ConvRow[]).map((c) => ({
       id: c.id,
       tipo: c.tipo,
       nombre: c.nombre,
+      avatar_url: c.avatar_url,
       ultimo_mensaje_at: c.ultimo_mensaje_at,
       miembros: porConv.get(c.id) ?? [],
       ultimo_mensaje: ultimoPorConv.get(c.id) ?? null,

@@ -5,7 +5,7 @@ import { ChevronLeftIcon, PaperclipIcon, SendIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
-import { pesoLegible, tituloConversacion } from '@/lib/types/chat'
+import { avatarConversacion, pesoLegible, tituloConversacion } from '@/lib/types/chat'
 import {
   PRESENCIA_LABEL,
   detallePresencia,
@@ -183,8 +183,8 @@ export function HiloChat({
         )}
         <AvatarChat
           nombre={titulo}
-          avatarUrl={otro?.avatar_url}
-          color={otro?.color}
+          avatarUrl={avatarConversacion(conversacion, miIntegranteId).url}
+          color={avatarConversacion(conversacion, miIntegranteId).color}
           estado={conversacion.tipo === 'dm' ? estadoOtro : undefined}
           size={36}
         />

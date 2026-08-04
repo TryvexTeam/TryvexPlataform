@@ -155,3 +155,47 @@ describe('sabor chat (Discord)', () => {
     expect(textoPlano('la clave es ||1234||')).toBe('la clave es ▮▮▮')
   })
 })
+
+describe('tablas', () => {
+  const TABLA = `| Paso | Estado |
+|---|---|
+| Base del VPS | acá voy |
+| Migrar scraper | pendiente |`
+
+  test('reconoce encabezados y filas', () => {
+    const [bloque] = parsearMarkdown(TABLA)
+    expect(bloque.tipo).toBe('tabla')
+    if (bloque.tipo !== 'tabla') return
+    expect(bloque.encabezados).toHaveLength(2)
+    expect(bloque.filas).toHaveLength(2)
+    expect(bloque.encabezados[0]).toEqual([{ tipo: 'texto', texto: 'Paso' }])
+    expect(bloque.filas[1][1]).toEqual([{ tipo: 'texto', texto: 'pendiente' }])
+  })
+
+  test('acepta filas sin las barras de los extremos', () => {
+    const [bloque] = parsearMarkdown('a | b\n--- | ---\n1 | 2')
+    expect(bloque.tipo).toBe('tabla')
+    if (bloque.tipo !== 'tabla') return
+    expect(bloque.filas[0].map((c) => c[0]?.texto)).toEqual(['1', '2'])
+  })
+
+  test('respeta la alineación en el separador', () => {
+    const [bloque] = parsearMarkdown('| a | b |\n|:--|--:|\n| 1 | 2 |')
+    expect(bloque.tipo).toBe('tabla')
+  })
+
+  test('una barra suelta no convierte el texto en tabla', () => {
+    const [bloque] = parsearMarkdown('esto | aquello es texto normal')
+    expect(bloque.tipo).toBe('parrafo')
+  })
+
+  test('el formato dentro de una celda se conserva', () => {
+    const [bloque] = parsearMarkdown('| x |\n|---|\n| **listo** |')
+    if (bloque.tipo !== 'tabla') throw new Error('no es tabla')
+    expect(bloque.filas[0][0]).toEqual([{ tipo: 'fuerte', texto: 'listo' }])
+  })
+
+  test('la vista previa aplana la tabla', () => {
+    expect(textoPlano(TABLA)).toContain('Paso · Estado')
+  })
+})

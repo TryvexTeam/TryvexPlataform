@@ -88,6 +88,45 @@ function Bloque({ bloque }: { bloque: BloqueMd }) {
         </pre>
       )
 
+    case 'tabla':
+      return (
+        // Scroll propio: una tabla ancha no puede empujar el ancho del mensaje.
+        <div className="my-2 -mx-1 overflow-x-auto">
+          <table className="w-full text-[12px] border-collapse">
+            <thead>
+              <tr>
+                {bloque.encabezados.map((celda, i) => (
+                  <th
+                    key={i}
+                    className={`text-left font-semibold px-2 py-1 border-b ${
+                      hereda ? 'border-current/30' : 'border-[var(--tx-ink-muted)]/30'
+                    }`}
+                  >
+                    <Inline nodos={celda} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {bloque.filas.map((fila, f) => (
+                <tr key={f}>
+                  {fila.map((celda, c) => (
+                    <td
+                      key={c}
+                      className={`align-top px-2 py-1 border-b ${
+                        hereda ? 'border-current/10' : 'border-[var(--tx-ink-muted)]/12'
+                      }`}
+                    >
+                      <Inline nodos={celda} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+
     case 'separador':
       return <hr className="my-3 border-[var(--tx-ink-muted)]/20" />
 

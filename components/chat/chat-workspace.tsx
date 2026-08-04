@@ -5,7 +5,7 @@ import { toast } from '@/lib/toast'
 import { textoPlano } from '@/lib/markdown/mini'
 import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 import type { Conversacion, Mensaje } from '@/lib/types/chat'
-import { tituloConversacion } from '@/lib/types/chat'
+import { avatarConversacion, tituloConversacion } from '@/lib/types/chat'
 import { AvatarChat } from './avatar-chat'
 import { HiloChat } from './hilo-chat'
 import { NuevaConversacion } from './nueva-conversacion'
@@ -165,8 +165,8 @@ export function ChatWorkspace({
                 >
                   <AvatarChat
                     nombre={titulo}
-                    avatarUrl={otro?.avatar_url}
-                    color={otro?.color}
+                    avatarUrl={avatarConversacion(c, miIntegranteId).url}
+                    color={avatarConversacion(c, miIntegranteId).color}
                     estado={c.tipo === 'dm' ? estadoOtro : undefined}
                   />
                   <div className="min-w-0 flex-1">
