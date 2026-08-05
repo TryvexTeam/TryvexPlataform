@@ -442,7 +442,11 @@ export function PanelLlamada({
       role="dialog"
       aria-label={`Llamada en ${titulo}`}
     >
-      <header className="flex items-center justify-between gap-3 px-4 py-3 shrink-0">
+      {/* `pt-safe`: el layout declara `viewportFit: 'cover'`, así que la llamada
+          se dibuja BAJO la Dynamic Island y la barra de estado del iPhone. Sin
+          compensar el inset, el botón de minimizar queda debajo de la hora y el
+          wifi: se ve, y no se puede tocar. La barra del sistema gana siempre. */}
+      <header className="flex items-center justify-between gap-3 px-4 py-3 shrink-0 pt-safe">
         <div className="min-w-0">
           <p className="text-[15px] font-semibold text-[var(--tx-ink-primary)] truncate">{titulo}</p>
           <p className="flex items-center gap-1.5 text-[12px] text-[var(--tx-ink-muted)]">
@@ -673,7 +677,9 @@ export function PanelLlamada({
         )}
       </div>
 
-      <footer className="flex items-center justify-center gap-3 px-4 py-5 shrink-0">
+      {/* Lo mismo abajo: sin `pb-safe`, colgar y silenciar quedan sobre la barra
+          de gestos, donde el deslizamiento del sistema se lleva el toque. */}
+      <footer className="flex items-center justify-center gap-3 px-4 py-5 shrink-0 pb-safe">
         <Boton
           activo={micro}
           onClick={alternarMicro}

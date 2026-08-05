@@ -36,6 +36,13 @@ self.addEventListener('push', (event) => {
   }
 
   const titulo = payload.titulo || 'Tryvex'
+
+  /* Una llamada no es un aviso más: hay alguien esperando al otro lado ahora
+     mismo. Con las opciones por defecto se comportaba igual que "nuevo lead
+     asignado" -- aparecía y se iba sola a los pocos segundos, así que quien
+     tenía el teléfono en el bolsillo se enteraba cuando ya habían colgado. */
+  const esLlamada = payload.tag === 'llamada_entrante'
+
   const opciones = {
     body: payload.cuerpo || '',
     icon: '/icon-192.png',
@@ -43,6 +50,14 @@ self.addEventListener('push', (event) => {
     tag: payload.tag || undefined,
     renotify: Boolean(payload.tag),
     data: { link: payload.link || '/hoy' },
+    /* Se queda hasta que la persona haga algo con ella. */
+    requireInteraction: esLlamada,
+    /* Con el teléfono en silencio la vibración es lo único que avisa. */
+    vibrate: esLlamada ? [200, 100, 200, 100, 200] : undefined,
+    /* Sin esto, una llamada entrante puede llegar callada si el sistema decide
+       agrupar. Para el resto de avisos el silencio está bien. */
+    silent: false,
+    actions: esLlamada ? [{ action: 'contestar', title: 'Contestar' }] : undefined,
   }
 
   event.waitUntil(self.registration.showNotification(titulo, opciones))

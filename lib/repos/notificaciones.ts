@@ -82,12 +82,29 @@ export class NotificacionesRepository {
       // Misma notificación al celular / PC vía Web Push. Best-effort: si falla,
       // la campanita in-app ya quedó guardada arriba.
       const { enviarPush } = await import('@/lib/push/server')
-      await enviarPush(habilitados, {
+      const resultado = await enviarPush(habilitados, {
         titulo: input.titulo,
         cuerpo: input.cuerpo,
         link: input.link,
         tag: input.tipo,
       })
+
+      /**
+       * El resultado se registra, no se tira.
+       *
+       * `enviarPush` devuelve un `motivo` cuando no manda nada
+       * -- `sin_suscripciones`, `vapid_no_configurado` -- y hasta acá nadie lo
+       * miraba. Con el aviso perdido y nada en los logs, "no me llegó la
+       * notificación" era indiagnosticable: no se podía distinguir un teléfono
+       * sin registrar de una llave que falta en el entorno.
+       */
+      if (resultado.enviados === 0) {
+        console.warn('[notificar] push no enviado', {
+          tipo: input.tipo,
+          destinatarios: habilitados.length,
+          motivo: resultado.motivo ?? 'todas_las_suscripciones_fallaron',
+        })
+      }
     } catch (err) {
       console.error('[notificar]', err instanceof Error ? err.message : err)
     }
