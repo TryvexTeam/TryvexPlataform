@@ -112,6 +112,21 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
     router.refresh()
   }
 
+  async function handleMarcarPagado(ventaId: string) {
+    const res = await fetch(`/api/pagos/${ventaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        estado_pago: 'pagado',
+        fecha_pago: new Date().toISOString().slice(0, 10),
+      }),
+    })
+    if (!res.ok) { toast.error('Error al actualizar el pago'); return }
+    toast.success('Pago marcado como pagado')
+    onUpdate()
+    router.refresh()
+  }
+
   /** Descartar no borra: el pago queda 'cancelado' y visible tachado, para dejar rastro. */
   async function handleDescartar(ventaId: string) {
     const res = await fetch(`/api/pagos/${ventaId}`, {
@@ -746,6 +761,8 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
         clienteId={cliente.id}
         proyectos={proyectos}
         onCreated={onUpdate}
+        ventasPendientes={pendientes}
+        onMarcarPagada={handleMarcarPagado}
       />
     </>
   )
