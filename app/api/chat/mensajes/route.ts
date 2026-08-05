@@ -24,9 +24,18 @@ export async function GET(req: Request) {
 
   // ?hilo=<uuid> devuelve las respuestas de ese mensaje en vez del flujo.
   const hilo = params.get('hilo')
-  if (hilo) return NextResponse.json({ success: true, data: await repo.listHilo(hilo) })
+  if (hilo) {
+    return NextResponse.json({ success: true, data: await repo.listHilo(hilo, perfil.id) })
+  }
 
-  const mensajes = await repo.listMensajes(conversacionId)
+  // ?fijados=1 devuelve solo los fijados, para la barra del tope.
+  if (params.get('fijados')) {
+    return NextResponse.json({ success: true, data: await repo.listFijados(conversacionId) })
+  }
+
+  // El id propio va al repo para saber cuáles reacciones son mías: sin eso, la UI
+  // no puede pintar activa la que puse ni saber si el clic suma o resta.
+  const mensajes = await repo.listMensajes(conversacionId, 100, perfil.id)
   await repo.marcarLeida(conversacionId, perfil.id)
   return NextResponse.json({ success: true, data: mensajes })
 }

@@ -1,5 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
-import type { AdjuntoMensaje, Conversacion, Mensaje, MiembroChat, TipoConversacion } from '@/lib/types/chat'
+import type {
+  AdjuntoMensaje,
+  Conversacion,
+  Mensaje,
+  MiembroChat,
+  ReaccionAgrupada,
+  TipoConversacion,
+} from '@/lib/types/chat'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -107,7 +114,11 @@ export class ChatRepository {
    * chat entero deja de cargar con un PGRST200 — se rompe lo que ya funcionaba
    * por una función que todavía no está.
    */
-  async listMensajes(conversacionId: string, limite = 100): Promise<Mensaje[]> {
+  async listMensajes(
+    conversacionId: string,
+    limite = 100,
+    miIntegranteId?: string,
+  ): Promise<Mensaje[]> {
     const consulta = (columnas: string) =>
       this.sb
         .from('mensajes')
@@ -131,13 +142,14 @@ export class ChatRepository {
       .map(({ mensaje_adjuntos, ...m }) => ({ ...m, adjuntos: mensaje_adjuntos ?? [] }))
       .reverse()
 
-    return this.conContadorDeHilo(mensajes)
+    const conHilos = await this.conContadorDeHilo(mensajes)
+    return miIntegranteId ? this.conReacciones(conHilos, miIntegranteId) : conHilos
   }
 
   /**
    * Las respuestas de un hilo, colgadas de un mensaje.
    */
-  async listHilo(padreId: string): Promise<Mensaje[]> {
+  async listHilo(padreId: string, miIntegranteId?: string): Promise<Mensaje[]> {
     const { data, error } = await this.sb
       .from('mensajes')
       .select('*, mensaje_adjuntos(id, nombre, tipo_mime, bytes, ancho, alto)')
@@ -145,9 +157,12 @@ export class ChatRepository {
       .order('created_at', { ascending: true })
     if (error) throw new Error(error.message)
 
-    return ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[]).map(
+    const mensajes = ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[]).map(
       ({ mensaje_adjuntos, ...m }) => ({ ...m, adjuntos: mensaje_adjuntos ?? [] }),
     )
+
+    // Dentro de un hilo también se reacciona: es donde más se responde "ok".
+    return miIntegranteId ? this.conReacciones(mensajes, miIntegranteId) : mensajes
   }
 
   /**
@@ -168,6 +183,125 @@ export class ChatRepository {
       cuenta.set(f.hilo_padre, (cuenta.get(f.hilo_padre) ?? 0) + 1)
     }
     return mensajes.map((m) => ({ ...m, respuestas: cuenta.get(m.id) ?? 0 }))
+  }
+
+  /**
+   * Las reacciones de esos mensajes, ya agrupadas por emoji.
+   *
+   * Una sola consulta para toda la pantalla, igual que el contador de hilos: cien
+   * mensajes no pueden ser cien viajes.
+   *
+   * Si la tabla todavía no existe (migración 032 pendiente), devuelve los mensajes
+   * tal cual. Es la misma degradación que el resto del repo: en la ventana entre
+   * deploy y migración, el chat sigue funcionando sin reacciones en vez de no cargar.
+   */
+  private async conReacciones(mensajes: Mensaje[], miIntegranteId: string): Promise<Mensaje[]> {
+    const ids = mensajes.map((m) => m.id)
+    if (ids.length === 0) return mensajes
+
+    const { data, error } = await this.sb
+      .from('mensaje_reacciones')
+      .select('mensaje_id, emoji, integrante_id, dim_integrantes(nombre)')
+      .in('mensaje_id', ids)
+
+    if (error) return mensajes
+
+    type Fila = {
+      mensaje_id: string
+      emoji: string
+      integrante_id: string | null
+      dim_integrantes: { nombre: string } | null
+    }
+
+    // mensaje -> emoji -> acumulado. El orden de inserción del Map conserva el orden
+    // de aparición, así que el emoji que alguien puso primero queda primero.
+    const porMensaje = new Map<string, Map<string, ReaccionAgrupada>>()
+
+    for (const f of (data ?? []) as Fila[]) {
+      const porEmoji = porMensaje.get(f.mensaje_id) ?? new Map<string, ReaccionAgrupada>()
+      const actual = porEmoji.get(f.emoji) ?? { emoji: f.emoji, cuenta: 0, mia: false, quienes: [] }
+
+      actual.cuenta += 1
+      if (f.integrante_id === miIntegranteId) actual.mia = true
+      actual.quienes.push(f.dim_integrantes?.nombre ?? 'Un agente')
+
+      porEmoji.set(f.emoji, actual)
+      porMensaje.set(f.mensaje_id, porEmoji)
+    }
+
+    return mensajes.map((m) => ({
+      ...m,
+      reacciones: [...(porMensaje.get(m.id)?.values() ?? [])],
+    }))
+  }
+
+  /**
+   * Pone o saca un emoji. Es un interruptor: reaccionar dos veces con el mismo
+   * emoji lo quita, que es lo que espera cualquiera que use un chat.
+   *
+   * Devuelve el estado final para que la UI no tenga que adivinarlo.
+   */
+  async alternarReaccion(
+    mensajeId: string,
+    integranteId: string,
+    emoji: string,
+  ): Promise<{ puesta: boolean }> {
+    const { data: existente, error: errorBusca } = await this.sb
+      .from('mensaje_reacciones')
+      .select('id')
+      .eq('mensaje_id', mensajeId)
+      .eq('integrante_id', integranteId)
+      .eq('emoji', emoji)
+      .maybeSingle()
+
+    if (errorBusca) throw new Error(errorBusca.message)
+
+    if (existente) {
+      const { error } = await this.sb.from('mensaje_reacciones').delete().eq('id', existente.id)
+      if (error) throw new Error(error.message)
+      return { puesta: false }
+    }
+
+    const { error } = await this.sb
+      .from('mensaje_reacciones')
+      .insert({ mensaje_id: mensajeId, integrante_id: integranteId, emoji })
+
+    if (error) {
+      // 23505 = el índice único frenó un doble clic. El resultado deseado ya está.
+      if (error.code === '23505') return { puesta: true }
+      throw new Error(error.message)
+    }
+    return { puesta: true }
+  }
+
+  /**
+   * Fija o suelta un mensaje. `fijado_por` lo completa el trigger de la 032.
+   *
+   * Fijar es un acto sobre la conversación, no sobre el mensaje propio: cualquier
+   * miembro puede fijar el mensaje de otro, como en Slack. Quién puede hacerlo lo
+   * decide el trigger, no este método.
+   */
+  async fijar(mensajeId: string, fijar: boolean): Promise<void> {
+    const { error } = await this.sb
+      .from('mensajes')
+      .update({ fijado_at: fijar ? new Date().toISOString() : null })
+      .eq('id', mensajeId)
+    if (error) throw new Error(error.message)
+  }
+
+  /** Los fijados de una conversación, del más reciente al más viejo. */
+  async listFijados(conversacionId: string): Promise<Mensaje[]> {
+    const { data, error } = await this.sb
+      .from('mensajes')
+      .select('*')
+      .eq('conversacion_id', conversacionId)
+      .not('fijado_at', 'is', null)
+      .order('fijado_at', { ascending: false })
+      .limit(20)
+
+    // 42703 = la columna no existe todavía. Sin fijados, pero sin romper el chat.
+    if (error) return []
+    return (data ?? []) as Mensaje[]
   }
 
   /**

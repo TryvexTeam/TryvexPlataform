@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeftIcon, PaperclipIcon, SendIcon, XIcon } from 'lucide-react'
+import { ChevronLeftIcon, PaperclipIcon, PinIcon, SendIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
@@ -16,6 +16,7 @@ import { Markdown } from '@/components/shared/markdown'
 import { AvatarChat } from './avatar-chat'
 import { AdjuntosMensaje } from './adjuntos-mensaje'
 import { AccionesMensaje } from './acciones-mensaje'
+import { ReaccionesMensaje } from './reacciones-mensaje'
 import { GestosMensaje } from './gestos-mensaje'
 import { CitaMensaje } from './cita-mensaje'
 import { PanelHilo } from './panel-hilo'
@@ -59,6 +60,8 @@ export function HiloChat({
   const [citando, setCitando] = useState<Mensaje | null>(null)
   const [hiloAbierto, setHiloAbierto] = useState<Mensaje | null>(null)
   const [cargando, setCargando] = useState(true)
+  const [fijados, setFijados] = useState<Mensaje[]>([])
+  const [fijadosAbiertos, setFijadosAbiertos] = useState(false)
   const finRef = useRef<HTMLDivElement>(null)
   const cajaRef = useRef<HTMLTextAreaElement>(null)
   const archivosRef = useRef<HTMLInputElement>(null)
@@ -83,6 +86,28 @@ export function HiloChat({
       })
       .catch(() => vigente && toast.error('Error de red al cargar el chat'))
       .finally(() => vigente && setCargando(false))
+
+    return () => {
+      vigente = false
+    }
+  }, [conversacion.id])
+
+  /**
+   * Los fijados van en su propia consulta y no se derivan de `mensajes`: lo fijado
+   * suele ser viejo —el link del deploy, el acuerdo de la semana pasada— y quedaría
+   * fuera de los últimos 100 mensajes que carga el hilo. Justo lo que se quiere tener
+   * a mano es lo que ya no está a la vista.
+   */
+  useEffect(() => {
+    let vigente = true
+
+    fetch(`/api/chat/mensajes?conversacion=${conversacion.id}&fijados=1`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (vigente && json.success) setFijados(json.data as Mensaje[])
+      })
+      // Sin fijados el chat funciona igual: no vale un toast de error.
+      .catch(() => {})
 
     return () => {
       vigente = false
@@ -179,7 +204,97 @@ export function HiloChat({
     }
   }
 
-  /** Borrado suave: el mensaje queda tachado en vez de desaparecer sin rastro. */
+  /**
+   * Pone o saca un emoji.
+   *
+   * Se pinta antes de que responda el servidor: una reacción que tarda medio segundo
+   * en aparecer se siente rota, y es la interacción más liviana del chat. Si el POST
+   * falla, se revierte y se avisa.
+   */
+  const alternarReaccion = async (mensaje: Mensaje, emoji: string) => {
+    const aplicar = (lista: Mensaje[], invertir: boolean) =>
+      lista.map((m) => {
+        if (m.id !== mensaje.id) return m
+
+        const actuales = m.reacciones ?? []
+        const existente = actuales.find((r) => r.emoji === emoji)
+        const mia = existente?.mia ?? false
+        const suma = invertir ? (mia ? 1 : -1) : mia ? -1 : 1
+
+        // Quitar la última reacción de un emoji borra la píldora entera.
+        if (existente && existente.cuenta + suma <= 0) {
+          return { ...m, reacciones: actuales.filter((r) => r.emoji !== emoji) }
+        }
+
+        if (!existente) {
+          return {
+            ...m,
+            reacciones: [...actuales, { emoji, cuenta: 1, mia: true, quienes: ['Tú'] }],
+          }
+        }
+
+        return {
+          ...m,
+          reacciones: actuales.map((r) =>
+            r.emoji === emoji ? { ...r, cuenta: r.cuenta + suma, mia: !r.mia } : r,
+          ),
+        }
+      })
+
+    setMensajes((previos) => aplicar(previos, false))
+
+    try {
+      const res = await fetch(`/api/chat/mensajes/${mensaje.id}/reacciones`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo reaccionar')
+    } catch (err) {
+      setMensajes((previos) => aplicar(previos, true))
+      toast.error(err instanceof Error ? err.message : 'Error al reaccionar')
+    }
+  }
+
+  /** Fija o suelta un mensaje para toda la conversación, no solo para quien mira. */
+  const alternarFijado = async (mensaje: Mensaje) => {
+    const fijar = !mensaje.fijado_at
+    const marca = fijar ? new Date().toISOString() : null
+
+    setMensajes((previos) =>
+      previos.map((m) => (m.id === mensaje.id ? { ...m, fijado_at: marca } : m)),
+    )
+    // La barra del tope se actualiza en el mismo gesto: si esperara al servidor,
+    // el mensaje quedaría marcado como fijado sin aparecer arriba.
+    setFijados((previos) =>
+      fijar
+        ? [{ ...mensaje, fijado_at: marca }, ...previos.filter((f) => f.id !== mensaje.id)]
+        : previos.filter((f) => f.id !== mensaje.id),
+    )
+
+    try {
+      const res = await fetch(`/api/chat/mensajes/${mensaje.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fijar }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo fijar')
+      toast.success(fijar ? 'Mensaje fijado' : 'Ya no está fijado')
+    } catch (err) {
+      setMensajes((previos) =>
+        previos.map((m) => (m.id === mensaje.id ? { ...m, fijado_at: mensaje.fijado_at } : m)),
+      )
+      setFijados((previos) =>
+        fijar
+          ? previos.filter((f) => f.id !== mensaje.id)
+          : [mensaje, ...previos.filter((f) => f.id !== mensaje.id)],
+      )
+      toast.error(err instanceof Error ? err.message : 'Error al fijar')
+    }
+  }
+
   const borrar = async (mensaje: Mensaje) => {
     const conHilo = (mensaje.respuestas ?? 0) > 0
     const aviso = conHilo
@@ -234,6 +349,49 @@ export function HiloChat({
           </p>
         </div>
       </header>
+
+      {/* Fijados: lo que hay que tener a mano sin buscarlo. Se muestra el más
+          reciente y, si hay más, se despliegan. Mostrarlos todos siempre le comería
+          media pantalla al hilo, que es lo que uno vino a leer. */}
+      {fijados.length > 0 && (
+        <div className="shrink-0 border-b border-[var(--border)] bg-[oklch(100%_0_0_/_3%)] px-3 sm:px-5 py-2">
+          <button
+            onClick={() => setFijadosAbiertos((v) => !v)}
+            aria-expanded={fijadosAbiertos}
+            className="flex w-full items-center gap-2 text-left"
+          >
+            <PinIcon className="size-3 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--tx-ink-muted)]">
+              {fijadosAbiertos
+                ? `${fijados.length} ${fijados.length === 1 ? 'mensaje fijado' : 'mensajes fijados'}`
+                : (fijados[0].contenido ?? 'Adjunto')}
+            </span>
+            {fijados.length > 1 && (
+              <span className="shrink-0 text-[11px] text-[var(--tx-ink-muted)]">
+                {fijadosAbiertos ? 'ocultar' : `+${fijados.length - 1}`}
+              </span>
+            )}
+          </button>
+
+          {fijadosAbiertos && (
+            <ul className="mt-2 space-y-1.5">
+              {fijados.map((f) => (
+                <li key={f.id} className="flex items-start gap-2">
+                  <span className="min-w-0 flex-1 text-[12px] text-[var(--tx-ink-primary)]">
+                    {f.contenido ?? 'Adjunto'}
+                  </span>
+                  <button
+                    onClick={() => alternarFijado(f)}
+                    className="shrink-0 text-[11px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+                  >
+                    quitar
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 sm:px-5 py-4 space-y-2">
         {cargando ? (
@@ -340,18 +498,37 @@ export function HiloChat({
                     </button>
                   )}
 
+                  {/* Las reacciones sí se ven y se tocan en el teléfono: son el
+                      camino corto para responder sin escribir. */}
+                  <ReaccionesMensaje
+                    reacciones={m.reacciones ?? []}
+                    onAlternar={(emoji) => alternarReaccion(m, emoji)}
+                  />
+
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[10px] text-[var(--tx-ink-muted)] px-1">
                       {HORA.format(new Date(m.created_at))}
                     </span>
+                    {m.fijado_at && (
+                      <span
+                        className="flex items-center gap-0.5 text-[10px] text-[var(--tx-ink-muted)]"
+                        title="Fijado en la conversación"
+                      >
+                        <PinIcon className="size-2.5" aria-hidden />
+                        fijado
+                      </span>
+                    )}
                     {/* Solo con mouse: en el teléfono se usa deslizar o mantener
                         presionado, que no requieren apuntar a un botón de 28px. */}
                     <span className="hidden md:contents">
                       <AccionesMensaje
                         puedeBorrar={mio || soyAdmin}
+                        fijado={Boolean(m.fijado_at)}
                         onResponder={() => setCitando(m)}
                         onAbrirHilo={() => setHiloAbierto(m)}
                         onBorrar={() => borrar(m)}
+                        onReaccionar={(emoji) => alternarReaccion(m, emoji)}
+                        onFijar={() => alternarFijado(m)}
                       />
                     </span>
                   </div>

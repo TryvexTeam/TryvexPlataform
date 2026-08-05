@@ -13,6 +13,32 @@ export const EnviarMensajeSchema = z.object({
   hilo_padre: z.string().uuid().optional(),
 })
 
+/**
+ * Poner o sacar un emoji de un mensaje. Es un interruptor: el mismo emoji dos veces
+ * lo quita, así que no hay endpoint separado para deshacer.
+ *
+ * El tope de 16 caracteres no es capricho: un emoji con tono de piel y variantes
+ * (👨‍👩‍👧‍👦) son varios code points unidos por ZWJ. Con 2 no entraban.
+ */
+export const ReaccionSchema = z.object({
+  emoji: z.string().trim().min(1).max(16),
+})
+
+export type ReaccionInput = z.infer<typeof ReaccionSchema>
+
+/** Los que ofrece la barra rápida. Se puede reaccionar con cualquiera igual. */
+export const EMOJIS_RAPIDOS = ['👍', '🎉', '❤️', '😂', '👀', '🚀'] as const
+
+/** Una reacción ya agrupada para mostrar: "👍 3", y si estoy entre esos 3. */
+export type ReaccionAgrupada = {
+  emoji: string
+  cuenta: number
+  /** Para pintarla activa y para que el clic sepa si suma o resta. */
+  mia: boolean
+  /** Nombres de quienes reaccionaron, para el tooltip. */
+  quienes: string[]
+}
+
 export const LARGO_MAXIMO_MENSAJE = 20000
 
 /** A partir de acá la burbuja se recorta y ofrece "Ver más". */
@@ -110,6 +136,11 @@ export type Mensaje = {
   hilo_padre?: string | null
   /** Cuántas respuestas tiene este mensaje en su hilo. */
   respuestas?: number
+  /** Reacciones ya agrupadas por emoji. Vacío si nadie reaccionó. */
+  reacciones?: ReaccionAgrupada[]
+  /** Cuándo se fijó al tope de la conversación. Nulo = no fijado. */
+  fijado_at?: string | null
+  fijado_por?: string | null
 }
 
 export type Conversacion = {

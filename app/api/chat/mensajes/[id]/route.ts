@@ -13,6 +13,44 @@ import { ChatRepository } from '@/lib/repos/chat'
  * Lo puede hacer quien lo escribió, y el admin cualquiera: si algo no debe estar
  * en el chat del equipo, alguien tiene que poder sacarlo.
  */
+/**
+ * Fija o suelta un mensaje: `{ "fijar": true | false }`.
+ *
+ * A diferencia de eliminar, esto NO es del autor: fijar es un acto sobre la
+ * conversación, así que cualquier miembro puede fijar el mensaje de otro — como en
+ * Slack, donde lo importante lo marca quien lo necesita, no quien lo escribió.
+ * Quién es miembro lo decide el trigger de la 032, no este handler.
+ */
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
+
+  const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+  if (!perfil) {
+    return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
+  }
+
+  const cuerpo = (await req.json().catch(() => null)) as { fijar?: boolean } | null
+  if (typeof cuerpo?.fijar !== 'boolean') {
+    return NextResponse.json({ success: false, error: 'Falta "fijar" (true o false)' }, { status: 400 })
+  }
+
+  try {
+    await new ChatRepository(supabase).fijar(id, cuerpo.fijar)
+    return NextResponse.json({ success: true, data: { fijado: cuerpo.fijar } })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'No se pudo fijar'
+    const sinPermiso = msg.includes('solo_miembros_fijan') || msg.includes('42501')
+    return NextResponse.json(
+      { success: false, error: sinPermiso ? 'No perteneces a esa conversación' : msg },
+      { status: sinPermiso ? 403 : 500 },
+    )
+  }
+}
+
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
 
