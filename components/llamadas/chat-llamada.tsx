@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { SendIcon, XIcon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ImageIcon, SendIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
-import type { Mensaje } from '@/lib/types/chat'
+import { pesoLegible, type Mensaje } from '@/lib/types/chat'
+import { AdjuntosMensaje } from '@/components/chat/adjuntos-mensaje'
 
 interface ChatLlamadaProps {
   conversacionId: string
@@ -20,6 +21,9 @@ interface ChatLlamadaProps {
 
 /** Ver `use-datos-vivos`: supabase-js cachea canales por nombre. */
 let contadorCanal = 0
+
+/** Los mismos que el hilo: es la misma conversación y el mismo endpoint. */
+const MAX_ARCHIVOS = 10
 
 const HORA = new Intl.DateTimeFormat('es-CL', {
   hour: '2-digit',
@@ -53,25 +57,29 @@ export function ChatLlamada({
    * conversación llena de acuses de recibo que mañana no le sirven a nadie.
    */
   const [respuestaComando, setRespuestaComando] = useState<string | null>(null)
+  /** Fotos y archivos elegidos que todavía no se mandan. */
+  const [porEnviar, setPorEnviar] = useState<File[]>([])
   const finRef = useRef<HTMLDivElement>(null)
+  const archivosRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    let vigente = true
-
-    fetch(`/api/chat/mensajes?conversacion=${conversacionId}`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (!vigente || !json.success) return
-        // Los últimos 30: en una llamada nadie se pone a leer el historial, y
-        // montar cien burbujas encima del video cuesta caro en el teléfono.
-        setMensajes((json.data as Mensaje[]).slice(-30))
-      })
-      .catch(() => {})
-
-    return () => {
-      vigente = false
+  /**
+   * Los últimos 30: en una llamada nadie se pone a leer el historial, y montar
+   * cien burbujas encima del video cuesta caro en el teléfono.
+   */
+  const recargar = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/chat/mensajes?conversacion=${conversacionId}`)
+      const json = await res.json()
+      if (json.success) setMensajes((json.data as Mensaje[]).slice(-30))
+    } catch {
+      // Silencioso: lo que ya está en pantalla sigue sirviendo, y el próximo
+      // mensaje vuelve a intentarlo.
     }
   }, [conversacionId])
+
+  useEffect(() => {
+    void recargar()
+  }, [recargar])
 
   useEffect(() => {
     const supabase = createClient()
@@ -88,6 +96,18 @@ export function ChatLlamada({
         (payload) => {
           const nuevo = payload.new as Mensaje
           setMensajes((previos) => (previos.some((m) => m.id === nuevo.id) ? previos : [...previos, nuevo]))
+
+          /**
+           * Los adjuntos viven en otra tabla (`mensaje_adjuntos`), así que el aviso
+           * de Realtime sobre `mensajes` llega SIN ellos: una foto ajena saldría
+           * como burbuja vacía hasta recargar la página.
+           *
+           * La fila tampoco trae una marca de "lleva archivos" que permita pedir
+           * la lista solo cuando hace falta, así que se recarga con cualquier
+           * mensaje ajeno. El chat de una llamada mueve pocos mensajes; el propio
+           * no gatilla nada porque ya llega completo por la respuesta del POST.
+           */
+          if (nuevo.autor_id !== miIntegranteId) void recargar()
         },
       )
       .subscribe()
@@ -95,15 +115,21 @@ export function ChatLlamada({
     return () => {
       supabase.removeChannel(canal)
     }
-  }, [conversacionId])
+  }, [conversacionId, miIntegranteId, recargar])
 
   useEffect(() => {
     finRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensajes.length])
 
+  const sumarArchivos = (nuevos: FileList | File[] | null) => {
+    if (!nuevos || (nuevos instanceof FileList && nuevos.length === 0)) return
+    setPorEnviar((previos) => [...previos, ...Array.from(nuevos)].slice(0, MAX_ARCHIVOS))
+  }
+
   const enviar = async () => {
     const contenido = borrador.trim()
-    if (!contenido || enviando) return
+    // Una foto sola ya es un mensaje: no hace falta escribir nada.
+    if ((!contenido && porEnviar.length === 0) || enviando) return
 
     /**
      * Una línea que empieza con `/` es un comando, no un mensaje.
@@ -112,7 +138,7 @@ export function ChatLlamada({
      * escrito quede para siempre en la conversación: si el comando no existe se
      * avisa en pantalla, pero tampoco se publica.
      */
-    if (onComando && contenido.startsWith('/')) {
+    if (onComando && porEnviar.length === 0 && contenido.startsWith('/')) {
       setBorrador('')
       setEnviando(true)
       try {
@@ -127,17 +153,29 @@ export function ChatLlamada({
 
     setEnviando(true)
     try {
-      const res = await fetch('/api/chat/mensajes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversacion_id: conversacionId, contenido }),
-      })
+      // Con archivos va como formulario, para que texto y fotos entren en un solo
+      // viaje y no quede una subida huérfana si el mensaje falla.
+      let res: Response
+      if (porEnviar.length > 0) {
+        const cuerpo = new FormData()
+        cuerpo.append('conversacion_id', conversacionId)
+        if (contenido) cuerpo.append('contenido', contenido)
+        for (const f of porEnviar) cuerpo.append('archivos', f)
+        res = await fetch('/api/chat/mensajes', { method: 'POST', body: cuerpo })
+      } else {
+        res = await fetch('/api/chat/mensajes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversacion_id: conversacionId, contenido }),
+        })
+      }
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo enviar')
 
       const mensaje = json.data as Mensaje
       setMensajes((previos) => (previos.some((m) => m.id === mensaje.id) ? previos : [...previos, mensaje]))
       setBorrador('')
+      setPorEnviar([])
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error enviando el mensaje')
     } finally {
@@ -188,7 +226,12 @@ export function ChatLlamada({
               >
                 {/* Texto plano a propósito: el markdown del hilo trae su propio
                     renderizador y acá lo que se manda son links y códigos cortos. */}
-                <p className="text-[13px] whitespace-pre-wrap break-words">{m.contenido}</p>
+                {m.adjuntos && m.adjuntos.length > 0 && (
+                  <div className="mb-1">
+                    <AdjuntosMensaje adjuntos={m.adjuntos} />
+                  </div>
+                )}
+                {m.contenido && <p className="text-[13px] whitespace-pre-wrap break-words">{m.contenido}</p>}
                 <p className="text-[10px] opacity-60 mt-0.5">{HORA.format(new Date(m.created_at))}</p>
               </div>
             </div>
@@ -208,7 +251,49 @@ export function ChatLlamada({
         </p>
       )}
 
+      {porEnviar.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5 px-2 pb-1 shrink-0">
+          {porEnviar.map((f, i) => (
+            <li
+              key={`${f.name}-${i}`}
+              className="flex items-center gap-1.5 rounded-lg pl-2 pr-1 py-1 text-[11px]"
+              style={{ background: 'oklch(100% 0 0 / 6%)' }}
+            >
+              <span className="max-w-[110px] truncate text-[var(--tx-ink-primary)]">{f.name}</span>
+              <span className="text-[var(--tx-ink-muted)]">{pesoLegible(f.size)}</span>
+              <button
+                onClick={() => setPorEnviar((previos) => previos.filter((_, j) => j !== i))}
+                aria-label={`Quitar ${f.name}`}
+                className="p-0.5 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+              >
+                <XIcon className="size-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="flex items-end gap-2 p-2 shrink-0" style={{ borderTop: '1px solid var(--tx-border)' }}>
+        <button
+          onClick={() => archivosRef.current?.click()}
+          disabled={enviando}
+          aria-label="Adjuntar una foto o un archivo"
+          className="shrink-0 self-end p-2 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] disabled:opacity-40"
+        >
+          <ImageIcon className="size-4" />
+        </button>
+        <input
+          ref={archivosRef}
+          type="file"
+          multiple
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            sumarArchivos(e.target.files)
+            // Sin esto, elegir dos veces la misma foto no dispara `change`.
+            e.target.value = ''
+          }}
+        />
         <textarea
           value={borrador}
           onChange={(e) => setBorrador(e.target.value)}
@@ -217,6 +302,15 @@ export function ChatLlamada({
               e.preventDefault()
               void enviar()
             }
+          }}
+          // Pegar una captura del portapapeles la adjunta, como en el chat del CRM.
+          // En una llamada es el caso más común: se comparte pantalla, se recorta y
+          // se pega, sin pasar por guardar el archivo.
+          onPaste={(e) => {
+            const archivos = Array.from(e.clipboardData.files)
+            if (archivos.length === 0) return
+            e.preventDefault()
+            sumarArchivos(archivos)
           }}
           rows={1}
           placeholder={onComando ? 'Escribe… o /play para música' : 'Escribe…'}
@@ -229,7 +323,7 @@ export function ChatLlamada({
         />
         <button
           onClick={() => void enviar()}
-          disabled={!borrador.trim() || enviando}
+          disabled={(!borrador.trim() && porEnviar.length === 0) || enviando}
           aria-label="Enviar"
           className="inline-flex size-9 items-center justify-center rounded-lg disabled:opacity-40"
           style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
