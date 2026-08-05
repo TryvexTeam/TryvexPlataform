@@ -70,6 +70,10 @@ interface Par {
  * está vacía —llamada que empezó en audio— el sender no tiene pista y no hay
  * `kind` que mirar. El receiver sí declara 'video' desde que se crea.
  */
+function senderDeAudio(pc: RTCPeerConnection): RTCRtpSender | null {
+  return pc.getSenders().find((s) => s.track?.kind === 'audio') ?? null
+}
+
 function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
   const tr = pc
     .getTransceivers()
@@ -160,11 +164,38 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   /** Falso cuando no hay TURN configurado: hay redes donde no va a conectar. */
   const [hayTurn, setHayTurn] = useState(true)
   const [diagnostico, setDiagnostico] = useState<DiagnosticoLlamada | null>(null)
+  /** El navegador entregó audio de la pantalla y se está mandando. */
+  const [audioCompartido, setAudioCompartido] = useState(false)
+  /** Volumen del sonido compartido, de 0 a 1. Empieza por debajo de la voz. */
+  const [volumenPantalla, setVolumenPantalla] = useState(0.7)
+  /**
+   * El interruptor del sonido compartido.
+   *
+   * Separado del volumen a propósito: apagarlo y volver a prenderlo devuelve el
+   * nivel que tenía, no lo manda a cero. Y separado de dejar de compartir: uno
+   * puede querer seguir mostrando la pantalla y callar el sonido un momento sin
+   * pasar de nuevo por el selector del navegador.
+   */
+  const [audioPantallaActivo, setAudioPantallaActivo] = useState(true)
 
   const pares = useRef(new Map<string, Par>())
   const canal = useRef<RealtimeChannel | null>(null)
   const local = useRef<MediaStream | null>(null)
   const pantalla = useRef<MediaStream | null>(null)
+  /**
+   * La mezcla de micrófono + sonido de la pantalla, cuando se comparte con audio.
+   *
+   * Se mezcla en UNA pista en vez de mandar dos. Agregar una segunda pista de
+   * audio obligaría a renegociar la conexión entera -- exactamente lo que dejaba
+   * la pantalla compartida en negro. Con `replaceTrack` sobre la pista de audio
+   * que ya viaja, el cambio es instantáneo y no toca la negociación.
+   */
+  const mezcla = useRef<{
+    ctx: AudioContext
+    destino: MediaStreamAudioDestinationNode
+    /** Se guarda para poder mover el volumen en vivo sin rehacer la mezcla. */
+    ganancia: GainNode
+  } | null>(null)
   const iceServers = useRef<RTCIceServer[]>([])
   // Se leen dentro de callbacks que no se recrean; un ref evita reconectar la
   // malla entera cada vez que alguien silencia el micrófono.
@@ -593,6 +624,87 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
    * "Dejar de compartir" del navegador tiene que poder llamarla, y una función
    * no puede referenciarse a sí misma dentro de su propio `useCallback`.
    */
+  /**
+   * Devuelve la pista de audio original del micrófono a todas las conexiones y
+   * desarma la mezcla. Se llama al dejar de compartir.
+   */
+  const desarmarMezcla = useCallback(async () => {
+    if (!mezcla.current) return
+
+    const micro = local.current?.getAudioTracks()[0] ?? null
+    for (const { pc } of pares.current.values()) {
+      const sender = senderDeAudio(pc)
+      if (sender) await sender.replaceTrack(micro).catch(() => {})
+    }
+
+    try {
+      await mezcla.current.ctx.close()
+    } catch {
+      // Ya cerrado.
+    }
+    mezcla.current = null
+  }, [])
+
+  /**
+   * Mezcla el micrófono con el sonido de lo que se comparte, y manda esa única
+   * pista. Devuelve false si el navegador no entregó audio de pantalla.
+   *
+   * El micrófono entra ya procesado (cancelación de eco y supresión de ruido se
+   * aplican en la captura), así que la mezcla no lo estropea.
+   */
+  const armarMezcla = useCallback(async (audioPantalla: MediaStreamTrack): Promise<boolean> => {
+    try {
+      const Ctor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      const ctx = new Ctor()
+      await ctx.resume().catch(() => {})
+
+      const destino = ctx.createMediaStreamDestination()
+
+      const micro = local.current?.getAudioTracks()[0]
+      if (micro) {
+        ctx.createMediaStreamSource(new MediaStream([micro])).connect(destino)
+      }
+
+      // La pantalla entra un poco más baja que la voz: la idea es que se oiga
+      // el video sin tapar a quien lo está explicando.
+      const gananciaPantalla = ctx.createGain()
+      gananciaPantalla.gain.value = volumenPantalla
+      ctx.createMediaStreamSource(new MediaStream([audioPantalla])).connect(gananciaPantalla)
+      gananciaPantalla.connect(destino)
+
+      const pistaMezclada = destino.stream.getAudioTracks()[0]
+      if (!pistaMezclada) {
+        await ctx.close()
+        return false
+      }
+
+      for (const { pc } of pares.current.values()) {
+        const sender = senderDeAudio(pc)
+        if (sender) await sender.replaceTrack(pistaMezclada).catch(() => {})
+      }
+
+      mezcla.current = { ctx, destino, ganancia: gananciaPantalla }
+      return true
+    } catch {
+      // Sin mezcla se comparte igual, solo que sin sonido. Mejor eso que no
+      // poder compartir.
+      return false
+    }
+    // `volumenPantalla` se lee solo al armar; después se mueve por el efecto de
+    // abajo, que no rehace la mezcla.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Mover el volumen del sonido compartido no debe reconstruir el grafo de
+  // audio: eso cortaría la voz un instante cada vez que se toca el control.
+  useEffect(() => {
+    if (mezcla.current) {
+      mezcla.current.ganancia.gain.value = audioPantallaActivo ? volumenPantalla : 0
+    }
+  }, [volumenPantalla, audioPantallaActivo])
+
   const dejarDeCompartir = useCallback(async () => {
     if (!pantalla.current) return
 
@@ -603,13 +715,16 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       const sender = senderDeVideo(pc)
       if (sender) await sender.replaceTrack(camaraPista).catch(() => {})
     }
+    await desarmarMezcla()
+
     pantalla.current.getTracks().forEach((t) => t.stop())
     pantalla.current = null
     setStreamPantalla(null)
     setCompartiendo(false)
+    setAudioCompartido(false)
     aplicarCalidad()
     enviar({ tipo: 'pantalla', de: miIntegranteId, activa: false })
-  }, [aplicarCalidad, enviar, miIntegranteId])
+  }, [aplicarCalidad, desarmarMezcla, enviar, miIntegranteId])
 
   const alternarPantalla = useCallback(async () => {
     if (pantalla.current) {
@@ -618,13 +733,45 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     }
 
     try {
+      /**
+       * Se pide el audio de lo que se comparte.
+       *
+       * Que llegue o no depende del navegador y de lo que marque la persona en
+       * el selector: Chrome y Edge ofrecen la casilla "Compartir audio" (de una
+       * pestaña o del sistema), Firefox solo en algunos casos y Safari no lo
+       * soporta. Por eso `audio: true` es un pedido, no una garantía, y más
+       * abajo se comprueba si de verdad vino.
+       */
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 15 } },
-        audio: false,
+        audio: {
+          // Sin procesamiento de voz: lo que se comparte suele ser música o el
+          // audio de un video, y la supresión de ruido lo destroza.
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
       })
       const pista = stream.getVideoTracks()[0]
       pantalla.current = stream
       setStreamPantalla(stream)
+
+      // Si el navegador entregó audio, se mezcla con el micrófono y se manda en
+      // la misma pista. Si no vino, se comparte igual sin sonido -- y el estado
+      // lo refleja, para que la interfaz pueda decir por qué no se oye en vez de
+      // dejar a la persona pensando que está compartiendo audio.
+      const audioPantalla = stream.getAudioTracks()[0]
+      if (audioPantalla) {
+        const listo = await armarMezcla(audioPantalla)
+        setAudioCompartido(listo)
+        // Si la persona corta el audio desde el navegador, se vuelve al micrófono.
+        audioPantalla.onended = () => {
+          setAudioCompartido(false)
+          void desarmarMezcla()
+        }
+      } else {
+        setAudioCompartido(false)
+      }
 
       for (const { pc } of pares.current.values()) {
         const sender = senderDeVideo(pc)
@@ -724,6 +871,11 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     micro,
     camara,
     compartiendo,
+    audioCompartido,
+    volumenPantalla,
+    setVolumenPantalla,
+    audioPantallaActivo,
+    alternarAudioPantalla: () => setAudioPantallaActivo((v) => !v),
     error,
     hayTurn,
     alternarMicro,
