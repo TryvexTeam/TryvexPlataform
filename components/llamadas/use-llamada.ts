@@ -70,16 +70,40 @@ interface Par {
  * está vacía —llamada que empezó en audio— el sender no tiene pista y no hay
  * `kind` que mirar. El receiver sí declara 'video' desde que se crea.
  */
-function transceiverDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver | null {
-  return (
-    pc
-      .getTransceivers()
-      .find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video') ?? null
+function transceiversDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver[] {
+  return pc.getTransceivers().filter(
+    (t) =>
+      // `stopped` como propiedad ya no existe: un transceiver detenido se
+      // reconoce por su dirección actual.
+      t.currentDirection !== 'stopped' &&
+      (t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video'),
   )
 }
 
+/**
+ * LA ranura de video: la que está realmente negociada.
+ *
+ * Una conexión puede terminar con más de un transceiver de video -- los crea
+ * `addTrack` por un lado y `addTransceiver` por el otro, y una renegociación
+ * puede sumar otro. Solo uno queda atado a una m-line del SDP, y ése es el único
+ * por el que viaja algo. `mid` es lo que lo distingue: nulo mientras no está
+ * asociado a ninguna m-line.
+ *
+ * Elegir el primero que apareciera --lo que se hacía antes-- salía bien o mal
+ * según el orden, y de ahí venía el sintoma imposible: los dos lados de la MISMA
+ * conexión reportaban direcciones distintas (`sendonly` en uno, `sendrecv` en el
+ * otro) porque cada uno estaba mirando un transceiver diferente. Y quien
+ * compartía ponía su pantalla en el sender equivocado: `envío 0` con la ranura
+ * en `sendrecv` y nadie viéndolo.
+ */
+function ranuraDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver | null {
+  const todas = transceiversDeVideo(pc)
+  // Sin negociar todavía no hay `mid`; ahí el primero es el que se va a usar.
+  return todas.find((t) => t.mid !== null) ?? todas[0] ?? null
+}
+
 function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
-  return transceiverDeVideo(pc)?.sender ?? null
+  return ranuraDeVideo(pc)?.sender ?? null
 }
 
 /**
@@ -96,7 +120,7 @@ function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
  * falta, para que quien llama dispare la oferta.
  */
 function abrirRanuraDeVideo(pc: RTCPeerConnection): boolean {
-  const tr = transceiverDeVideo(pc)
+  const tr = ranuraDeVideo(pc)
   if (!tr) {
     pc.addTransceiver('video', { direction: 'sendrecv' })
     return true
@@ -184,6 +208,14 @@ export interface DiagnosticoLlamada {
     videoRecibido: number
     /** La dirección negociada de la ranura de video: 'sendrecv', 'recvonly'… */
     direccionVideo: string
+    /**
+     * Cuántos transceivers de video tiene la conexión. Debe ser 1. Más de uno
+     * significa que la negociación dejó m-lines de sobra, y entonces la pista
+     * puede terminar en la que no está atada a ninguna: `envío 0` con la ranura
+     * diciendo `sendrecv`, y los dos lados reportando direcciones distintas para
+     * la misma conexión.
+     */
+    ranurasVideo: number
   }[]
 }
 
@@ -459,9 +491,17 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     async (pista: MediaStreamTrack | null) => {
       for (const [otroId, { pc }] of pares.current) {
         const hayQueRenegociar = abrirRanuraDeVideo(pc)
+        const ranura = ranuraDeVideo(pc)
 
-        const sender = senderDeVideo(pc)
-        if (sender) await sender.replaceTrack(pista).catch(() => {})
+        // La pista va en la ranura negociada y en ninguna otra. Si hay más de un
+        // transceiver de video, dejar la pista colgada en el que no está atado a
+        // una m-line es exactamente lo que producía `envío 0` mientras la ranura
+        // decía `sendrecv`: el video salía hacia un tubo que no existe.
+        for (const t of transceiversDeVideo(pc)) {
+          const destino = t === ranura ? pista : null
+          if (t.sender.track === destino) continue
+          await t.sender.replaceTrack(destino).catch(() => {})
+        }
 
         // Solo desde un estado estable: ofrecer sobre una negociación a medio
         // camino la rompe, y el `presence sync` ya reintentará.
@@ -818,9 +858,11 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
          * mucho que el otro transmita nunca va a llegar nada. Eso no se ve en
          * ningún otro lado y es invisible desde la interfaz.
          */
-        const trVideo = pc
-          .getTransceivers()
-          .find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video')
+        const trVideo = ranuraDeVideo(pc)
+        // Cuántas ranuras de video tiene la conexión. Más de una significa que la
+        // negociación dejó m-lines de sobra, y ahí es donde el video se va por un
+        // tubo que no está conectado a nada.
+        const ranuras = transceiversDeVideo(pc).length
 
         porPersona.push({
           id: otroId,
@@ -829,6 +871,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           videoEnviado,
           videoRecibido,
           direccionVideo: trVideo?.currentDirection ?? trVideo?.direction ?? 'sin ranura',
+          ranurasVideo: ranuras,
         })
 
         /**
