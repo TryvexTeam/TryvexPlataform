@@ -256,11 +256,27 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
         (f) =>
           // Si ya estoy dentro no hay nada que ofrecer.
           !f.dentro.includes(miIntegranteId) &&
-          // La que está sonando ya la maneja el camino de Realtime, con su timbre.
-          f.llamada.estado === 'en_curso' &&
+          // Quien la abrió no se ofrece a sí mismo entrar a su propia llamada.
+          f.llamada.iniciada_por !== miIntegranteId &&
           !vistas.current.has(f.llamada.id),
       )
       if (!ajena) return
+
+      /**
+       * Una que sigue SONANDO se trata como entrante de verdad: hay alguien
+       * esperando al teléfono ahora mismo. Antes esto solo miraba las que ya
+       * estaban `en_curso` y se perdía justo el caso que más importa -- llegar
+       * un segundo tarde al evento de una llamada que todavía repica.
+       */
+      if (ajena.llamada.estado === 'sonando') {
+        vistas.current.add(ajena.llamada.id)
+        setEntrante((previa) => {
+          if (previa) return previa
+          sonar()
+          return ajena.llamada
+        })
+        return
+      }
 
       vistas.current.add(ajena.llamada.id)
       setEnCurso((previa) => {
