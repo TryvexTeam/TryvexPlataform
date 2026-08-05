@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type RefObject } from 'react'
+import { useEffect, useState } from 'react'
 
 export interface Grilla {
   ancho: number
@@ -25,29 +25,42 @@ const HUECO = 12
  * enormes porque cada uno ocupaba todo el ancho que le tocaba, sin mirar si
  * quedaba alto para dibujarlo.
  */
-export function useGrillaVideo(
-  contenedor: RefObject<HTMLElement | null>,
-  cuantos: number,
-): Grilla {
+/**
+ * Recibe el nodo y no un `RefObject` a propósito, y esto arregla un bug real.
+ *
+ * Con un ref, el efecto dependía del objeto ref -- que nunca cambia -- así que
+ * se suscribía una sola vez. Al minimizar la llamada, el div de la grilla se
+ * desmonta; al restaurarla nace uno nuevo, pero el efecto ya no volvía a correr
+ * y el ResizeObserver se quedaba mirando el nodo viejo, desconectado del
+ * documento. Las medidas quedaban congeladas en lo último que alcanzó a ver y
+ * los recuadros salían con el tamaño de antes: la llamada se veía rota al volver
+ * y no había forma de recuperarla sin recargar.
+ *
+ * Con el nodo como dependencia, montar uno nuevo vuelve a disparar el efecto.
+ * Del lado del componente se pasa el `useState` de una callback ref.
+ */
+export function useGrillaVideo(contenedor: HTMLElement | null, cuantos: number): Grilla {
   const [caja, setCaja] = useState({ ancho: 0, alto: 0 })
 
   // ResizeObserver y no un listener de `resize`: la caja también cambia cuando se
   // abre el chat al costado o cuando alguien entra a la llamada, y eso no dispara
   // un resize de la ventana.
   useEffect(() => {
-    const el = contenedor.current
-    if (!el) return
+    if (!contenedor) return
 
     const observador = new ResizeObserver(([entrada]) => {
       const { width, height } = entrada.contentRect
       setCaja({ ancho: width, alto: height })
     })
 
-    observador.observe(el)
+    observador.observe(contenedor)
     return () => observador.disconnect()
   }, [contenedor])
 
-  if (cuantos === 0 || caja.ancho === 0 || caja.alto === 0) {
+  // Sin nodo montado las medidas guardadas son de un contenedor que ya no existe.
+  // Se descartan acá, al derivar, en vez de resetear el estado desde el efecto:
+  // así no hay un render intermedio con los valores viejos.
+  if (!contenedor || cuantos === 0 || caja.ancho === 0 || caja.alto === 0) {
     return { ancho: 0, alto: 0, columnas: 1 }
   }
 
