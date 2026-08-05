@@ -533,6 +533,15 @@ export function PanelLlamada({
                 <span className="opacity-80">
                   video: envío {d.videoEnviado} · recibo {d.videoRecibido} · ranura{' '}
                   {d.direccionVideo}
+                  {/* Debe ser 1. Con dos, la pista puede irse por la que no está
+                      atada a ninguna m-line: sale `envío 0` con la ranura en
+                      sendrecv, y cada lado reporta una dirección distinta para la
+                      misma conexión. */}
+                  {d.ranurasVideo !== 1 && (
+                    <b className="ml-1 text-[oklch(80%_0.13_75)]">
+                      ({d.ranurasVideo} ranuras de video)
+                    </b>
+                  )}
                 </span>
                 {/* El video se mide aparte del audio porque falla aparte: son
                     m-lines distintas. "Recibo audio pero no video" y "no recibo
@@ -898,10 +907,10 @@ function Recuadro({
    */
   const [entregando, setEntregando] = useState(false)
   useEffect(() => {
-    if (!pistaVideo) {
-      setEntregando(false)
-      return
-    }
+    // Sin pista no se toca el estado: se descarta al derivar `hayVideo`, más
+    // abajo. Resetearlo desde acá sería un render de más por cada cambio de
+    // stream.
+    if (!pistaVideo) return
 
     const revisar = () => setEntregando(pistaVideo.readyState === 'live' && !pistaVideo.muted)
     // La lectura inicial es obligatoria y no se puede derivar en el render: si la
@@ -931,7 +940,7 @@ function Recuadro({
    * sigue mandando una pista viva y sin `muted` -- cuadros negros. Sin las
    * banderas se vería ese negro en vez del avatar, que es peor.
    */
-  const hayVideo = entregando && (camara || compartiendo)
+  const hayVideo = Boolean(pistaVideo) && entregando && (camara || compartiendo)
 
   return (
     <div
