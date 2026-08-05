@@ -865,9 +865,60 @@ function Recuadro({
    * vería el último cuadro congelado.
    */
   const pistaVideo = stream?.getVideoTracks()[0]
-  const hayVideo = Boolean(
-    pistaVideo && pistaVideo.readyState === 'live' && !pistaVideo.muted && (camara || compartiendo),
-  )
+
+  /**
+   * Si la pista está entregando imagen ahora mismo.
+   *
+   * Esto NO se puede leer solo al renderizar, y ahí estaba el bug: `muted` y
+   * `readyState` son propiedades vivas del track que cambian solas, por fuera de
+   * React, sin avisarle a nadie. Una pista remota nace `muted` -- reservada, sin
+   * datos -- y se destapa cuando el otro lado empieza a mandar. Si ese momento
+   * caía entre dos renders, el recuadro se quedaba con `muted = true` para
+   * siempre: la imagen llegaba y la app mostraba el avatar, sin nada que la
+   * hiciera mirar de nuevo.
+   *
+   * Por eso "lo ve uno y el otro no" y por qué cambiaba entre navegadores: es una
+   * carrera, y cada uno la perdía en un momento distinto.
+   *
+   * Con los eventos enganchados acá, el recuadro se entera por su cuenta y deja
+   * de depender de que la capa de señalización acierte el instante.
+   */
+  const [entregando, setEntregando] = useState(false)
+  useEffect(() => {
+    if (!pistaVideo) {
+      setEntregando(false)
+      return
+    }
+
+    const revisar = () => setEntregando(pistaVideo.readyState === 'live' && !pistaVideo.muted)
+    // La lectura inicial es obligatoria y no se puede derivar en el render: si la
+    // pista ya venía destapada antes de montar, no habrá ningún evento después y
+    // sin esto el recuadro se queda en el avatar para siempre. Es justo el bug
+    // que este efecto arregla.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    revisar()
+
+    pistaVideo.addEventListener('unmute', revisar)
+    pistaVideo.addEventListener('mute', revisar)
+    pistaVideo.addEventListener('ended', revisar)
+
+    return () => {
+      pistaVideo.removeEventListener('unmute', revisar)
+      pistaVideo.removeEventListener('mute', revisar)
+      pistaVideo.removeEventListener('ended', revisar)
+    }
+  }, [pistaVideo])
+
+  /**
+   * Las banderas siguen contando para el caso local: con la cámara apagada la
+   * pista sigue viva (`enabled = false` no la silencia), así que sin ellas se
+   * vería el último cuadro congelado.
+   *
+   * Se mantienen tal cual: un remoto que apaga la cámara con `enabled = false`
+   * sigue mandando una pista viva y sin `muted` -- cuadros negros. Sin las
+   * banderas se vería ese negro en vez del avatar, que es peor.
+   */
+  const hayVideo = entregando && (camara || compartiendo)
 
   return (
     <div

@@ -263,11 +263,25 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
       if (!ajena) return
 
       vistas.current.add(ajena.llamada.id)
-      setEnCurso((previa) => previa ?? ajena.llamada)
+      setEnCurso((previa) => {
+        if (previa) return previa
+
+        /**
+         * Un toque y se calla, en vez del timbre insistente de una entrante.
+         *
+         * La diferencia no es estética: una llamada que empezó hace diez minutos
+         * no tiene a nadie esperando al teléfono, y timbrar en bucle por eso es
+         * acoso. Pero aparecer en silencio tampoco sirve -- un modal que sale sin
+         * ruido mientras uno mira otra cosa es un modal que no se ve.
+         */
+        sonar()
+        window.setTimeout(pararTimbre, 1200)
+        return ajena.llamada
+      })
     } catch {
       // Sin esto solo se pierde el ofrecimiento; el chat sigue mostrando la sala.
     }
-  }, [miIntegranteId])
+  }, [miIntegranteId, sonar, pararTimbre])
 
   // ── Escuchar llamadas ─────────────────────────────────────────────────────
   useEffect(() => {
