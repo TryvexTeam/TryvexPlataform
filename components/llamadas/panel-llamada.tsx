@@ -561,7 +561,23 @@ function Recuadro({
     el.srcObject = stream
   }, [stream])
 
-  const hayVideo = Boolean(stream) && (camara || compartiendo)
+  /**
+   * ¿Hay imagen que mostrar?
+   *
+   * Se mira la pista real y no solo las banderas: una pista puede existir en la
+   * conexión y estar `muted` -- reservada, sin datos -- que es exactamente el
+   * estado en el que llega antes de que el otro lado empiece a transmitir. Pintar
+   * el `<video>` en ese momento da un rectángulo negro; mostrar el avatar es la
+   * respuesta honesta.
+   *
+   * Las banderas siguen contando para el caso local: con la cámara apagada la
+   * pista sigue viva (`enabled = false` no la silencia), así que sin ellas se
+   * vería el último cuadro congelado.
+   */
+  const pistaVideo = stream?.getVideoTracks()[0]
+  const hayVideo = Boolean(
+    pistaVideo && pistaVideo.readyState === 'live' && !pistaVideo.muted && (camara || compartiendo),
+  )
 
   return (
     <div
