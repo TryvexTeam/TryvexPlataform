@@ -473,17 +473,44 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     [ofrecer],
   )
 
+  /**
+   * Alguien avisó que empezó a transmitir: asegurarse de poder recibirlo.
+   *
+   * Este es el eslabón que faltaba. `repartirVideo` arregla la ranura del que
+   * EMITE, pero quien solo mira no ejecuta nada de eso: si su ranura quedó
+   * pactada `sendonly` --puede enviar, no recibir-- se queda así para siempre,
+   * porque nada de lo que haga el otro la toca. En el diagnóstico se veía
+   * `ranura sendonly` en el lado del que no ve, con el otro transmitiendo feliz.
+   *
+   * El aviso de "estoy compartiendo" es justo el momento de revisarlo: es la
+   * única señal que dice que va a empezar a entrar video por ahí.
+   */
+  const abrirParaRecibir = useCallback(
+    (otroId: string) => {
+      const par = pares.current.get(otroId)
+      if (!par) return
+      if (!abrirRanuraDeVideo(par.pc)) return
+
+      // Cambiar la dirección no tiene efecto hasta la próxima oferta, y esta vez
+      // la tiene que hacer este lado: el otro cree que ya está todo negociado.
+      if (par.pc.signalingState === 'stable') void ofrecer(otroId)
+    },
+    [ofrecer],
+  )
+
   const recibirSenal = useCallback(
     async (senal: SenalLlamada) => {
       if (senal.de === miIntegranteId) return
 
       if (senal.tipo === 'estado') {
         actualizar(senal.de, { micro: senal.micro, camara: senal.camara })
+        if (senal.camara) abrirParaRecibir(senal.de)
         return
       }
 
       if (senal.tipo === 'pantalla') {
         actualizar(senal.de, { compartiendo: senal.activa })
+        if (senal.activa) abrirParaRecibir(senal.de)
         return
       }
 
@@ -547,7 +574,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         console.error('[llamada] señal', senal.tipo, err)
       }
     },
-    [actualizar, crearPar, enviar, miIntegranteId],
+    [abrirParaRecibir, actualizar, crearPar, enviar, miIntegranteId],
   )
 
   // ── Ciclo de vida ─────────────────────────────────────────────────────────
@@ -803,6 +830,24 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           videoRecibido,
           direccionVideo: trVideo?.currentDirection ?? trVideo?.direction ?? 'sin ranura',
         })
+
+        /**
+         * Autorreparación: una ranura que no puede recibir se arregla sola.
+         *
+         * Los avisos de "estoy compartiendo" viajan por señalización y se pueden
+         * perder -- una pestaña dormida, una reconexión, un cliente que todavía
+         * no recargó. Si se pierde, la ranura torcida no la toca nadie y el
+         * síntoma es permanente: "ellos me ven y yo no veo a nadie", sin forma de
+         * salir salvo recargar los dos.
+         *
+         * Como esto ya corre cada dos segundos para el diagnóstico, revisarlo acá
+         * no cuesta nada. Converge: al quedar en `sendrecv`,
+         * `abrirRanuraDeVideo` devuelve false y no vuelve a renegociar.
+         */
+        const pactada = trVideo?.currentDirection
+        if (pactada === 'sendonly' || pactada === 'inactive') {
+          abrirParaRecibir(otroId)
+        }
       }
 
       setDiagnostico({
@@ -823,7 +868,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     void medir()
     const id = window.setInterval(medir, 2000)
     return () => window.clearInterval(id)
-  }, [llamadaId])
+  }, [llamadaId, abrirParaRecibir])
 
   const colgar = useCallback(async () => {
     if (!llamadaId) return
