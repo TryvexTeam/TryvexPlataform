@@ -39,9 +39,16 @@ medias y la app decía que estaba bien. **Leer antes de tocar
 | `track.muted` no dispara render | Suscribirse a `unmute`/`mute`/`ended`, no leerlo en el render |
 | Un `RefObject` en un efecto no ve el nodo nuevo | Callback ref con `useState` para observar nodos |
 | Lo que no puede interrumpirse no va dentro de una vista condicional | Montarlo hermano de la vista y posicionarlo sobre un ancla |
+| La pantalla compartida no vive en `local.current` | Reaplicarla al crear cada par, y reenviar el aviso al contestar una oferta |
+| Realtime avisa de la fila, no de sus tablas relacionadas | Volver a pedir el registro completo (adjuntos, joins) |
 
 Incluye además los **límites que no son bugs** (iOS y `setVolume`, el audio
 inalcanzable del iframe de YouTube, los 200×200 obligatorios, el `AudioContext`
-que nace en pausa) y **cómo se encontraron**, que es lo único reutilizable:
-instrumentar y comparar entre participantes, en vez de conjeturar sobre el
-síntoma.
+que nace en pausa, la cuota de YouTube de 100 búsquedas diarias para todo el
+equipo), lo aprendido sobre **notificaciones push**, y **cómo se encontraron**,
+que es lo único reutilizable: instrumentar y comparar entre participantes, en vez
+de conjeturar sobre el síntoma.
+
+⚠️ **Deuda anotada ahí**: el chat principal del CRM (`hilo-chat.tsx`) todavía
+muestra las fotos ajenas como burbuja vacía hasta recargar — el mismo agujero que
+se arregló en el chat de la llamada.

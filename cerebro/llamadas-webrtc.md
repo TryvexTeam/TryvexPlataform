@@ -126,6 +126,43 @@ nace. El iframe moría con él.
 sobre un ancla que sí vive en el layout. Ya se había aprendido con la capa de
 audio; el reproductor repitió el error.
 
+## 8. La pantalla compartida no vive donde uno cree
+
+**Síntoma:** sale el rótulo "está transmitiendo" y no se ve nada.
+
+La pantalla **no está en `local.current`** —eso es micrófono y cámara— sino en
+`pantalla.current`, y se reparte con `replaceTrack` recorriendo **los pares que
+existen en ese instante**. Una conexión creada después nace con la ranura vacía y
+nadie vuelve a llenarla.
+
+No afecta solo a quien entra tarde: pasa en **cada reconexión**, porque
+`presence sync` cierra el par caído y crea uno nuevo.
+
+**Regla:** todo lo que se reparte "a los pares actuales" tiene que volver a
+aplicarse al crear un par. Y el aviso que se manda una sola vez —"estoy
+compartiendo"— hay que reenviarlo al contestar una oferta, o quien llega después
+nunca se entera.
+
+**El rótulo y la imagen viajan por caminos distintos:** el rótulo por
+señalización, la imagen por la m-line de video. Ver uno sin la otra es normal
+cuando uno de los dos caminos falla, y saber eso ahorra buscar en el lado
+equivocado.
+
+## 9. Realtime avisa de la fila, no de sus tablas relacionadas
+
+**Síntoma:** una foto ajena aparecía como burbuja vacía hasta recargar.
+
+Los adjuntos viven en `mensaje_adjuntos`, tabla aparte. El evento de Realtime
+sobre `mensajes` llega **sin ellos**.
+
+**Regla:** si una fila tiene datos en tablas relacionadas, el evento no los trae.
+Hay que volver a pedir el registro completo.
+
+> **Deuda conocida:** en el chat de la llamada está resuelto (se recarga la lista
+> con cualquier mensaje ajeno). **El chat principal del CRM —`hilo-chat.tsx`—
+> sigue con el mismo agujero**: una foto ajena puede salir como burbuja vacía
+> hasta recargar. No se tocó para no mezclarlo con lo de llamadas.
+
 ---
 
 ## Límites que no son bugs — no perder tiempo buscándoles arreglo
@@ -145,6 +182,35 @@ audio; el reproductor repitió el error.
   llamada entrante no es un gesto suyo. `resume()` en ese momento no sirve: la
   política pide un gesto **previo**. Hay que desbloquearlo con el primer clic de
   la sesión y no cerrarlo nunca.
+- **A quien inicia una llamada no le suena su propia llamada.** Es correcto
+  (`iniciada_por === miIntegranteId`), pero si se prueba con una sola persona
+  marcando, el resultado es "no me aparece nada" y parece un bug. Para probar,
+  que llame el otro.
+- **La cuota de YouTube no se puede comprar.** 10.000 unidades al día:
+  `search.list` cuesta **100** y `videos.list` cuesta **1**. Son exactamente 100
+  búsquedas por texto al día **para todo el equipo** — por eso las búsquedas se
+  cachean y por eso pegar el enlace es el camino que sigue funcionando cuando la
+  cuota se acabó. La key va restringida a YouTube Data API v3 en Google Cloud.
+
+---
+
+## Notificaciones push — lo que se aprendió (arreglo aún sin mergear)
+
+- **El resultado del envío se descartaba.** `enviarPush` devuelve un `motivo`
+  cuando no manda nada (`sin_suscripciones`, `vapid_no_configurado`) y nadie lo
+  miraba. Con el aviso perdido y nada en los logs, "no me llegó la notificación"
+  era indiagnosticable: no se podía distinguir un teléfono sin registrar de una
+  llave que falta en el entorno. **Regla: un envío que falla en silencio no
+  existe.**
+- **Una llamada no puede notificarse como un aviso cualquiera.** Sin
+  `requireInteraction` la notificación se va sola a los pocos segundos, y quien
+  tenía el teléfono en el bolsillo se entera cuando ya colgaron.
+- **En iOS el push exige la PWA instalada** en la pantalla de inicio. En el
+  navegador normal no llega, y no hay forma de cambiarlo.
+
+Queda pendiente de subir: el registro del motivo, `requireInteraction` para
+llamadas y un `GET /api/push/subscribe` que dice cuántos dispositivos tiene
+registrados quien pregunta y si el servidor puede firmar envíos.
 
 ---
 
