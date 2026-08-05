@@ -45,6 +45,17 @@ interface UseLlamadaOpts {
 
 interface Par {
   pc: RTCPeerConnection
+  /**
+   * Las pistas que llegaron de esa persona, una por tipo.
+   *
+   * El stream remoto se arma acá y NO se toma de `ev.streams[0]`, que es lo que
+   * hacía antes y es la causa de que la pantalla compartida se viera negra:
+   * `replaceTrack` no asocia la pista a ningún MediaStream. La ranura de video se
+   * reserva con `addTransceiver`, que tampoco la ata a uno. Resultado: la pista
+   * de video llegaba al otro navegador sin stream, `ev.streams[0]` venía vacío y
+   * no quedaba nada que pintar.
+   */
+  pistas: Map<string, MediaStreamTrack>
   /** Candidatos que llegaron antes que la descripción remota. Sin esta cola se
    *  pierden y la conexión queda a medio armar en redes lentas. */
   pendientes: RTCIceCandidateInit[]
@@ -219,7 +230,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         bundlePolicy: 'max-bundle',
       })
 
-      const par: Par = { pc, pendientes: [], negociando: false }
+      const par: Par = { pc, pistas: new Map(), pendientes: [], negociando: false }
       pares.current.set(otroId, par)
 
       for (const track of local.current?.getTracks() ?? []) {
@@ -246,7 +257,40 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       }
 
       pc.ontrack = (ev) => {
-        actualizar(otroId, { stream: ev.streams[0] ?? null })
+        const p = pares.current.get(otroId)
+        if (!p) return
+
+        // Una por tipo: si llega una pista de video nueva reemplaza a la vieja,
+        // no se acumulan.
+        p.pistas.set(ev.track.kind, ev.track)
+
+        // Un MediaStream NUEVO en cada cambio, a propósito: mutar el existente no
+        // le avisa a React ni al elemento <video>, que ya tiene ese objeto en
+        // `srcObject` y no vuelve a mirarlo.
+        const rehacer = () => {
+          const vivo = pares.current.get(otroId)
+          if (!vivo) return
+          actualizar(otroId, { stream: new MediaStream([...vivo.pistas.values()]) })
+        }
+
+        rehacer()
+
+        /**
+         * La pista existe desde que se negocia la conexión, pero llega en estado
+         * `muted` -- reservada y sin datos. Los cuadros recién empiezan cuando el
+         * otro lado la llena con `replaceTrack`, y eso dispara `unmute`.
+         *
+         * Sin este handler el recuadro se queda con la pista vacía que se creó al
+         * conectar y nunca se entera de que empezó a llegar imagen: negro para
+         * siempre aunque el video esté fluyendo.
+         */
+        ev.track.onunmute = rehacer
+        ev.track.onended = () => {
+          const vivo = pares.current.get(otroId)
+          if (!vivo) return
+          vivo.pistas.delete(ev.track.kind)
+          rehacer()
+        }
       }
 
       pc.onconnectionstatechange = () => {

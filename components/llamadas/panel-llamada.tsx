@@ -208,6 +208,21 @@ export function PanelLlamada({
     </div>
   )
 
+  /**
+   * Lo que se ve, según el estado. Es una variable y no un `return` temprano a
+   * propósito.
+   *
+   * Antes cada estado tenía su propio `return`, y la capa de audio quedaba en una
+   * posición distinta del árbol en cada uno. Para React eso no es "la misma capa
+   * que se mueve": es una que se destruye y otra que nace. Cada minimizar y cada
+   * restaurar desmontaba y recreaba todos los nodos de audio y sus AudioContext
+   * -- de ahí el negro con "cargando" al reabrir.
+   *
+   * Con la capa siempre en el mismo lugar del árbol, el audio no se entera de
+   * que la vista cambió.
+   */
+  let vista: React.ReactNode
+
   const alternarEnsordecer = () => {
     if (!ensordecido) {
       microAntesRef.current = micro
@@ -223,7 +238,7 @@ export function PanelLlamada({
   }
 
   if (error) {
-    return (
+    vista = (
       <div className="fixed inset-x-3 bottom-24 md:bottom-6 md:right-6 md:left-auto md:w-[360px] z-[80] rounded-xl p-4"
            style={{ background: 'var(--tx-surface-1)', border: '1px solid var(--tx-border)' }}>
         <p className="text-sm text-[var(--tx-ink-primary)]">{error}</p>
@@ -236,15 +251,11 @@ export function PanelLlamada({
         </button>
       </div>
     )
-  }
-
   // Minimizado: una barra fina para volver. Sin esto, atender una llamada
   // significa no poder usar el CRM, que es justo lo contrario de lo que se busca.
-  if (minimizado) {
-    return (
-      <>
-        {capaAudio}
-        <button
+  } else if (minimizado) {
+    vista = (
+      <button
           onClick={() => setMinimizado(false)}
           className="fixed bottom-24 md:bottom-6 right-3 md:right-6 z-[80] flex items-center gap-2 rounded-full px-4 py-2.5 shadow-lg"
           style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
@@ -253,26 +264,19 @@ export function PanelLlamada({
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
             <span className="relative inline-flex size-2 rounded-full bg-current" />
           </span>
-          <span className="text-[13px] font-semibold">
-            {ensordecido ? 'Ensordecido' : 'En llamada'} · {participantes.length + 1}
-          </span>
-        </button>
-      </>
+        <span className="text-[13px] font-semibold">
+          {ensordecido ? 'Ensordecido' : 'En llamada'} · {participantes.length + 1}
+        </span>
+      </button>
     )
-  }
-
-  // Un solo arreglo con todos los recuadros, el propio incluido. Así la vista
-  // destacada no tiene que tratar "yo" como un caso aparte -- compartir pantalla
-  // y querer verla en grande es justamente lo más común.
-
-  return (
+  } else {
+    vista = (
     <div
       className="fixed inset-0 z-[80] flex flex-col"
       style={{ background: 'oklch(8% 0.004 240 / 96%)', backdropFilter: 'blur(24px)' }}
       role="dialog"
       aria-label={`Llamada en ${titulo}`}
     >
-      {capaAudio}
       <header className="flex items-center justify-between gap-3 px-4 py-3 shrink-0">
         <div className="min-w-0">
           <p className="text-[15px] font-semibold text-[var(--tx-ink-primary)] truncate">{titulo}</p>
@@ -461,6 +465,17 @@ export function PanelLlamada({
         </button>
       </footer>
     </div>
+    )
+  }
+
+  // La capa de audio va SIEMPRE en el mismo lugar del árbol, hermana de la vista
+  // y nunca dentro de ella. Es lo que hace que minimizar y restaurar no la
+  // desmonte: React solo reconcilia `vista`, y el audio ni se entera.
+  return (
+    <>
+      {capaAudio}
+      {vista}
+    </>
   )
 }
 
@@ -546,7 +561,23 @@ function Recuadro({
     el.srcObject = stream
   }, [stream])
 
-  const hayVideo = Boolean(stream) && (camara || compartiendo)
+  /**
+   * ¿Hay imagen que mostrar?
+   *
+   * Se mira la pista real y no solo las banderas: una pista puede existir en la
+   * conexión y estar `muted` -- reservada, sin datos -- que es exactamente el
+   * estado en el que llega antes de que el otro lado empiece a transmitir. Pintar
+   * el `<video>` en ese momento da un rectángulo negro; mostrar el avatar es la
+   * respuesta honesta.
+   *
+   * Las banderas siguen contando para el caso local: con la cámara apagada la
+   * pista sigue viva (`enabled = false` no la silencia), así que sin ellas se
+   * vería el último cuadro congelado.
+   */
+  const pistaVideo = stream?.getVideoTracks()[0]
+  const hayVideo = Boolean(
+    pistaVideo && pistaVideo.readyState === 'live' && !pistaVideo.muted && (camara || compartiendo),
+  )
 
   return (
     <div
@@ -672,6 +703,39 @@ function Recuadro({
  *
  * `srcObject` va por ref y no como prop: es una referencia viva, no una URL.
  */
+/**
+ * Un solo contexto de audio para toda la llamada, compartido.
+ *
+ * Antes cada participante creaba el suyo. Chrome limita a unos seis por página,
+ * y con el vaivén de minimizar y restaurar se creaban y destruían sin parar --
+ * al llegar al tope, `new AudioContext()` falla y el `catch` se lo tragaba: el
+ * síntoma era dejar de oír a alguien sin ningún error a la vista, y encima
+ * asimétrico (el otro te oye, tú a él no), porque el que se rompía era el
+ * reproductor de un solo lado.
+ *
+ * Es a nivel de módulo y no un ref porque tiene que sobrevivir a que el panel se
+ * desmonte y se vuelva a montar. No se cierra nunca: un AudioContext en reposo
+ * no cuesta nada, y cerrarlo es justamente lo que causaba el problema.
+ */
+let ctxCompartido: AudioContext | null = null
+
+function contextoAudio(): AudioContext | null {
+  if (ctxCompartido && ctxCompartido.state !== 'closed') {
+    void ctxCompartido.resume().catch(() => {})
+    return ctxCompartido
+  }
+  try {
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    ctxCompartido = new Ctor()
+    void ctxCompartido.resume().catch(() => {})
+    return ctxCompartido
+  } catch {
+    return null
+  }
+}
+
 function AudioRemoto({
   stream,
   mudo,
@@ -691,38 +755,39 @@ function AudioRemoto({
   }, [stream])
 
   /**
-   * El volumen pasa por WebAudio y no por `el.volume`.
+   * El volumen pasa por WebAudio y no por `el.volume`, que está limitado a 1:
+   * con él no se puede subir a alguien por encima de lo que grabó su micrófono,
+   * y ése es el caso que importa -- al que grita se le baja, pero al que no se le
+   * entiende hay que subirle.
    *
-   * `volume` está limitado a 1: con él no se puede subir a alguien por encima de
-   * lo que grabó su micrófono, y ése es justamente el caso que importa -- al que
-   * grita se le baja, pero al que no se le entiende hay que subirle. Un GainNode
-   * no tiene ese techo.
-   *
-   * El elemento `<audio>` se queda igual, mudo: en Chrome hace falta tener el
-   * stream enganchado a un elemento para que el audio de WebRTC fluya, aunque el
-   * sonido salga por otro lado.
+   * El elemento `<audio>` se queda mudo pero presente: en Chrome hace falta tener
+   * el stream enganchado a un elemento para que el audio de WebRTC fluya, aunque
+   * el sonido salga por otro lado.
    */
   useEffect(() => {
     const el = ref.current
     if (!el || !stream || stream.getAudioTracks().length === 0) return
 
-    let ctx: AudioContext
-    try {
-      const Ctor =
-        window.AudioContext ??
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      ctx = new Ctor()
-    } catch {
-      // Sin WebAudio se cae al camino simple, con el techo del 100%.
+    const ctx = contextoAudio()
+    if (!ctx) {
+      // Sin WebAudio se cae al camino simple, con el techo del 100%. Y se dice
+      // acá arriba en el elemento, no se queda en silencio sin explicación.
       el.muted = false
       el.volume = Math.min(1, volumen)
       return
     }
 
-    void ctx.resume().catch(() => {})
+    let fuente: MediaStreamAudioSourceNode
+    let ganancia: GainNode
+    try {
+      fuente = ctx.createMediaStreamSource(stream)
+      ganancia = ctx.createGain()
+    } catch {
+      el.muted = false
+      el.volume = Math.min(1, volumen)
+      return
+    }
 
-    const fuente = ctx.createMediaStreamSource(stream)
-    const ganancia = ctx.createGain()
     ganancia.gain.value = mudo ? 0 : volumen
     fuente.connect(ganancia)
     ganancia.connect(ctx.destination)
@@ -734,16 +799,15 @@ function AudioRemoto({
         fuente.disconnect()
         ganancia.disconnect()
       } catch {
-        // Ya desconectado al cerrarse el contexto.
+        // Ya desconectado.
       }
-      void ctx.close()
+      // El contexto NO se cierra: es compartido y lo siguen usando los demás.
     }
-    // Solo se rearma si cambia el stream: mover el control no debe reconstruir
-    // el grafo de audio, para eso está el efecto de abajo.
+    // Solo se rearma si cambia el stream: mover el control de volumen no debe
+    // reconstruir el grafo de audio, para eso está el efecto de abajo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream])
 
-  // El cambio de volumen se aplica sobre el nodo que ya existe.
   useEffect(() => {
     const g = gananciaRef.current
     if (g) g.gain.value = mudo ? 0 : volumen
