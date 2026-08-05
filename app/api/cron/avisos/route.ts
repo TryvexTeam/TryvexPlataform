@@ -6,8 +6,14 @@ import { nombreCliente } from '@/lib/types/cliente'
 /** Cron diario: entregas de proyecto próximas + cobros pendientes por vencer.
  *  El índice único de dedupe evita repetir el mismo aviso el mismo día. */
 export async function GET(req: Request) {
+  // Si falta el secreto se cierra, no se abre. Antes la condición era
+  // `if (SECRET && ...)`: sin la variable definida no se pedía nada, y como
+  // `proxy.ts` excluye `api/cron` del middleware, no había red debajo —
+  // cualquiera podía dispararlo en bucle y llenar de push a todo el equipo.
+  // Mismo criterio que `cron/google-watch`.
+  const secreto = process.env.CRON_SECRET
   const auth = req.headers.get('authorization')
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!secreto || auth !== `Bearer ${secreto}`) {
     return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
   }
 

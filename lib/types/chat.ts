@@ -63,7 +63,8 @@ export const CrearConversacionSchema = z
 export type EnviarMensajeInput = z.infer<typeof EnviarMensajeSchema>
 export type CrearConversacionInput = z.infer<typeof CrearConversacionSchema>
 
-export type TipoConversacion = 'dm' | 'grupo' | 'agentes'
+/** `voz` es una sala persistente: se entra a hablar, no a leer. Ver migración 033. */
+export type TipoConversacion = 'dm' | 'grupo' | 'agentes' | 'voz'
 
 export type AdjuntoMensaje = {
   id: string

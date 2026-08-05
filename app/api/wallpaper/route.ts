@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { IntegrantesRepository } from '@/lib/repos/integrantes'
 
 const TIPOS_PERMITIDOS: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -17,6 +18,11 @@ export async function POST(req: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
+
+  // El bucket es público: sin esta puerta, cualquier cuenta sube 25 MB de video
+  // y queda alojado bajo el dominio de la empresa, sin cuota.
+  const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+  if (!perfil) return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
 
   const form = await req.formData()
   const file = form.get('file')

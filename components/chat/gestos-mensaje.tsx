@@ -1,13 +1,18 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { MessageSquareIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react'
+import { MessageSquareIcon, PinIcon, PinOffIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react'
+import { EMOJIS_RAPIDOS } from '@/lib/types/chat'
 
 interface GestosMensajeProps {
   puedeBorrar: boolean
+  /** Si el mensaje ya está fijado, para saber si el gesto fija o desfija. */
+  fijado?: boolean
   onResponder: () => void
   onAbrirHilo: () => void
   onBorrar: () => void
+  onReaccionar?: (emoji: string) => void
+  onFijar?: () => void
   children: React.ReactNode
 }
 
@@ -22,19 +27,24 @@ const TOLERANCIA_MOVIMIENTO = 10
  * Gestos táctiles sobre un mensaje, como en WhatsApp o Telegram.
  *
  *   · Deslizar hacia la derecha → responder.
- *   · Mantener presionado → menú con responder, hilo y eliminar.
+ *   · Mantener presionado → menú con la fila de emoji, responder, hilo, fijar
+ *     y eliminar. Es decir: TODO lo que ofrece la barra de hover.
  *
  * En un teléfono no hay hover, así que los botones que aparecen al pasar el mouse
- * no existen: sin esto, desde el celular no se podía responder ni borrar nada.
+ * no existen: sin esto, desde el celular no se podía responder, reaccionar,
+ * fijar ni borrar nada.
  *
  * Solo escucha eventos táctiles. Con mouse siguen mandando los botones de hover,
  * que son más precisos y no dejan al usuario adivinando cuánto sostener.
  */
 export function GestosMensaje({
   puedeBorrar,
+  fijado,
   onResponder,
   onAbrirHilo,
   onBorrar,
+  onReaccionar,
+  onFijar,
   children,
 }: GestosMensajeProps) {
   const [desplazado, setDesplazado] = useState(0)
@@ -129,10 +139,13 @@ export function GestosMensaje({
       {menuAbierto && (
         <HojaAcciones
           puedeBorrar={puedeBorrar}
+          fijado={fijado}
           onCerrar={() => setMenuAbierto(false)}
           onResponder={onResponder}
           onAbrirHilo={onAbrirHilo}
           onBorrar={onBorrar}
+          onReaccionar={onReaccionar}
+          onFijar={onFijar}
         />
       )}
     </>
@@ -141,24 +154,33 @@ export function GestosMensaje({
 
 function HojaAcciones({
   puedeBorrar,
+  fijado,
   onCerrar,
   onResponder,
   onAbrirHilo,
   onBorrar,
+  onReaccionar,
+  onFijar,
 }: {
   puedeBorrar: boolean
+  fijado?: boolean
   onCerrar: () => void
   onResponder: () => void
   onAbrirHilo: () => void
   onBorrar: () => void
+  onReaccionar?: (emoji: string) => void
+  onFijar?: () => void
 }) {
   const elegir = (accion: () => void) => () => {
     onCerrar()
     accion()
   }
 
+  // Sin `md:hidden`: esta hoja solo se abre por un gesto táctil, y un notebook
+  // o tablet con pantalla táctil también supera ese breakpoint. Ocultarla por
+  // ancho dejaba el gesto disparando un menú invisible.
   return (
-    <div className="fixed inset-0 z-50 md:hidden">
+    <div className="fixed inset-0 z-50">
       <button
         onClick={onCerrar}
         aria-label="Cerrar"
@@ -176,12 +198,42 @@ function HojaAcciones({
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" aria-hidden />
 
+        {/* La fila de emoji va arriba de todo: reaccionar es lo más frecuente y
+            así queda al alcance del pulgar, sin recorrer la lista. */}
+        {onReaccionar && (
+          <div
+            className="flex items-center justify-between gap-1 px-1 pb-3 mb-2"
+            style={{ borderBottom: '1px solid var(--tx-border)' }}
+          >
+            {EMOJIS_RAPIDOS.map((emoji) => (
+              <button
+                key={emoji}
+                onClick={elegir(() => onReaccionar(emoji))}
+                aria-label={`Reaccionar con ${emoji}`}
+                // 44px: el mínimo tocable, y aquí conviven seis en una fila.
+                className="size-11 grid place-items-center rounded-full text-[22px] active:scale-90 transition-transform"
+                style={{ background: 'oklch(100% 0 0 / 6%)' }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+
         <Fila icono={<ReplyIcon className="size-4.5" />} onClick={elegir(onResponder)}>
           Responder
         </Fila>
         <Fila icono={<MessageSquareIcon className="size-4.5" />} onClick={elegir(onAbrirHilo)}>
           Abrir hilo
         </Fila>
+        {onFijar && (
+          <Fila
+            icono={fijado ? <PinOffIcon className="size-4.5" /> : <PinIcon className="size-4.5" />}
+            onClick={elegir(onFijar)}
+          >
+            {fijado ? 'Dejar de fijar' : 'Fijar en la conversación'}
+          </Fila>
+        )}
         {puedeBorrar && (
           <Fila icono={<Trash2Icon className="size-4.5" />} onClick={elegir(onBorrar)} peligro>
             Eliminar

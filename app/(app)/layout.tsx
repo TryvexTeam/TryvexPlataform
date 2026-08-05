@@ -9,6 +9,7 @@ import { ThemeProvider } from '@/components/dashboard/theme-context'
 import { DynamicGlows } from '@/components/layout/dynamic-glows'
 import { AppShell } from '@/components/layout/app-shell'
 import { PermisosRepository, puede } from '@/lib/repos/permisos'
+import { ProveedorLlamadas } from '@/components/llamadas/proveedor-llamadas'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -24,9 +25,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const { data: integrante } = await supabase
     .from('dim_integrantes')
-    .select('nombre, email, avatar_url')
+    .select('id, nombre, email, avatar_url')
     .eq('auth_user_id', user.id)
-    .single() as { data: { nombre: string; email: string; avatar_url: string | null } | null; error: unknown }
+    .single() as { data: { id: string; nombre: string; email: string; avatar_url: string | null } | null; error: unknown }
+
+  // El equipo se carga acá y no en el chat porque una llamada entrante tiene que
+  // poder decir quién llama estando uno en leads, en finanzas o donde sea.
+  const { data: equipo } = await supabase
+    .from('dim_integrantes')
+    .select('id, nombre, avatar_url, color')
+    .eq('activo', true) as {
+      data: { id: string; nombre: string; avatar_url: string | null; color: string | null }[] | null
+      error: unknown
+    }
 
   const nombre = integrante?.nombre ?? user.email ?? 'Usuario'
   const email = integrante?.email ?? user.email ?? ''
@@ -36,10 +47,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // en cada ruta: esconder un link no protege nada, solo evita ofrecer un callejón.
   const permisos = await new PermisosRepository(supabase).misPermisos(user.id)
 
-  return (
-    <AuthProvider>
-      <ThemeProvider>
-        <AppShell>
+  // Sin fila en dim_integrantes no hay a quién llamar ni quién llame: el resto de
+  // la app sigue funcionando, solo que sin llamadas.
+  const contenido = (
+    <>
+      <AppShell>
           {/* Dynamic atmospheric glows */}
           <DynamicGlows />
           {/* Grain texture — opacity controlled by --tx-grain-opacity */}
@@ -69,8 +81,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <PageTransition>{children}</PageTransition>
             </main>
           </div>
-        </AppShell>
-        <BottomNav />
+      </AppShell>
+      <BottomNav />
+    </>
+  )
+
+  return (
+    <AuthProvider>
+      <ThemeProvider>
+        {integrante ? (
+          <ProveedorLlamadas miIntegranteId={integrante.id} equipo={equipo ?? []}>
+            {contenido}
+          </ProveedorLlamadas>
+        ) : (
+          contenido
+        )}
       </ThemeProvider>
     </AuthProvider>
   )

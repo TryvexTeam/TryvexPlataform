@@ -4,6 +4,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { generarDraftLead } from "@/lib/vex/draft";
 import { construirLinkWhatsApp } from "@/lib/vex/telefono";
 import type { LeadResumen } from "@/lib/vex/cartera";
+import { IntegrantesRepository } from "@/lib/repos/integrantes";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any;
@@ -24,6 +25,12 @@ export async function POST(req: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+  // Abajo se usa la clave de servicio para leer el lead entero, teléfono
+  // incluido, saltando la RLS. Tener cuenta no basta para eso. El endpoint
+  // hermano (`vex/whatsapp/send`) ya lo comprobaba; este quedó sin la puerta.
+  const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id);
+  if (!perfil) return NextResponse.json({ error: "No eres integrante activo" }, { status: 403 });
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {

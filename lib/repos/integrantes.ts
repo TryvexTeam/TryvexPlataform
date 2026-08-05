@@ -11,11 +11,24 @@ export class IntegrantesRepository {
     this.sb = supabase as SB
   }
 
+  /**
+   * El perfil de quien tiene la sesión. Devuelve null si no está activo.
+   *
+   * El `activo = true` no es adorno: todas las rutas responden "No eres
+   * integrante activo" cuando esto da null, pero antes no se filtraba, así que a
+   * un integrante dado de baja le seguían funcionando. La RLS lo tapaba en las
+   * lecturas normales —`is_integrante()` sí exige `activo`— pero las rutas que
+   * usan la clave de servicio saltan la RLS entera: alguien despedido podía
+   * seguir mandando WhatsApp a los clientes desde el número de la agencia.
+   *
+   * Dar de baja a alguien tiene que significar eso en toda la API, no en parte.
+   */
   async getByAuthUser(authUserId: string): Promise<Integrante | null> {
     const { data, error } = await this.sb
       .from('dim_integrantes')
       .select('*')
       .eq('auth_user_id', authUserId)
+      .eq('activo', true)
       .single()
     if (error || !data) return null
     return data as Integrante
