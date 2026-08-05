@@ -61,7 +61,20 @@ interface Par {
   pendientes: RTCIceCandidateInit[]
   /** Evita aplicar dos ofertas cruzadas ("glare") sobre la misma conexión. */
   negociando: boolean
+  /**
+   * Cuántas veces se intentó enderezar la ranura de video en esta conexión.
+   *
+   * La autorreparación corre cada dos segundos. Si la renegociación no arregla la
+   * dirección --porque la causa está del otro lado, o en una versión vieja que
+   * todavía no recargó-- sin tope quedaría ofreciendo para siempre: una oferta
+   * cada dos segundos por cada persona, que en una malla es ruido serio y puede
+   * dejar la conexión peor que el problema que intenta arreglar.
+   */
+  intentosRanura: number
 }
+
+/** Cuántas veces se reintenta enderezar la ranura antes de rendirse. */
+const MAX_INTENTOS_RANURA = 4
 
 /**
  * La ranura de video de una conexión.
@@ -330,7 +343,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         bundlePolicy: 'max-bundle',
       })
 
-      const par: Par = { pc, pistas: new Map(), pendientes: [], negociando: false }
+      const par: Par = { pc, pistas: new Map(), pendientes: [], negociando: false, intentosRanura: 0 }
       pares.current.set(otroId, par)
 
       for (const track of local.current?.getTracks() ?? []) {
@@ -529,11 +542,34 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     (otroId: string) => {
       const par = pares.current.get(otroId)
       if (!par) return
-      if (!abrirRanuraDeVideo(par.pc)) return
+
+      if (!abrirRanuraDeVideo(par.pc)) {
+        // Ya quedó bien: se olvidan los intentos, para que un problema futuro
+        // vuelva a tener sus oportunidades.
+        par.intentosRanura = 0
+        return
+      }
+
+      if (par.intentosRanura >= MAX_INTENTOS_RANURA) {
+        // Se deja de insistir, pero se dice. Callar acá dejaría a alguien sin ver
+        // nada y sin ninguna pista de por qué.
+        if (par.intentosRanura === MAX_INTENTOS_RANURA) {
+          console.warn(
+            '[llamada] no se pudo abrir la ranura de video con',
+            otroId,
+            '- el otro lado puede estar con una versión anterior; recargar ambos',
+          )
+          par.intentosRanura++
+        }
+        return
+      }
 
       // Cambiar la dirección no tiene efecto hasta la próxima oferta, y esta vez
       // la tiene que hacer este lado: el otro cree que ya está todo negociado.
-      if (par.pc.signalingState === 'stable') void ofrecer(otroId)
+      if (par.pc.signalingState === 'stable') {
+        par.intentosRanura++
+        void ofrecer(otroId)
+      }
     },
     [ofrecer],
   )
