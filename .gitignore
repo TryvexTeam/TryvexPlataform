@@ -63,3 +63,7 @@ workspace/
 # Artefactos locales de trabajo (no son del proyecto)
 .scratch/
 .verify/
+
+# Espacios de trabajo temporales de agentes. Son clones del repo: si entran
+# aca, git los toma como submodulos y el clon siguiente queda roto.
+.claude/worktrees/

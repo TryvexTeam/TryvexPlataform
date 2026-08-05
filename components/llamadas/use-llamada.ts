@@ -120,6 +120,22 @@ async function comoConecto(pc: RTCPeerConnection): Promise<TipoConexion> {
   }
 }
 
+/**
+ * Lo que hace falta para diagnosticar "no se me escucha" sin adivinar.
+ *
+ * Son tres preguntas distintas y cada una tiene un arreglo distinto:
+ *   1. ¿la pista de micrófono existe y está viva?  -> `pistaLocal`
+ *   2. ¿se está enviando audio hacia cada persona? -> `paquetesEnviados`
+ *   3. ¿llega audio desde cada persona?            -> `paquetesRecibidos`
+ *
+ * Si (1) está bien y (2) no crece, el problema está en la conexión, no en el
+ * micrófono. Si (1) está mal, no hay nada que buscar del lado de la red.
+ */
+export interface DiagnosticoLlamada {
+  pistaLocal: { existe: boolean; activa: boolean; silenciadaPorSistema: boolean; estado: string }
+  porPersona: { id: string; paquetesEnviados: number; paquetesRecibidos: number }[]
+}
+
 export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }: UseLlamadaOpts) {
   const [participantes, setParticipantes] = useState<ParticipanteVivo[]>([])
   /** Si alguna de las conexiones pasa por relay, la llamada cuenta como relay. */
@@ -143,6 +159,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const [error, setError] = useState<string | null>(null)
   /** Falso cuando no hay TURN configurado: hay redes donde no va a conectar. */
   const [hayTurn, setHayTurn] = useState(true)
+  const [diagnostico, setDiagnostico] = useState<DiagnosticoLlamada | null>(null)
 
   const pares = useRef(new Map<string, Par>())
   const canal = useRef<RealtimeChannel | null>(null)
@@ -627,6 +644,55 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     }
   }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId])
 
+  /**
+   * Cada dos segundos se pregunta a WebRTC cuántos paquetes de audio salieron y
+   * entraron. Es la única fuente que dice la verdad: el permiso del navegador y
+   * el indicador de voz dicen si el micrófono ENTRA a la app, no si SALE hacia
+   * los demás.
+   */
+  useEffect(() => {
+    if (!llamadaId) return
+
+    const medir = async () => {
+      const pista = local.current?.getAudioTracks()[0]
+      const porPersona: DiagnosticoLlamada['porPersona'] = []
+
+      for (const [otroId, { pc }] of pares.current) {
+        let enviados = 0
+        let recibidos = 0
+        try {
+          const stats = await pc.getStats()
+          stats.forEach((r) => {
+            const rtp = r as RTCOutboundRtpStreamStats & RTCInboundRtpStreamStats
+            if (r.type === 'outbound-rtp' && rtp.kind === 'audio') enviados += rtp.packetsSent ?? 0
+            if (r.type === 'inbound-rtp' && rtp.kind === 'audio') recibidos += rtp.packetsReceived ?? 0
+          })
+        } catch {
+          // Una conexión que ya se cerró no tiene estadísticas. No es un fallo.
+        }
+        porPersona.push({ id: otroId, paquetesEnviados: enviados, paquetesRecibidos: recibidos })
+      }
+
+      setDiagnostico({
+        pistaLocal: {
+          existe: Boolean(pista),
+          // `enabled` es nuestro interruptor de silencio.
+          activa: pista?.enabled ?? false,
+          // `muted` lo pone el sistema, no nosotros: micrófono desconectado,
+          // tomado por otra aplicación, o silenciado a nivel de sistema
+          // operativo. Es una causa que la app no puede arreglar, solo señalar.
+          silenciadaPorSistema: pista?.muted ?? false,
+          estado: pista?.readyState ?? 'sin pista',
+        },
+        porPersona,
+      })
+    }
+
+    void medir()
+    const id = window.setInterval(medir, 2000)
+    return () => window.clearInterval(id)
+  }, [llamadaId])
+
   const colgar = useCallback(async () => {
     if (!llamadaId) return
     try {
@@ -652,6 +718,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   return {
     participantes,
     conexion,
+    diagnostico,
     streamLocal,
     streamPantalla,
     micro,

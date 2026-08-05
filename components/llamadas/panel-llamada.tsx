@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ActivityIcon,
   HeadphoneOffIcon,
   HeadphonesIcon,
   MessageSquareIcon,
@@ -89,6 +90,8 @@ export function PanelLlamada({
    * le ve la cara a quien está hablando. Un clic lo agranda, otro lo devuelve.
    */
   const [destacado, setDestacado] = useState<string | null>(null)
+  /** Panel de diagnóstico. Cerrado por defecto; se abre desde la cabecera. */
+  const [verDiagnostico, setVerDiagnostico] = useState(false)
   const {
     participantes,
     conexion,
@@ -99,6 +102,7 @@ export function PanelLlamada({
     compartiendo,
     error,
     hayTurn,
+    diagnostico,
     alternarMicro,
     alternarCamara,
     alternarPantalla,
@@ -164,10 +168,26 @@ export function PanelLlamada({
   const cajaRef = useRef<HTMLDivElement>(null)
   const grilla = useGrillaVideo(cajaRef, enGrande ? 0 : enGrilla.length)
 
+  /**
+   * Quién está hablando, incluido uno mismo.
+   *
+   * El propio recuadro estaba fuera de esta medición, y eso dejaba a la persona
+   * sin ninguna forma de saber si su micrófono llega a la app. Cuando alguien
+   * reporta "no se me escucha", lo primero que necesita es distinguir entre "mi
+   * micrófono no entra" y "entra pero no sale hacia los demás" -- son dos fallas
+   * distintas con arreglos distintos, y sin esta señal no se pueden separar.
+   *
+   * Se mide sobre `streamLocal`, que es la pista que efectivamente se está
+   * enviando, no sobre el permiso del navegador. Que el sistema operativo vea el
+   * micrófono no significa que esta pista traiga sonido.
+   */
   const quienesHablan = useHablando(
     useMemo(
-      () => participantes.map((p) => ({ id: p.integranteId, stream: p.stream })),
-      [participantes],
+      () => [
+        { id: miIntegranteId, stream: streamLocal },
+        ...participantes.map((p) => ({ id: p.integranteId, stream: p.stream })),
+      ],
+      [participantes, streamLocal, miIntegranteId],
     ),
   )
 
@@ -311,6 +331,14 @@ export function PanelLlamada({
           </p>
         </div>
         <button
+          onClick={() => setVerDiagnostico((v) => !v)}
+          aria-label="Ver el estado de la conexión y el micrófono"
+          title="Estado de la conexión y el micrófono"
+          className="rounded-lg px-2 py-1.5 text-[13px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+        >
+          <ActivityIcon className="size-4" />
+        </button>
+        <button
           onClick={() => setMinimizado(true)}
           className="rounded-lg px-3 py-1.5 text-[13px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
         >
@@ -325,6 +353,45 @@ export function PanelLlamada({
              style={{ background: 'oklch(70% 0.15 75 / 15%)', color: 'oklch(80% 0.13 75)' }}>
           <ShieldAlertIcon className="size-4 shrink-0" />
           <span>Sin servidor de retransmisión configurado: en algunas redes la llamada puede no conectar.</span>
+        </div>
+      )}
+
+      {/* Diagnóstico. Existe porque "no se me escucha" son tres fallas distintas
+          -- el micrófono no entra, entra y no sale, o sale y el otro no lo
+          reproduce -- y sin datos no se pueden separar. Adivinar cuál es cuesta
+          más que mostrarlo. */}
+      {verDiagnostico && diagnostico && (
+        <div className="mx-4 mb-2 rounded-lg px-3 py-2 text-[12px]"
+             style={{ background: 'oklch(100% 0 0 / 5%)', border: '1px solid var(--tx-border)' }}>
+          <p className="text-[var(--tx-ink-primary)]">
+            Micrófono:{' '}
+            {!diagnostico.pistaLocal.existe ? (
+              <b className="text-[oklch(75%_0.16_25)]">no hay pista — la app no tomó el micrófono</b>
+            ) : diagnostico.pistaLocal.silenciadaPorSistema ? (
+              <b className="text-[oklch(75%_0.16_25)]">silenciado por el sistema o tomado por otra app</b>
+            ) : !diagnostico.pistaLocal.activa ? (
+              <b className="text-[oklch(80%_0.13_75)]">silenciado desde acá</b>
+            ) : (
+              <b className="text-[oklch(75%_0.16_150)]">activo ({diagnostico.pistaLocal.estado})</b>
+            )}
+          </p>
+
+          {diagnostico.porPersona.map((d) => {
+            const nombre = porId.get(d.id)?.nombre ?? 'Alguien'
+            return (
+              <p key={d.id} className="text-[var(--tx-ink-muted)]">
+                {nombre}: envío {d.paquetesEnviados} · recibo {d.paquetesRecibidos}
+                {d.paquetesEnviados === 0 && (
+                  <b className="ml-1 text-[oklch(75%_0.16_25)]">no le está saliendo audio</b>
+                )}
+              </p>
+            )
+          })}
+
+          <p className="mt-1 text-[11px] text-[var(--tx-ink-muted)]">
+            Si «envío» no sube mientras habla, el problema está en la conexión con esa
+            persona, no en su micrófono.
+          </p>
         </div>
       )}
 
