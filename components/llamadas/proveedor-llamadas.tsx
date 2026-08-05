@@ -256,18 +256,48 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
         (f) =>
           // Si ya estoy dentro no hay nada que ofrecer.
           !f.dentro.includes(miIntegranteId) &&
-          // La que está sonando ya la maneja el camino de Realtime, con su timbre.
-          f.llamada.estado === 'en_curso' &&
+          // Quien la abrió no se ofrece a sí mismo entrar a su propia llamada.
+          f.llamada.iniciada_por !== miIntegranteId &&
           !vistas.current.has(f.llamada.id),
       )
       if (!ajena) return
 
+      /**
+       * Una que sigue SONANDO se trata como entrante de verdad: hay alguien
+       * esperando al teléfono ahora mismo. Antes esto solo miraba las que ya
+       * estaban `en_curso` y se perdía justo el caso que más importa -- llegar
+       * un segundo tarde al evento de una llamada que todavía repica.
+       */
+      if (ajena.llamada.estado === 'sonando') {
+        vistas.current.add(ajena.llamada.id)
+        setEntrante((previa) => {
+          if (previa) return previa
+          sonar()
+          return ajena.llamada
+        })
+        return
+      }
+
       vistas.current.add(ajena.llamada.id)
-      setEnCurso((previa) => previa ?? ajena.llamada)
+      setEnCurso((previa) => {
+        if (previa) return previa
+
+        /**
+         * Un toque y se calla, en vez del timbre insistente de una entrante.
+         *
+         * La diferencia no es estética: una llamada que empezó hace diez minutos
+         * no tiene a nadie esperando al teléfono, y timbrar en bucle por eso es
+         * acoso. Pero aparecer en silencio tampoco sirve -- un modal que sale sin
+         * ruido mientras uno mira otra cosa es un modal que no se ve.
+         */
+        sonar()
+        window.setTimeout(pararTimbre, 1200)
+        return ajena.llamada
+      })
     } catch {
       // Sin esto solo se pierde el ofrecimiento; el chat sigue mostrando la sala.
     }
-  }, [miIntegranteId])
+  }, [miIntegranteId, sonar, pararTimbre])
 
   // ── Escuchar llamadas ─────────────────────────────────────────────────────
   useEffect(() => {
