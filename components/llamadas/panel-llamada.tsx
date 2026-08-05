@@ -529,6 +529,19 @@ export function PanelLlamada({
                 {d.paquetesEnviados === 0 && (
                   <b className="ml-1 text-[oklch(75%_0.16_25)]">no le está saliendo audio</b>
                 )}
+                <br />
+                <span className="opacity-80">
+                  video: envío {d.videoEnviado} · recibo {d.videoRecibido} · ranura{' '}
+                  {d.direccionVideo}
+                </span>
+                {/* El video se mide aparte del audio porque falla aparte: son
+                    m-lines distintas. "Recibo audio pero no video" y "no recibo
+                    nada" son dos problemas con dos arreglos distintos. */}
+                {d.videoRecibido === 0 && d.direccionVideo === 'sendonly' && (
+                  <b className="ml-1 text-[oklch(75%_0.16_25)]">
+                    esta conexión no puede recibir video
+                  </b>
+                )}
               </p>
             )
           })}
