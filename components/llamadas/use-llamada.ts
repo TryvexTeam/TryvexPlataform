@@ -70,11 +70,45 @@ interface Par {
  * está vacía —llamada que empezó en audio— el sender no tiene pista y no hay
  * `kind` que mirar. El receiver sí declara 'video' desde que se crea.
  */
+function transceiverDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver | null {
+  return (
+    pc
+      .getTransceivers()
+      .find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video') ?? null
+  )
+}
+
 function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
-  const tr = pc
-    .getTransceivers()
-    .find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video')
-  return tr?.sender ?? null
+  return transceiverDeVideo(pc)?.sender ?? null
+}
+
+/**
+ * Dejar la ranura de video en condiciones de enviar Y recibir.
+ *
+ * Este es el bug que dejaba a alguien sin ver las transmisiones de los demás
+ * mientras los demás sí veían la suya. `replaceTrack` llena el sender pero NO
+ * cambia la dirección negociada: si la conexión se pactó `sendonly` --porque al
+ * negociar este lado tenía cámara y el otro no, o al revés-- entonces por ahí no
+ * entra video jamás, por mucho que el otro transmita. En el diagnóstico se veía
+ * exactamente así: `video: envío 0 · recibo 0 · ranura sendonly`.
+ *
+ * Cambiar `direction` obliga a renegociar para que tenga efecto; devuelve si hizo
+ * falta, para que quien llama dispare la oferta.
+ */
+function abrirRanuraDeVideo(pc: RTCPeerConnection): boolean {
+  const tr = transceiverDeVideo(pc)
+  if (!tr) {
+    pc.addTransceiver('video', { direction: 'sendrecv' })
+    return true
+  }
+  if (tr.direction !== 'sendrecv') {
+    tr.direction = 'sendrecv'
+    return true
+  }
+  // `currentDirection` es lo REALMENTE pactado; `direction` es lo que uno pide.
+  // Que pidan sendrecv y lo pactado sea otra cosa significa que la última
+  // negociación quedó torcida y hay que rehacerla.
+  return tr.currentDirection !== null && tr.currentDirection !== 'sendrecv'
 }
 
 /**
@@ -280,9 +314,12 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       // pantalla perfectamente, porque la está leyendo en local. Con la ranura ya
       // creada, prender la cámara o compartir pantalla es solo llenarla con
       // `replaceTrack`, que no renegocia nada y se aplica al instante.
-      if (!local.current?.getVideoTracks().length) {
-        pc.addTransceiver('video', { direction: 'sendrecv' })
-      }
+      // La ranura se abre SIEMPRE en sendrecv, tenga o no cámara este lado. Antes
+      // solo se creaba cuando no había video local, y se daba por hecho que la
+      // que creaba `addTrack` quedaba bidireccional -- no siempre: si el otro
+      // lado responde sin intención de mandar, lo pactado termina en `sendonly` y
+      // por esa conexión no entra video nunca más.
+      abrirRanuraDeVideo(pc)
 
       /**
        * Si ya se está compartiendo pantalla, la conexión nueva tiene que nacer
@@ -406,6 +443,36 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     [crearPar, enviar, miIntegranteId],
   )
 
+  /**
+   * Mandar una pista de video (cámara o pantalla) a todas las conexiones.
+   *
+   * Antes esto era un `replaceTrack` suelto en tres lugares, apoyado en que la
+   * ranura ya estaría lista. No siempre lo estaba: si la dirección pactada era
+   * `sendonly`, llenar el sender no servía de nada -- el video salía y por esa
+   * conexión no entraba nada, que es justo el caso de "todos me ven y yo no veo a
+   * nadie".
+   *
+   * Ahora se abre la ranura en `sendrecv` y, si eso cambió algo, se renegocia:
+   * cambiar la dirección solo tiene efecto tras una oferta nueva.
+   */
+  const repartirVideo = useCallback(
+    async (pista: MediaStreamTrack | null) => {
+      for (const [otroId, { pc }] of pares.current) {
+        const hayQueRenegociar = abrirRanuraDeVideo(pc)
+
+        const sender = senderDeVideo(pc)
+        if (sender) await sender.replaceTrack(pista).catch(() => {})
+
+        // Solo desde un estado estable: ofrecer sobre una negociación a medio
+        // camino la rompe, y el `presence sync` ya reintentará.
+        if (hayQueRenegociar && pc.signalingState === 'stable') {
+          void ofrecer(otroId)
+        }
+      }
+    },
+    [ofrecer],
+  )
+
   const recibirSenal = useCallback(
     async (senal: SenalLlamada) => {
       if (senal.de === miIntegranteId) return
@@ -427,6 +494,12 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       try {
         if (senal.tipo === 'oferta') {
           await par.pc.setRemoteDescription(new RTCSessionDescription(senal.sdp))
+
+          // Antes de contestar, dejar la ranura en sendrecv. La respuesta define
+          // qué acepta este lado: si contesta con la dirección torcida que traía
+          // de una negociación anterior, el pacto queda en `sendonly` para el
+          // otro y su video no vuelve a entrar nunca.
+          abrirRanuraDeVideo(par.pc)
 
           for (const c of par.pendientes) {
             await par.pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {})
@@ -611,10 +684,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         // La ranura ya existe desde `crearPar`, así que basta con llenarla. Antes
         // esto hacía `addTrack` + renegociación, que es justo lo que dejaba al
         // otro lado en negro cuando la renegociación no llegaba a completarse.
-        for (const { pc } of pares.current.values()) {
-          const sender = senderDeVideo(pc)
-          if (sender) await sender.replaceTrack(nueva).catch(() => {})
-        }
+        await repartirVideo(nueva)
 
         setCamara(true)
         aplicarCalidad()
@@ -628,7 +698,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     pista.enabled = !pista.enabled
     setCamara(pista.enabled)
     enviar({ tipo: 'estado', de: miIntegranteId, micro: microRef.current, camara: pista.enabled })
-  }, [aplicarCalidad, enviar, miIntegranteId])
+  }, [aplicarCalidad, enviar, miIntegranteId, repartirVideo])
 
   /**
    * Devuelve la cámara a su lugar con `replaceTrack`, que no obliga a renegociar.
@@ -644,17 +714,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     // Si la cámara está apagada esto pone null: la ranura queda vacía y el otro
     // lado deja de recibir cuadros, que es lo correcto.
     const camaraPista = local.current?.getVideoTracks()[0] ?? null
-    for (const { pc } of pares.current.values()) {
-      const sender = senderDeVideo(pc)
-      if (sender) await sender.replaceTrack(camaraPista).catch(() => {})
-    }
+    await repartirVideo(camaraPista)
     pantalla.current.getTracks().forEach((t) => t.stop())
     pantalla.current = null
     setStreamPantalla(null)
     setCompartiendo(false)
     aplicarCalidad()
     enviar({ tipo: 'pantalla', de: miIntegranteId, activa: false })
-  }, [aplicarCalidad, enviar, miIntegranteId])
+  }, [aplicarCalidad, enviar, miIntegranteId, repartirVideo])
 
   const alternarPantalla = useCallback(async () => {
     if (pantalla.current) {
@@ -671,11 +738,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       pantalla.current = stream
       setStreamPantalla(stream)
 
-      for (const { pc } of pares.current.values()) {
-        const sender = senderDeVideo(pc)
-        // Siempre existe: `crearPar` reserva la ranura aunque no haya cámara.
-        if (sender) await sender.replaceTrack(pista).catch(() => {})
-      }
+      await repartirVideo(pista)
 
       // El botón "Dejar de compartir" del navegador no pasa por nuestra UI: sin
       // este handler la app seguiría creyendo que se comparte.
@@ -687,7 +750,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     } catch {
       // El usuario canceló el selector de ventana. No es un error que avisar.
     }
-  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId])
+  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirVideo])
 
   /**
    * Cada dos segundos se pregunta a WebRTC cuántos paquetes de audio salieron y
