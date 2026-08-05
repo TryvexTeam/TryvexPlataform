@@ -1,0 +1,45 @@
+-- Quitar dos policies heredadas de la 001 que no declaraban a quien aplican.
+--
+-- Contexto, porque el porque importa mas que el que:
+--
+-- Supabase trae por defecto `GRANT ALL ON ALL TABLES TO anon, authenticated`.
+-- Verificado en esta base: `anon` -- el rol de cualquiera que tenga la clave
+-- publica, que viaja en el bundle del navegador -- tiene INSERT, UPDATE, DELETE
+-- y TRUNCATE sobre todas las tablas del esquema public.
+--
+-- Lo unico que lo detiene es la RLS. Se comprobo tabla por tabla: las 35 tienen
+-- RLS activa, asi que esos permisos no sirven de nada. Ninguna tabla esta
+-- expuesta a internet.
+--
+-- Pero una policy escrita SIN clausula `TO` aplica al rol `public`, y `public`
+-- incluye a `anon`. Estas dos eran las unicas del esquema en esa situacion:
+--
+--   "integrantes ven sus invitaciones"   SELECT  {public}
+--   "integrantes crean invitaciones"     INSERT  {public}
+--
+-- No eran explotables: su condicion compara contra
+-- `(SELECT id FROM dim_integrantes WHERE auth_user_id = auth.uid())`, y para un
+-- anonimo `auth.uid()` es NULL, la subconsulta devuelve NULL y la comparacion da
+-- NULL, que RLS trata como falso.
+--
+-- Se borran igual. Que algo sea seguro por como Postgres evalua un NULL no es lo
+-- mismo que sea seguro por una regla explicita: lo primero se rompe el dia que
+-- alguien cambia la condicion sin saber que ese NULL era lo que protegia.
+--
+-- Son redundantes ademas: la 035 dejo `"ver invitaciones"` y
+-- `"crear invitaciones"`, acotadas con `TO authenticated` y `is_integrante()`,
+-- que permiten todo lo que estas permitian. Las policies permisivas se suman, y
+-- quitar una contenida en otra no cambia el resultado.
+--
+-- Cambio de comportamiento heredado de la 035, anotado a proposito: ahora
+-- cualquier integrante activo ve TODAS las invitaciones, no solo las que creo el.
+-- Para un equipo de cinco es util (se ve si alguien mas ya invito a esa persona).
+-- Si se quisiera volver atras, se cambia la condicion de "ver invitaciones".
+DROP POLICY IF EXISTS "integrantes ven sus invitaciones" ON invitaciones;
+DROP POLICY IF EXISTS "integrantes crean invitaciones" ON invitaciones;
+
+-- Comprobacion para el que venga despues -- debe devolver cero filas:
+--   SELECT tablename, policyname, cmd, roles::text
+--     FROM pg_policies
+--    WHERE schemaname = 'public'
+--      AND ('public' = ANY(roles) OR 'anon' = ANY(roles));
