@@ -105,6 +105,11 @@ export function PanelLlamada({
     micro,
     camara,
     compartiendo,
+    audioCompartido,
+    volumenPantalla,
+    setVolumenPantalla,
+    audioPantallaActivo,
+    alternarAudioPantalla,
     error,
     hayTurn,
     diagnostico,
@@ -564,6 +569,59 @@ export function PanelLlamada({
         )}
       </div>
 
+      {/* Control del sonido de lo que se comparte. Solo aparece mientras se está
+          compartiendo: un interruptor de algo que no está pasando confunde más
+          de lo que ayuda. */}
+      {compartiendo && (
+        <div className="mx-4 mb-2 flex items-center gap-3 rounded-lg px-3 py-2"
+             style={{ background: 'oklch(100% 0 0 / 5%)', border: '1px solid var(--tx-border)' }}>
+          {audioCompartido ? (
+            <>
+              <button
+                onClick={alternarAudioPantalla}
+                role="switch"
+                aria-checked={audioPantallaActivo}
+                aria-label="Enviar el sonido de lo que comparto"
+                className="relative h-5 w-9 shrink-0 rounded-full transition-colors"
+                style={{
+                  background: audioPantallaActivo ? 'var(--tx-accent)' : 'oklch(100% 0 0 / 15%)',
+                }}
+              >
+                <span
+                  className="absolute top-0.5 size-4 rounded-full bg-white transition-transform"
+                  style={{ transform: audioPantallaActivo ? 'translateX(18px)' : 'translateX(2px)' }}
+                />
+              </button>
+
+              <span className="shrink-0 text-[12px] text-[var(--tx-ink-primary)]">
+                Sonido de la pantalla
+              </span>
+
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(volumenPantalla * 100)}
+                onChange={(e) => setVolumenPantalla(Number(e.target.value) / 100)}
+                disabled={!audioPantallaActivo}
+                aria-label="Volumen del sonido compartido"
+                className="flex-1 accent-[var(--tx-accent)] disabled:opacity-40"
+              />
+              <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
+                {Math.round(volumenPantalla * 100)}%
+              </span>
+            </>
+          ) : (
+            /* El navegador no entregó audio. Decir por qué evita que la persona
+               crea que está compartiendo sonido y nadie le avise. */
+            <p className="text-[12px] text-[var(--tx-ink-muted)]">
+              Compartiendo sin sonido. Para incluirlo, vuelva a compartir y marque
+              «Compartir audio» en el selector del navegador (Chrome o Edge).
+            </p>
+          )}
+        </div>
+      )}
+
       <footer className="flex items-center justify-center gap-3 px-4 py-5 shrink-0">
         <Boton
           activo={micro}
@@ -716,6 +774,25 @@ function Recuadro({
 }: RecuadroProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
+  /**
+   * Zoom sobre la transmisión. Solo en la vista grande: hacer zoom en un
+   * recuadro de la grilla no sirve para nada.
+   *
+   * Existe porque una pantalla compartida llega escalada a la resolución de la
+   * malla, y el texto chico —una consola, una celda de planilla— queda
+   * ilegible. Acercarse a esa esquina es la diferencia entre poder seguir lo que
+   * el otro muestra o tener que pedirle que agrande.
+   */
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const arrastre = useRef<{ x: number; y: number } | null>(null)
+
+  // Al soltar el zoom vuelve al centro: quedarse con el desplazamiento de un
+  // zoom anterior deja la imagen corrida sin razón aparente.
+  useEffect(() => {
+    if (zoom === 1) setPan({ x: 0, y: 0 })
+  }, [zoom])
+
   // `srcObject` no se puede pasar como prop en JSX: es una referencia viva, no
   // una URL. Va por ref o el recuadro queda negro.
   useEffect(() => {
@@ -754,7 +831,32 @@ function Recuadro({
         }
       }}
       aria-label={onClick ? (grande ? `Volver a la grilla` : `Ver a ${nombre} en grande`) : undefined}
-      className={`relative overflow-hidden rounded-xl ${grande ? 'size-full' : 'size-full'} ${onClick ? 'cursor-pointer' : ''}`}
+      onWheel={(e) => {
+        if (!grande) return
+        // Sin `preventDefault` la rueda además desplaza la página de atrás.
+        e.preventDefault()
+        setZoom((z) => Math.min(4, Math.max(1, z - e.deltaY * 0.002)))
+      }}
+      onPointerDown={(e) => {
+        if (!grande || zoom === 1) return
+        arrastre.current = { x: e.clientX - pan.x, y: e.clientY - pan.y }
+        e.currentTarget.setPointerCapture(e.pointerId)
+      }}
+      onPointerMove={(e) => {
+        if (!arrastre.current) return
+        setPan({ x: e.clientX - arrastre.current.x, y: e.clientY - arrastre.current.y })
+      }}
+      onPointerUp={() => {
+        arrastre.current = null
+      }}
+      onDoubleClick={(e) => {
+        // Doble clic devuelve al tamaño original. Es el gesto que todo el mundo
+        // prueba primero cuando se perdió dentro de una imagen ampliada.
+        if (!grande) return
+        e.stopPropagation()
+        setZoom(1)
+      }}
+      className={`relative overflow-hidden rounded-xl size-full ${onClick && zoom === 1 ? 'cursor-pointer' : ''} ${grande && zoom > 1 ? 'cursor-grab active:cursor-grabbing' : ''}`}
       style={{
         background: 'oklch(14% 0.004 240)',
         // El borde de "está hablando" reemplaza al normal en vez de sumarse: si
@@ -770,7 +872,15 @@ function Recuadro({
         playsInline
         muted
         className={`size-full ${grande && compartiendo ? 'object-contain' : 'object-cover'}`}
-        style={{ display: hayVideo ? 'block' : 'none' }}
+        style={{
+          display: hayVideo ? 'block' : 'none',
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          // Sin origen fijo, el zoom se va hacia una esquina al arrastrar.
+          transformOrigin: 'center',
+          // Sin transición mientras se arrastra: el retardo se siente como que
+          // la imagen persigue al puntero.
+          transition: arrastre.current ? 'none' : 'transform 120ms ease-out',
+        }}
       />
 
       {!hayVideo && (
@@ -805,6 +915,21 @@ function Recuadro({
           </button>
         )}
       </div>
+
+      {grande && zoom > 1 && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setZoom(1)
+          }}
+          className="absolute right-2 top-2 rounded-md px-2 py-1 text-[11px] font-medium tabular-nums text-white"
+          style={{ background: 'oklch(0% 0 0 / 55%)' }}
+          aria-label="Volver al tamaño original"
+          title="Volver al tamaño original"
+        >
+          {zoom.toFixed(1)}× · restablecer
+        </button>
+      )}
 
       {volumen !== null && volumenAbierto && onVolumen && (
         <div
