@@ -280,6 +280,7 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
       {activa && (
         <PanelLlamada
           llamadaId={activa.llamada.id}
+          conversacionId={activa.llamada.conversacion_id}
           miIntegranteId={miIntegranteId}
           conVideo={activa.llamada.con_video}
           titulo={activa.titulo}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
+  MessageSquareIcon,
   MicIcon,
   MicOffIcon,
   MonitorUpIcon,
@@ -12,6 +13,7 @@ import {
   VideoOffIcon,
 } from 'lucide-react'
 import { AvatarChat } from '@/components/chat/avatar-chat'
+import { ChatLlamada } from './chat-llamada'
 import { useLlamada, type ParticipanteVivo } from './use-llamada'
 
 interface PersonaLlamada {
@@ -23,6 +25,8 @@ interface PersonaLlamada {
 
 interface PanelLlamadaProps {
   llamadaId: string
+  /** El hilo al que pertenece la llamada, para el chat de al lado. */
+  conversacionId: string
   miIntegranteId: string
   conVideo: boolean
   titulo: string
@@ -37,6 +41,7 @@ interface PanelLlamadaProps {
  */
 export function PanelLlamada({
   llamadaId,
+  conversacionId,
   miIntegranteId,
   conVideo,
   titulo,
@@ -44,9 +49,18 @@ export function PanelLlamada({
   onCerrar,
 }: PanelLlamadaProps) {
   const [minimizado, setMinimizado] = useState(false)
+  const [chatAbierto, setChatAbierto] = useState(false)
+  /**
+   * A quién se está mirando en grande. `null` = todos parejos en la grilla.
+   *
+   * Con cinco recuadros del mismo tamaño no se lee una pantalla compartida ni se
+   * le ve la cara a quien está hablando. Un clic lo agranda, otro lo devuelve.
+   */
+  const [destacado, setDestacado] = useState<string | null>(null)
   const {
     participantes,
     streamLocal,
+    streamPantalla,
     micro,
     camara,
     compartiendo,
@@ -118,6 +132,41 @@ export function PanelLlamada({
 
   const columnas = participantes.length === 0 ? 1 : participantes.length <= 3 ? 2 : 3
 
+  // Un solo arreglo con todos los recuadros, el propio incluido. Así la vista
+  // destacada no tiene que tratar "yo" como un caso aparte -- compartir pantalla
+  // y querer verla en grande es justamente lo más común.
+  const recuadros: RecuadroProps[] = [
+    {
+      id: miIntegranteId,
+      // Si estoy compartiendo, mi recuadro muestra lo que comparto, no mi cara.
+      stream: streamPantalla ?? streamLocal,
+      nombre: yo?.nombre ? `${yo.nombre} (tú)` : 'Tú',
+      avatarUrl: yo?.avatar_url ?? null,
+      color: yo?.color ?? null,
+      micro,
+      camara,
+      compartiendo,
+      estado: 'conectado',
+      silenciado: true,
+    },
+    ...participantes.map((p) => {
+      const persona = porId.get(p.integranteId)
+      return {
+        id: p.integranteId,
+        stream: p.stream,
+        nombre: persona?.nombre ?? 'Alguien',
+        avatarUrl: persona?.avatar_url ?? null,
+        color: persona?.color ?? null,
+        micro: p.micro,
+        camara: p.camara,
+        compartiendo: p.compartiendo,
+        estado: p.estado,
+      }
+    }),
+  ]
+
+  const enGrande = recuadros.find((r) => r.id === destacado) ?? null
+
   return (
     <div
       className="fixed inset-0 z-[80] flex flex-col"
@@ -152,38 +201,43 @@ export function PanelLlamada({
         </div>
       )}
 
-      <div
-        className="flex-1 min-h-0 overflow-y-auto grid gap-3 px-4 pb-4 content-start"
-        style={{ gridTemplateColumns: `repeat(${columnas}, minmax(0, 1fr))` }}
-      >
-        <Recuadro
-          stream={streamLocal}
-          nombre={yo?.nombre ? `${yo.nombre} (tú)` : 'Tú'}
-          avatarUrl={yo?.avatar_url ?? null}
-          color={yo?.color ?? null}
-          micro={micro}
-          camara={camara}
-          compartiendo={compartiendo}
-          estado="conectado"
-          silenciado
-        />
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+        <div className="flex-1 min-h-0 flex flex-col px-4 pb-4 gap-3">
+          {/* Vista destacada. Cuando hay alguien elegido ocupa casi todo y el
+              resto baja a una tira: es lo que uno quiere cuando alguien comparte
+              pantalla y hay que leer lo que muestra. */}
+          {enGrande && (
+            <div className="flex-1 min-h-0">
+              <Recuadro {...enGrande} grande onClick={() => setDestacado(null)} />
+            </div>
+          )}
 
-        {participantes.map((p) => {
-          const persona = porId.get(p.integranteId)
-          return (
-            <Recuadro
-              key={p.integranteId}
-              stream={p.stream}
-              nombre={persona?.nombre ?? 'Alguien'}
-              avatarUrl={persona?.avatar_url ?? null}
-              color={persona?.color ?? null}
-              micro={p.micro}
-              camara={p.camara}
-              compartiendo={p.compartiendo}
-              estado={p.estado}
-            />
-          )
-        })}
+          <div
+            className={
+              enGrande
+                ? 'shrink-0 flex gap-2 overflow-x-auto pb-1'
+                : 'flex-1 min-h-0 overflow-y-auto grid gap-3 content-start'
+            }
+            style={enGrande ? undefined : { gridTemplateColumns: `repeat(${columnas}, minmax(0, 1fr))` }}
+          >
+            {recuadros
+              .filter((r) => r.id !== destacado)
+              .map((r) => (
+                <div key={r.id} className={enGrande ? 'w-40 shrink-0' : ''}>
+                  <Recuadro {...r} onClick={() => setDestacado(r.id)} />
+                </div>
+              ))}
+          </div>
+        </div>
+
+        {chatAbierto && (
+          <ChatLlamada
+            conversacionId={conversacionId}
+            miIntegranteId={miIntegranteId}
+            nombrePorId={new Map(personas.map((p) => [p.id, p.nombre]))}
+            onCerrar={() => setChatAbierto(false)}
+          />
+        )}
       </div>
 
       <footer className="flex items-center justify-center gap-3 px-4 py-5 shrink-0">
@@ -205,6 +259,14 @@ export function PanelLlamada({
 
         {/* Compartir pantalla no existe en el navegador del teléfono: mostrar un
             botón que no puede funcionar es peor que no mostrarlo. */}
+        <Boton
+          activo={chatAbierto}
+          onClick={() => setChatAbierto((v) => !v)}
+          etiqueta={chatAbierto ? 'Cerrar el chat' : 'Abrir el chat'}
+        >
+          <MessageSquareIcon className="size-5" />
+        </Boton>
+
         <Boton
           activo={compartiendo}
           onClick={alternarPantalla}
@@ -256,6 +318,7 @@ function Boton({ activo, onClick, etiqueta, clase = '', children }: BotonProps) 
 }
 
 interface RecuadroProps {
+  id: string
   stream: MediaStream | null
   nombre: string
   avatarUrl: string | null
@@ -266,6 +329,9 @@ interface RecuadroProps {
   estado: ParticipanteVivo['estado']
   /** El propio video va mudo o se produce un acople insoportable. */
   silenciado?: boolean
+  /** Ocupa la vista principal en vez de ir en la grilla. */
+  grande?: boolean
+  onClick?: () => void
 }
 
 function Recuadro({
@@ -278,6 +344,8 @@ function Recuadro({
   compartiendo,
   estado,
   silenciado = false,
+  grande = false,
+  onClick,
 }: RecuadroProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -293,7 +361,17 @@ function Recuadro({
 
   return (
     <div
-      className="relative aspect-video overflow-hidden rounded-xl"
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+      aria-label={onClick ? (grande ? `Volver a la grilla` : `Ver a ${nombre} en grande`) : undefined}
+      className={`relative overflow-hidden rounded-xl ${grande ? 'size-full' : 'aspect-video'} ${onClick ? 'cursor-pointer' : ''}`}
       style={{ background: 'oklch(14% 0.004 240)', border: '1px solid var(--tx-border)' }}
     >
       <video
@@ -301,7 +379,7 @@ function Recuadro({
         autoPlay
         playsInline
         muted={silenciado}
-        className="size-full object-cover"
+        className={`size-full ${grande && compartiendo ? 'object-contain' : 'object-cover'}`}
         style={{ display: hayVideo ? 'block' : 'none' }}
       />
 
