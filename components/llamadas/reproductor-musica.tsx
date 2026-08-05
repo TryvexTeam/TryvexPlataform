@@ -1,0 +1,609 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import {
+  ListMusicIcon,
+  MusicIcon,
+  PauseIcon,
+  PlayIcon,
+  Repeat1Icon,
+  RepeatIcon,
+  SearchIcon,
+  ShuffleIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
+  SquareIcon,
+  Volume2Icon,
+  XIcon,
+} from 'lucide-react'
+import {
+  hayQueSaltar,
+  pistaActual,
+  posicionActual,
+  reloj,
+  type Pista,
+} from '@/lib/types/musica'
+import type { Musica } from './use-musica'
+
+/**
+ * El reproductor de la sala.
+ *
+ * Dos reglas que NO son preferencias de diseño y no hay que "optimizar":
+ *
+ *  1. El iframe de YouTube tiene un viewport de 200×200 px como mínimo y está a
+ *     la vista. Es requisito de los términos de la API (Required Minimum
+ *     Functionality: https://developers.google.com/youtube/terms/required-minimum-functionality).
+ *     Esconderlo con display:none, 1×1 px u opacidad 0 rompe los términos y es
+ *     por lo que a Groovy y a Rythm les cerraron el acceso.
+ *  2. El audio sale del reproductor oficial. Nunca se extrae la pista ni se
+ *     reproduce por otro camino.
+ *
+ * La sincronización no la hace este componente: lee la posición que calcula
+ * `posicionActual` a partir de la sala y corrige solo cuando el desfase se nota.
+ */
+
+/** Mínimo exigido por los términos de la API. No bajar de acá. */
+const LADO_MINIMO = 200
+
+/** Música de fondo mientras se trabaja, no un concierto. */
+const VOLUMEN_INICIAL = 30
+
+/** Cada cuánto se compara la aguja local con la de la sala. */
+const REVISION_MS = 1000
+
+interface ReproductorMusicaProps {
+  musica: Musica
+  onCerrar: () => void
+}
+
+// ── Tipos mínimos del IFrame Player API ────────────────────────────────────
+// Se declaran acá y no se instala un paquete de tipos: la superficie que se usa
+// son seis métodos y traer una dependencia entera por eso es peor negocio.
+
+interface YTPlayer {
+  loadVideoById(opciones: { videoId: string; startSeconds?: number }): void
+  seekTo(segundos: number, exacto: boolean): void
+  playVideo(): void
+  pauseVideo(): void
+  stopVideo(): void
+  setVolume(volumen: number): void
+  getCurrentTime(): number
+  getPlayerState(): number
+  destroy(): void
+}
+
+interface YTApi {
+  Player: new (
+    elemento: HTMLElement,
+    opciones: {
+      height: string
+      width: string
+      playerVars: Record<string, string | number>
+      events: {
+        onReady?: () => void
+        onStateChange?: (evento: { data: number }) => void
+        onError?: () => void
+      }
+    },
+  ) => YTPlayer
+  PlayerState: { ENDED: number; PLAYING: number; PAUSED: number }
+}
+
+declare global {
+  interface Window {
+    YT?: YTApi
+    onYouTubeIframeAPIReady?: () => void
+  }
+}
+
+/**
+ * Carga el script del IFrame API una sola vez por pestaña.
+ *
+ * Va por `<script>` y no como dependencia de npm porque YouTube exige que el
+ * reproductor lo sirva su propio dominio: un paquete que lo empaquete sería una
+ * copia que puede quedar desactualizada y romperse sin aviso.
+ */
+let cargando: Promise<YTApi> | null = null
+
+function cargarApiYouTube(): Promise<YTApi> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('Solo en el navegador'))
+  if (window.YT?.Player) return Promise.resolve(window.YT)
+  if (cargando) return cargando
+
+  cargando = new Promise<YTApi>((resolver, rechazar) => {
+    const anterior = window.onYouTubeIframeAPIReady
+    window.onYouTubeIframeAPIReady = () => {
+      anterior?.()
+      if (window.YT?.Player) resolver(window.YT)
+      else rechazar(new Error('El reproductor de YouTube no cargó'))
+    }
+
+    const tag = document.createElement('script')
+    tag.src = 'https://www.youtube.com/iframe_api'
+    tag.async = true
+    tag.onerror = () => rechazar(new Error('No se pudo cargar el reproductor de YouTube'))
+    document.head.appendChild(tag)
+  })
+
+  return cargando
+}
+
+export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) {
+  const { sala, aviso, limpiarAviso, ejecutar, poner, alTerminar } = musica
+
+  const contenedorRef = useRef<HTMLDivElement>(null)
+  const playerRef = useRef<YTPlayer | null>(null)
+  const [listo, setListo] = useState(false)
+  const [volumen, setVolumen] = useState(VOLUMEN_INICIAL)
+  /**
+   * El navegador exige un gesto del usuario para que algo suene. Si el arranque
+   * automático falla se muestra un botón: quedarse en silencio sin explicar nada
+   * es la peor de las opciones, porque parece que la función está rota.
+   */
+  const [necesitaGesto, setNecesitaGesto] = useState(false)
+  const [errorApi, setErrorApi] = useState<string | null>(null)
+  const [buscador, setBuscador] = useState(false)
+
+  const actual = pistaActual(sala)
+
+  // El callback del reproductor no se rearma en cada render: sin ref leería la
+  // versión de la primera vuelta.
+  const alTerminarRef = useRef(alTerminar)
+  useEffect(() => {
+    alTerminarRef.current = alTerminar
+  }, [alTerminar])
+
+  // ── Montaje del reproductor ──────────────────────────────────────────────
+  useEffect(() => {
+    let vivo = true
+
+    cargarApiYouTube()
+      .then((YT) => {
+        if (!vivo || !contenedorRef.current || playerRef.current) return
+
+        playerRef.current = new YT.Player(contenedorRef.current, {
+          height: String(LADO_MINIMO),
+          width: String(LADO_MINIMO),
+          playerVars: {
+            // `playsinline` es obligatorio en iOS: sin esto el video se abre en
+            // pantalla completa y tapa la llamada entera.
+            playsinline: 1,
+            modestbranding: 1,
+            rel: 0,
+            // Sin controles propios: el estado lo manda la sala, no este cliente.
+            // Si alguien pausara con el control del iframe, se desincronizaría de
+            // los demás sin que nadie lo note.
+            controls: 0,
+            disablekb: 1,
+          },
+          events: {
+            onReady: () => {
+              if (!vivo) return
+              playerRef.current?.setVolume(VOLUMEN_INICIAL)
+              setListo(true)
+            },
+            onStateChange: (evento) => {
+              if (evento.data === YT.PlayerState.ENDED) void alTerminarRef.current()
+              if (evento.data === YT.PlayerState.PLAYING) setNecesitaGesto(false)
+            },
+            onError: () => {
+              // Un video que no se puede reproducir trabaría la cola para siempre:
+              // el final nunca llega y nadie avanza. Se salta solo.
+              void alTerminarRef.current()
+            },
+          },
+        })
+      })
+      .catch((err: Error) => {
+        if (vivo) setErrorApi(err.message)
+      })
+
+    return () => {
+      vivo = false
+      playerRef.current?.destroy()
+      playerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (listo) playerRef.current?.setVolume(volumen)
+  }, [volumen, listo])
+
+  // ── Cargar la pista que manda la sala ────────────────────────────────────
+  const cargadoRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const player = playerRef.current
+    if (!listo || !player) return
+
+    if (!sala.video_id) {
+      if (cargadoRef.current) {
+        player.stopVideo()
+        cargadoRef.current = null
+      }
+      return
+    }
+
+    if (cargadoRef.current === sala.video_id) return
+    cargadoRef.current = sala.video_id
+
+    // Se entra por donde va el resto, no por el segundo cero: quien llega tarde a
+    // la llamada se engancha a mitad de la canción, como quien entra a una pieza
+    // donde ya suena algo.
+    player.loadVideoById({
+      videoId: sala.video_id,
+      startSeconds: Math.floor(posicionActual(sala, new Date())),
+    })
+
+    if (sala.pausado) player.pauseVideo()
+  }, [listo, sala])
+
+  // ── Pausa y reanudación que vienen de otro cliente ───────────────────────
+  useEffect(() => {
+    const player = playerRef.current
+    if (!listo || !player || !sala.video_id) return
+
+    if (sala.pausado) {
+      player.pauseVideo()
+      return
+    }
+
+    const intento = player.playVideo() as unknown
+    void intento
+  }, [listo, sala.pausado, sala.video_id])
+
+  // ── La corrección: el único lugar donde se toca la aguja ─────────────────
+  useEffect(() => {
+    if (!listo || !sala.video_id || sala.pausado) return
+
+    const revisar = () => {
+      const player = playerRef.current
+      if (!player) return
+
+      const esperada = posicionActual(sala, new Date())
+      const propia = player.getCurrentTime()
+
+      // Solo si el desfase ya se nota. Un `seekTo` constante corta el audio y lo
+      // retoma: suena mucho peor que ir 300 ms desalineado con la pieza de al lado.
+      if (hayQueSaltar(propia, esperada)) player.seekTo(esperada, true)
+
+      // El navegador bloqueó el arranque automático. Se pide el gesto en vez de
+      // dejar a la persona mirando un recuadro mudo.
+      if (player.getPlayerState() !== 1 && !sala.pausado) setNecesitaGesto(true)
+    }
+
+    const t = setInterval(revisar, REVISION_MS)
+    revisar()
+    return () => clearInterval(t)
+  }, [listo, sala])
+
+  // El aviso de un comando se desvanece solo: es una confirmación, no un estado.
+  useEffect(() => {
+    if (!aviso) return
+    const t = setTimeout(limpiarAviso, 5000)
+    return () => clearTimeout(t)
+  }, [aviso, limpiarAviso])
+
+  const posicion = actual ? Math.floor(posicionActual(sala, new Date())) : 0
+
+  return (
+    <aside
+      className="flex flex-col min-h-0 w-full md:w-[320px] shrink-0 overflow-y-auto"
+      style={{ borderLeft: '1px solid var(--tx-border)' }}
+      aria-label="Música de la llamada"
+    >
+      <header
+        className="flex items-center justify-between px-3 py-2.5 shrink-0"
+        style={{ borderBottom: '1px solid var(--tx-border)' }}
+      >
+        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--tx-ink-primary)]">
+          <MusicIcon className="size-4" aria-hidden />
+          Música
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setBuscador((v) => !v)}
+            aria-label={buscador ? 'Cerrar el buscador' : 'Buscar música'}
+            aria-pressed={buscador}
+            className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+          >
+            <SearchIcon className="size-4" />
+          </button>
+          <button
+            onClick={onCerrar}
+            aria-label="Cerrar el panel de música"
+            className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+          >
+            <XIcon className="size-4" />
+          </button>
+        </div>
+      </header>
+
+      {/*
+        El reproductor. 200×200 px visibles: es el mínimo que exigen los términos
+        de la YouTube API, no una decisión estética. No reducir, no ocultar.
+      */}
+      <div className="flex justify-center px-3 pt-3 shrink-0">
+        <div
+          className="relative overflow-hidden rounded-lg"
+          style={{
+            width: LADO_MINIMO,
+            height: LADO_MINIMO,
+            minWidth: LADO_MINIMO,
+            minHeight: LADO_MINIMO,
+            background: 'oklch(14% 0.004 240)',
+            border: '1px solid var(--tx-border)',
+          }}
+        >
+          <div ref={contenedorRef} className="size-full" />
+
+          {!actual && !errorApi && (
+            <div className="absolute inset-0 grid place-items-center px-3 text-center">
+              <p className="text-[12px] text-[var(--tx-ink-muted)]">
+                Nada sonando. Busca algo o escribe <code>/play</code> en el chat.
+              </p>
+            </div>
+          )}
+
+          {errorApi && (
+            <div className="absolute inset-0 grid place-items-center px-3 text-center">
+              <p className="text-[12px] text-[var(--tx-ink-muted)]">{errorApi}</p>
+            </div>
+          )}
+
+          {necesitaGesto && actual && (
+            <button
+              onClick={() => {
+                playerRef.current?.playVideo()
+                setNecesitaGesto(false)
+              }}
+              className="absolute inset-0 grid place-items-center gap-2 text-[12px] font-medium"
+              style={{ background: 'oklch(8% 0.004 240 / 80%)', color: 'var(--tx-ink-primary)' }}
+            >
+              <PlayIcon className="size-8" aria-hidden />
+              {/* El navegador no deja sonar nada sin un gesto de la persona. */}
+              Toca para escuchar
+            </button>
+          )}
+        </div>
+      </div>
+
+      {actual && (
+        <div className="px-3 pt-3 shrink-0">
+          <p className="text-[13px] font-medium text-[var(--tx-ink-primary)] line-clamp-2">{actual.titulo}</p>
+          <p className="text-[11px] text-[var(--tx-ink-muted)] truncate">{actual.canal}</p>
+          <p className="mt-1 text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
+            {reloj(posicion)} / {reloj(actual.duracion_seg)}
+          </p>
+        </div>
+      )}
+
+      <div className="flex items-center justify-center gap-1 px-3 py-3 shrink-0">
+        <BotonMini onClick={() => void ejecutar('previous')} etiqueta="Anterior">
+          <SkipBackIcon className="size-4" />
+        </BotonMini>
+
+        <BotonMini
+          onClick={() => void ejecutar(sala.pausado ? 'resume' : 'pause')}
+          etiqueta={sala.pausado ? 'Reanudar' : 'Pausar'}
+          destacado
+        >
+          {sala.pausado ? <PlayIcon className="size-4" /> : <PauseIcon className="size-4" />}
+        </BotonMini>
+
+        <BotonMini onClick={() => void ejecutar('skip')} etiqueta="Siguiente">
+          <SkipForwardIcon className="size-4" />
+        </BotonMini>
+
+        <BotonMini onClick={() => void ejecutar('shuffle')} etiqueta="Mezclar la cola">
+          <ShuffleIcon className="size-4" />
+        </BotonMini>
+
+        <BotonMini
+          onClick={() => void ejecutar('loop')}
+          etiqueta={`Repetición: ${sala.modo_loop}`}
+          activo={sala.modo_loop !== 'off'}
+        >
+          {sala.modo_loop === 'pista' ? <Repeat1Icon className="size-4" /> : <RepeatIcon className="size-4" />}
+        </BotonMini>
+
+        <BotonMini onClick={() => void ejecutar('stop')} etiqueta="Detener y vaciar la cola">
+          <SquareIcon className="size-4" />
+        </BotonMini>
+      </div>
+
+      {/*
+        Volumen propio, aparte del de las voces. La música es de fondo: si
+        compartiera control con la llamada, bajarla para escuchar a alguien
+        bajaría también a la persona que habla.
+      */}
+      <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
+        <Volume2Icon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={volumen}
+          onChange={(e) => setVolumen(Number(e.target.value))}
+          aria-label="Volumen de la música"
+          className="flex-1 accent-[var(--tx-accent)]"
+        />
+        <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
+          {volumen}%
+        </span>
+      </div>
+
+      {aviso && (
+        <p
+          role="status"
+          className="mx-3 mb-3 shrink-0 rounded-lg px-2.5 py-2 text-[12px]"
+          style={{ background: 'oklch(100% 0 0 / 6%)', color: 'var(--tx-ink-primary)' }}
+        >
+          {aviso}
+        </p>
+      )}
+
+      {buscador && <Buscador onElegir={(p) => void poner(p)} />}
+
+      <div className="px-3 pb-4">
+        <p className="flex items-center gap-1.5 mb-2 text-[12px] font-semibold text-[var(--tx-ink-primary)]">
+          <ListMusicIcon className="size-3.5" aria-hidden />
+          En cola ({sala.cola.length})
+        </p>
+
+        {sala.cola.length === 0 ? (
+          <p className="text-[11px] text-[var(--tx-ink-muted)]">
+            Nada más por ahora. Los comandos del chat (<code>/play</code>, <code>/skip</code>,{' '}
+            <code>/queue</code>) funcionan igual que en un bot de música.
+          </p>
+        ) : (
+          <ol className="space-y-1.5">
+            {sala.cola.map((p, i) => (
+              <li key={`${p.video_id}-${i}`} className="flex gap-2 text-[12px]">
+                <span className="w-4 shrink-0 tabular-nums text-[var(--tx-ink-muted)]">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[var(--tx-ink-primary)]">{p.titulo}</span>
+                  <span className="block truncate text-[11px] text-[var(--tx-ink-muted)]">
+                    {p.canal} · {reloj(p.duracion_seg)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </aside>
+  )
+}
+
+interface BotonMiniProps {
+  onClick: () => void
+  etiqueta: string
+  activo?: boolean
+  destacado?: boolean
+  children: React.ReactNode
+}
+
+function BotonMini({ onClick, etiqueta, activo = false, destacado = false, children }: BotonMiniProps) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={etiqueta}
+      title={etiqueta}
+      aria-pressed={activo}
+      className="inline-flex size-9 items-center justify-center rounded-full transition-transform active:scale-95"
+      style={{
+        background: destacado ? 'var(--tx-accent)' : activo ? 'oklch(100% 0 0 / 12%)' : 'oklch(100% 0 0 / 4%)',
+        color: destacado ? 'var(--tx-accent-fg)' : activo ? 'var(--tx-ink-primary)' : 'var(--tx-ink-muted)',
+        border: '1px solid var(--tx-border)',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+/**
+ * Buscar algo para poner.
+ *
+ * Acepta texto y también un enlace pegado, y eso último no es una comodidad: una
+ * URL se resuelve con 1 unidad de cuota y una búsqueda por texto con 100, de
+ * 10.000 diarias para todo el equipo. Cuando la cuota se acaba, pegar el link es
+ * el único camino que sigue funcionando — y el mensaje de error lo dice.
+ */
+function Buscador({ onElegir }: { onElegir: (pista: Pista) => void }) {
+  const [consulta, setConsulta] = useState('')
+  const [resultados, setResultados] = useState<Pista[]>([])
+  const [buscando, setBuscando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const buscar = async () => {
+    const q = consulta.trim()
+    if (!q || buscando) return
+
+    setBuscando(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/musica/buscar?q=${encodeURIComponent(q)}`)
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error ?? 'No se pudo buscar')
+      setResultados(json.data as Pista[])
+      if ((json.data as Pista[]).length === 0) setError('Sin resultados')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error buscando')
+      setResultados([])
+    } finally {
+      setBuscando(false)
+    }
+  }
+
+  return (
+    <div className="px-3 pb-3 shrink-0">
+      <div className="flex gap-2">
+        <input
+          value={consulta}
+          onChange={(e) => setConsulta(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void buscar()
+            }
+          }}
+          placeholder="Buscar o pegar un enlace…"
+          aria-label="Buscar música en YouTube"
+          className="flex-1 min-w-0 rounded-lg px-2.5 py-2 text-[12px] outline-none"
+          style={{ background: 'oklch(100% 0 0 / 6%)', color: 'var(--tx-ink-primary)' }}
+        />
+        <button
+          onClick={() => void buscar()}
+          disabled={!consulta.trim() || buscando}
+          aria-label="Buscar"
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg disabled:opacity-40"
+          style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
+        >
+          <SearchIcon className="size-4" />
+        </button>
+      </div>
+
+      {error && <p className="mt-2 text-[11px] text-[var(--tx-ink-muted)]">{error}</p>}
+
+      {resultados.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {resultados.map((p) => (
+            <li key={p.video_id}>
+              <button
+                onClick={() => {
+                  onElegir(p)
+                  setResultados([])
+                  setConsulta('')
+                }}
+                className="flex w-full items-center gap-2 rounded-lg p-1.5 text-left hover:bg-[oklch(100%_0_0_/_6%)]"
+              >
+                {/* Miniatura de YouTube: dimensiones explícitas para que la lista
+                    no salte cuando cargan. */}
+                {p.miniatura_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={p.miniatura_url}
+                    alt=""
+                    width={48}
+                    height={36}
+                    loading="lazy"
+                    className="size-auto shrink-0 rounded object-cover"
+                    style={{ width: 48, height: 36 }}
+                  />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px] text-[var(--tx-ink-primary)]">{p.titulo}</span>
+                  <span className="block truncate text-[11px] text-[var(--tx-ink-muted)]">
+                    {p.canal} · {reloj(p.duracion_seg)}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
