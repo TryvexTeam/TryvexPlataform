@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { PhoneIcon, PhoneOffIcon, VideoIcon } from 'lucide-react'
+import { PhoneIcon, PhoneOffIcon, VideoIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { AvatarChat } from '@/components/chat/avatar-chat'
@@ -37,6 +37,22 @@ const NOTAS = [880, 1318.5, 1760]
 
 /** Cada cuánto vuelve a sonar, en ms. Ver `pulso`. */
 const CADENCIA_MS = 2400
+
+/**
+ * Nombre único por montaje del canal de Realtime.
+ *
+ * supabase-js cachea los canales POR NOMBRE y `removeChannel` es asíncrono. Con
+ * un nombre fijo, un remontaje del proveedor se encuentra con el canal anterior
+ * todavía vivo: los `.on()` nuevos se agregan a un canal ya suscrito, que es un
+ * error, y la suscripción queda en pie SIN handlers. El socket sigue conectado,
+ * no hay nada roto a la vista, y los eventos de llamadas simplemente no llegan
+ * nunca -- mientras el chat y las notificaciones siguen funcionando, porque esos
+ * sí usan nombre único (ver `use-datos-vivos` y `chat-llamada`).
+ *
+ * Ese era el motivo de que llegara la notificación push de una llamada y en la
+ * app no apareciera nada.
+ */
+let contadorCanal = 0
 
 /**
  * El contexto de audio del timbre, desbloqueado con el primer gesto de la
@@ -103,6 +119,17 @@ interface ProveedorLlamadasProps {
 export function ProveedorLlamadas({ miIntegranteId, equipo, children }: ProveedorLlamadasProps) {
   const [activa, setActiva] = useState<{ llamada: Llamada; titulo: string } | null>(null)
   const [entrante, setEntrante] = useState<Llamada | null>(null)
+  /**
+   * Una llamada que ya estaba andando cuando uno llegó.
+   *
+   * Va aparte de `entrante` porque no es lo mismo y no debe comportarse igual:
+   * empezó hace rato, nadie está esperando al teléfono, y timbrar sin parar por
+   * algo que lleva diez minutos es acoso, no un aviso. Suena una vez y ofrece
+   * unirse.
+   */
+  const [enCurso, setEnCurso] = useState<Llamada | null>(null)
+  /** Llamadas que ya se ofrecieron o se descartaron: no volver a ofrecerlas. */
+  const vistas = useRef<Set<string>>(new Set())
   const [ocupado, setOcupado] = useState(false)
 
   const porId = new Map(equipo.map((p) => [p.id, p]))
@@ -205,10 +232,47 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
     [equipo],
   )
 
+  /**
+   * Preguntar si ya hay una llamada andando: al abrir la app y cada vez que la
+   * pestaña vuelve al frente.
+   *
+   * Sin esto, enterarse dependía de estar suscrito en el instante exacto del
+   * INSERT. Quien tenía la app cerrada recibía la notificación push -- "fulano
+   * está en la llamada" -- y al abrir el CRM no encontraba nada: ni modal, ni
+   * timbre, ni forma de entrar salvo ir a buscar el chat correcto. La push
+   * avisaba de algo que la app después negaba.
+   *
+   * También al recuperar el foco, porque una pestaña de fondo puede perderse el
+   * evento: los navegadores congelan sockets en pestañas dormidas.
+   */
+  const buscarEnCurso = useCallback(async () => {
+    try {
+      const res = await fetch('/api/llamadas/activas')
+      const json = await res.json()
+      if (!json.success) return
+
+      const filas = json.data as { llamada: Llamada; dentro: string[] }[]
+      const ajena = filas.find(
+        (f) =>
+          // Si ya estoy dentro no hay nada que ofrecer.
+          !f.dentro.includes(miIntegranteId) &&
+          // La que está sonando ya la maneja el camino de Realtime, con su timbre.
+          f.llamada.estado === 'en_curso' &&
+          !vistas.current.has(f.llamada.id),
+      )
+      if (!ajena) return
+
+      vistas.current.add(ajena.llamada.id)
+      setEnCurso((previa) => previa ?? ajena.llamada)
+    } catch {
+      // Sin esto solo se pierde el ofrecimiento; el chat sigue mostrando la sala.
+    }
+  }, [miIntegranteId])
+
   // ── Escuchar llamadas ─────────────────────────────────────────────────────
   useEffect(() => {
     const supabase = createClient()
-    const canal = supabase.channel(`llamadas-de-${miIntegranteId}`)
+    const canal = supabase.channel(`llamadas-de-${miIntegranteId}-${++contadorCanal}`)
 
     canal
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'llamadas' }, ({ new: fila }) => {
@@ -233,18 +297,56 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
           pararTimbre()
           return null
         })
+        // Si colgaron la que se estaba ofreciendo, el ofrecimiento sobra: unirse
+        // a una llamada terminada deja a la persona sola en una sala vacía.
+        setEnCurso((previa) => (previa?.id === llamada.id ? null : previa))
         setActiva((previa) => (previa?.llamada.id === llamada.id ? null : previa))
       })
-      .subscribe()
+      .subscribe((estado) => {
+        /**
+         * Una suscripción caída es invisible: el socket sigue conectado, no hay
+         * error en pantalla y las llamadas simplemente no llegan. Dejar rastro en
+         * la consola es la diferencia entre diagnosticarlo en un minuto y probar
+         * a ciegas entre dos personas.
+         *
+         * Al reconectar se vuelve a preguntar qué hay vivo: mientras el canal
+         * estuvo caído pudo empezar una llamada, y ese evento ya no vuelve.
+         */
+        if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT' || estado === 'CLOSED') {
+          console.warn('[llamadas] canal de Realtime en estado', estado)
+          return
+        }
+        if (estado === 'SUBSCRIBED') void buscarEnCurso()
+      })
 
     return () => {
       pararTimbre()
       supabase.removeChannel(canal)
     }
-  }, [miIntegranteId, pararTimbre, sonar])
+  }, [miIntegranteId, pararTimbre, sonar, buscarEnCurso])
 
   // Soltar el timbre si el componente muere con una llamada sonando.
   useEffect(() => () => pararTimbre(), [pararTimbre])
+
+
+  useEffect(() => {
+    // Solo si no estoy ya en una llamada: ofrecerle otra a alguien que está
+    // hablando es interrumpirlo.
+    if (activa) return
+
+    void buscarEnCurso()
+
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') void buscarEnCurso()
+    }
+    document.addEventListener('visibilitychange', alVolver)
+    window.addEventListener('focus', alVolver)
+
+    return () => {
+      document.removeEventListener('visibilitychange', alVolver)
+      window.removeEventListener('focus', alVolver)
+    }
+  }, [buscarEnCurso, activa])
 
   /**
    * Desbloquear el audio con el primer gesto de la sesión, sea cual sea.
@@ -323,6 +425,30 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
     }
   }, [entrante, pararTimbre, tituloDeLlamada])
 
+  /**
+   * Unirse a una que ya estaba andando. Es el mismo POST que llamar: el endpoint
+   * ve que hay una viva en ese hilo y devuelve esa en vez de abrir otra.
+   */
+  const unirse = useCallback(async () => {
+    const llamada = enCurso
+    if (!llamada) return
+    setEnCurso(null)
+
+    try {
+      const res = await fetch('/api/llamadas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversacion_id: llamada.conversacion_id, con_video: llamada.con_video }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo entrar')
+      const entrada = (json.data as { llamada: Llamada }).llamada
+      setActiva({ llamada: entrada, titulo: tituloDeLlamada(entrada) })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo entrar a la llamada')
+    }
+  }, [enCurso, tituloDeLlamada])
+
   const rechazar = useCallback(async () => {
     if (!entrante) return
     pararTimbre()
@@ -335,7 +461,11 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
     }).catch(() => {})
   }, [entrante, pararTimbre])
 
-  const quien = entrante ? porId.get(entrante.iniciada_por) : null
+  // La entrante manda: si suena una mientras se ofrecía otra, se atiende la que
+  // tiene a alguien esperando del otro lado.
+  const enPantalla = entrante ?? enCurso
+  const esEntrante = Boolean(entrante)
+  const quien = enPantalla ? porId.get(enPantalla.iniciada_por) : null
 
   return (
     <Contexto.Provider
@@ -349,13 +479,14 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
 
       {/* Timbre. Va sobre todo, incluso sobre la llamada en curso: alguien puede
           estar en una sala de voz y recibir una llamada directa. */}
-      {entrante && (
+      {enPantalla && (
         <div
           className="fixed inset-0 z-[90] grid place-items-center p-4"
           style={{ background: 'oklch(0% 0 0 / 55%)', backdropFilter: 'blur(6px)' }}
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="llamada-entrante-quien"
+          aria-describedby="llamada-entrante-que"
         >
           <div
             className="w-full max-w-[380px] rounded-3xl px-6 py-7 shadow-2xl animate-in fade-in zoom-in-95 duration-200"
@@ -366,11 +497,15 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
                   como "está sonando ahora" y no como un aviso de algo que ya
                   pasó -- que era el problema de la tarjeta en la esquina. */}
               <div className="relative">
-                <span
-                  className="absolute -inset-2 rounded-full animate-ping"
-                  style={{ background: 'oklch(62% 0.17 150 / 25%)' }}
-                  aria-hidden
-                />
+                {/* El anillo late solo si esta sonando ahora. Para una llamada
+                    que lleva rato andando seria una urgencia inventada. */}
+                {esEntrante && (
+                  <span
+                    className="absolute -inset-2 rounded-full animate-ping"
+                    style={{ background: 'oklch(62% 0.17 150 / 25%)' }}
+                    aria-hidden
+                  />
+                )}
                 <span className="relative block rounded-full">
                   <AvatarChat
                     nombre={quien?.nombre ?? 'Alguien'}
@@ -387,9 +522,16 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
               >
                 {quien?.nombre ?? 'Alguien'}
               </p>
-              <p className="mt-1 flex items-center gap-1.5 text-[13px] text-[var(--tx-ink-muted)]">
-                {entrante.con_video ? <VideoIcon className="size-4" /> : <PhoneIcon className="size-4" />}
-                {entrante.con_video ? 'Videollamada entrante' : 'Llamada entrante'}
+              <p
+                id="llamada-entrante-que"
+                className="mt-1 flex items-center gap-1.5 text-[13px] text-[var(--tx-ink-muted)]"
+              >
+                {enPantalla.con_video ? <VideoIcon className="size-4" /> : <PhoneIcon className="size-4" />}
+                {esEntrante
+                  ? enPantalla.con_video
+                    ? 'Videollamada entrante'
+                    : 'Llamada entrante'
+                  : 'Ya está en la llamada'}
               </p>
             </div>
 
@@ -399,21 +541,25 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
                 alguien por error. */}
             <div className="mt-7 flex gap-3">
               <button
-                onClick={rechazar}
+                onClick={esEntrante ? rechazar : () => setEnCurso(null)}
                 className="flex-1 inline-flex flex-col items-center justify-center gap-1.5 rounded-2xl py-4 text-[13px] font-medium transition-transform active:scale-95"
-                style={{ background: 'oklch(58% 0.19 25)', color: 'oklch(98% 0 0)' }}
+                style={
+                  esEntrante
+                    ? { background: 'oklch(58% 0.19 25)', color: 'oklch(98% 0 0)' }
+                    : { background: 'oklch(100% 0 0 / 8%)', color: 'var(--tx-ink-primary)' }
+                }
               >
-                <PhoneOffIcon className="size-5" />
-                Rechazar
+                {esEntrante ? <PhoneOffIcon className="size-5" /> : <XIcon className="size-5" />}
+                {esEntrante ? 'Rechazar' : 'Ahora no'}
               </button>
               <button
-                onClick={contestar}
+                onClick={esEntrante ? contestar : unirse}
                 autoFocus
                 className="flex-1 inline-flex flex-col items-center justify-center gap-1.5 rounded-2xl py-4 text-[13px] font-semibold transition-transform active:scale-95"
                 style={{ background: 'oklch(62% 0.17 150)', color: 'oklch(15% 0.02 150)' }}
               >
                 <PhoneIcon className="size-5" />
-                Contestar
+                {esEntrante ? 'Contestar' : 'Unirse'}
               </button>
             </div>
           </div>
