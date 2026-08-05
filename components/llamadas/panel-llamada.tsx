@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIcon,
   HeadphoneOffIcon,
@@ -17,11 +17,15 @@ import {
   VideoIcon,
   VideoOffIcon,
 } from 'lucide-react'
+import { MusicIcon } from 'lucide-react'
 import { AvatarChat } from '@/components/chat/avatar-chat'
 import { ChatLlamada } from './chat-llamada'
+import { ReproductorMusica } from './reproductor-musica'
 import { useGrillaVideo } from './use-grilla-video'
 import { useHablando } from './use-hablando'
+import { useMusica } from './use-musica'
 import { useLlamada, type ParticipanteVivo } from './use-llamada'
+import { extraerVideoId, leerComando, type ModoLoop, type Pista } from '@/lib/types/musica'
 
 interface PersonaLlamada {
   id: string
@@ -57,6 +61,7 @@ export function PanelLlamada({
 }: PanelLlamadaProps) {
   const [minimizado, setMinimizado] = useState(false)
   const [chatAbierto, setChatAbierto] = useState(false)
+  const [musicaAbierta, setMusicaAbierta] = useState(false)
   /**
    * Ensordecer: dejar de oír a todos. Como en Discord, también apaga el propio
    * micrófono -- si uno no está escuchando, seguir transmitiendo es hablarle a
@@ -116,6 +121,73 @@ export function PanelLlamada({
 
   const porId = new Map(personas.map((p) => [p.id, p]))
   const yo = porId.get(miIntegranteId)
+
+  /**
+   * Quiénes están en la llamada ahora mismo. De acá sale quién es el encargado
+   * de avanzar la cola cuando termina una pista: si avisaran los cinco, la cola
+   * saltaría cinco canciones de golpe. Ver `mandaAvanzar`.
+   */
+  const presentes = useMemo(
+    () => [miIntegranteId, ...participantes.map((p) => p.integranteId)].sort(),
+    [miIntegranteId, participantes],
+  )
+
+  const musica = useMusica({ conversacionId, miIntegranteId, presentes })
+
+  /**
+   * Un comando escrito en el chat de la llamada.
+   *
+   * `/play <texto>` busca primero y encola el primer resultado; con un enlace
+   * pegado, la búsqueda cuesta 1 unidad de cuota en vez de 100. El resto de los
+   * comandos van directo a la API de música.
+   */
+  const ejecutarComandoChat = useCallback(
+    async (linea: string): Promise<string> => {
+      const leido = leerComando(linea)
+      if (!leido) return 'Eso no es un comando'
+      if (!leido.comando) return `No existe el comando /${leido.crudo}. Prueba /play, /skip, /queue o /loop.`
+
+      if (leido.comando === 'play') {
+        if (!leido.argumento) return 'Escribe qué quieres poner: /play seguido del nombre o el enlace'
+
+        const res = await fetch(`/api/musica/buscar?q=${encodeURIComponent(leido.argumento)}`)
+        const json = await res.json()
+        if (!json.success) return json.error ?? 'No se pudo buscar'
+
+        const [primera] = json.data as Pista[]
+        if (!primera) {
+          return extraerVideoId(leido.argumento)
+            ? 'Ese video no se puede reproducir acá'
+            : `Sin resultados para "${leido.argumento}"`
+        }
+
+        return (await musica.ejecutar('play', primera)) ?? 'No se pudo poner'
+      }
+
+      if (leido.comando === 'loop') {
+        const modo = ['off', 'pista', 'cola'].includes(leido.argumento)
+          ? (leido.argumento as ModoLoop)
+          : undefined
+        return (await musica.ejecutar('loop', modo)) ?? 'No se pudo cambiar la repetición'
+      }
+
+      return (await musica.ejecutar(leido.comando)) ?? 'No se pudo ejecutar'
+    },
+    [musica],
+  )
+
+  /**
+   * Con algo sonando, el panel se muestra sí o sí.
+   *
+   * No es una comodidad: el reproductor de YouTube tiene que estar montado y a la
+   * vista para que suene, y los términos de la API exigen un viewport de 200×200
+   * px visible. Un panel cerrado con música puesta sería o silencio o una
+   * infracción, y las dos son peores que ocupar una columna.
+   *
+   * Es estado derivado y no un efecto: sincronizarlo con `setState` dispararía un
+   * render en cascada por cada cambio de pista.
+   */
+  const musicaVisible = musicaAbierta || Boolean(musica.sala.video_id)
 
   const terminar = async () => {
     await colgar()
@@ -474,6 +546,20 @@ export function PanelLlamada({
             miIntegranteId={miIntegranteId}
             nombrePorId={new Map(personas.map((p) => [p.id, p.nombre]))}
             onCerrar={() => setChatAbierto(false)}
+            onComando={ejecutarComandoChat}
+          />
+        )}
+
+        {musicaVisible && (
+          <ReproductorMusica
+            musica={musica}
+            // Cerrar con algo sonando es detener la música: si solo se ocultara,
+            // el reproductor se desmontaría y el audio se cortaría igual, pero sin
+            // que el resto del equipo se entere de por qué.
+            onCerrar={() => {
+              if (musica.sala.video_id) void musica.ejecutar('stop')
+              setMusicaAbierta(false)
+            }}
           />
         )}
       </div>
@@ -511,6 +597,16 @@ export function PanelLlamada({
           etiqueta={chatAbierto ? 'Cerrar el chat' : 'Abrir el chat'}
         >
           <MessageSquareIcon className="size-5" />
+        </Boton>
+
+        {/* La música no se mezcla en el micrófono: cada navegador reproduce la
+            misma pista en la misma posición. Ver la migración 039. */}
+        <Boton
+          activo={musicaVisible}
+          onClick={() => setMusicaAbierta((v) => !v)}
+          etiqueta={musicaVisible ? 'Cerrar la música' : 'Abrir la música'}
+        >
+          <MusicIcon className="size-5" />
         </Boton>
 
         <Boton

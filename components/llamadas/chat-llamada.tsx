@@ -11,6 +11,11 @@ interface ChatLlamadaProps {
   miIntegranteId: string
   nombrePorId: Map<string, string>
   onCerrar: () => void
+  /**
+   * Interpreta una línea que empieza con `/` como comando de música y devuelve
+   * qué contestar en pantalla. Si no está, los comandos se mandan como mensajes.
+   */
+  onComando?: (linea: string) => Promise<string>
 }
 
 /** Ver `use-datos-vivos`: supabase-js cachea canales por nombre. */
@@ -30,10 +35,24 @@ const HORA = new Intl.DateTimeFormat('es-CL', {
  * y se dictan IDs, y eso es justo lo que uno vuelve a buscar al día siguiente. Un
  * chat que se borra al colgar pierde lo único que valía la pena guardar.
  */
-export function ChatLlamada({ conversacionId, miIntegranteId, nombrePorId, onCerrar }: ChatLlamadaProps) {
+export function ChatLlamada({
+  conversacionId,
+  miIntegranteId,
+  nombrePorId,
+  onCerrar,
+  onComando,
+}: ChatLlamadaProps) {
   const [mensajes, setMensajes] = useState<Mensaje[]>([])
   const [borrador, setBorrador] = useState('')
   const [enviando, setEnviando] = useState(false)
+  /**
+   * La respuesta del último comando de música.
+   *
+   * Va en el panel y NO en el hilo a propósito: "En cola: Bohemian Rhapsody" le
+   * importa a quien lo escribió y en ese momento. Publicarlo dejaría la
+   * conversación llena de acuses de recibo que mañana no le sirven a nadie.
+   */
+  const [respuestaComando, setRespuestaComando] = useState<string | null>(null)
   const finRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -85,6 +104,26 @@ export function ChatLlamada({ conversacionId, miIntegranteId, nombrePorId, onCer
   const enviar = async () => {
     const contenido = borrador.trim()
     if (!contenido || enviando) return
+
+    /**
+     * Una línea que empieza con `/` es un comando, no un mensaje.
+     *
+     * Se corta acá y no se manda al hilo. Es lo que evita que un `/plya` mal
+     * escrito quede para siempre en la conversación: si el comando no existe se
+     * avisa en pantalla, pero tampoco se publica.
+     */
+    if (onComando && contenido.startsWith('/')) {
+      setBorrador('')
+      setEnviando(true)
+      try {
+        setRespuestaComando(await onComando(contenido))
+      } catch (err) {
+        setRespuestaComando(err instanceof Error ? err.message : 'No se pudo ejecutar el comando')
+      } finally {
+        setEnviando(false)
+      }
+      return
+    }
 
     setEnviando(true)
     try {
@@ -158,6 +197,17 @@ export function ChatLlamada({ conversacionId, miIntegranteId, nombrePorId, onCer
         <div ref={finRef} />
       </div>
 
+      {/* La respuesta del comando, solo para quien lo escribió. */}
+      {respuestaComando && (
+        <p
+          role="status"
+          className="mx-2 mb-1 shrink-0 rounded-lg px-2.5 py-1.5 text-[11px]"
+          style={{ background: 'oklch(100% 0 0 / 6%)', color: 'var(--tx-ink-muted)' }}
+        >
+          {respuestaComando}
+        </p>
+      )}
+
       <div className="flex items-end gap-2 p-2 shrink-0" style={{ borderTop: '1px solid var(--tx-border)' }}>
         <textarea
           value={borrador}
@@ -169,7 +219,7 @@ export function ChatLlamada({ conversacionId, miIntegranteId, nombrePorId, onCer
             }
           }}
           rows={1}
-          placeholder="Escribe…"
+          placeholder={onComando ? 'Escribe… o /play para música' : 'Escribe…'}
           className="flex-1 resize-none rounded-lg px-2.5 py-2 text-[13px] outline-none"
           style={{
             background: 'oklch(100% 0 0 / 6%)',
