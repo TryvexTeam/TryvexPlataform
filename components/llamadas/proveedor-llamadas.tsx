@@ -39,6 +39,22 @@ const NOTAS = [880, 1318.5, 1760]
 const CADENCIA_MS = 2400
 
 /**
+ * Nombre único por montaje del canal de Realtime.
+ *
+ * supabase-js cachea los canales POR NOMBRE y `removeChannel` es asíncrono. Con
+ * un nombre fijo, un remontaje del proveedor se encuentra con el canal anterior
+ * todavía vivo: los `.on()` nuevos se agregan a un canal ya suscrito, que es un
+ * error, y la suscripción queda en pie SIN handlers. El socket sigue conectado,
+ * no hay nada roto a la vista, y los eventos de llamadas simplemente no llegan
+ * nunca -- mientras el chat y las notificaciones siguen funcionando, porque esos
+ * sí usan nombre único (ver `use-datos-vivos` y `chat-llamada`).
+ *
+ * Ese era el motivo de que llegara la notificación push de una llamada y en la
+ * app no apareciera nada.
+ */
+let contadorCanal = 0
+
+/**
  * El contexto de audio del timbre, desbloqueado con el primer gesto de la
  * sesión.
  *
@@ -216,50 +232,6 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
     [equipo],
   )
 
-  // ── Escuchar llamadas ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const supabase = createClient()
-    const canal = supabase.channel(`llamadas-de-${miIntegranteId}`)
-
-    canal
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'llamadas' }, ({ new: fila }) => {
-        const llamada = fila as Llamada
-        // La RLS ya filtra: solo llegan las de conversaciones donde uno está.
-        if (llamada.iniciada_por === miIntegranteId) return
-        if (llamada.estado !== 'sonando') return
-
-        setEntrante((previa) => {
-          // Ya hay una sonando o uno ya está hablando: no encimar dos timbres.
-          if (previa) return previa
-          sonar()
-          return llamada
-        })
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'llamadas' }, ({ new: fila }) => {
-        const llamada = fila as Llamada
-        if (llamada.estado !== 'terminada') return
-
-        setEntrante((previa) => {
-          if (previa?.id !== llamada.id) return previa
-          pararTimbre()
-          return null
-        })
-        // Si colgaron la que se estaba ofreciendo, el ofrecimiento sobra: unirse
-        // a una llamada terminada deja a la persona sola en una sala vacía.
-        setEnCurso((previa) => (previa?.id === llamada.id ? null : previa))
-        setActiva((previa) => (previa?.llamada.id === llamada.id ? null : previa))
-      })
-      .subscribe()
-
-    return () => {
-      pararTimbre()
-      supabase.removeChannel(canal)
-    }
-  }, [miIntegranteId, pararTimbre, sonar])
-
-  // Soltar el timbre si el componente muere con una llamada sonando.
-  useEffect(() => () => pararTimbre(), [pararTimbre])
-
   /**
    * Preguntar si ya hay una llamada andando: al abrir la app y cada vez que la
    * pestaña vuelve al frente.
@@ -296,6 +268,66 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
       // Sin esto solo se pierde el ofrecimiento; el chat sigue mostrando la sala.
     }
   }, [miIntegranteId])
+
+  // ── Escuchar llamadas ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const supabase = createClient()
+    const canal = supabase.channel(`llamadas-de-${miIntegranteId}-${++contadorCanal}`)
+
+    canal
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'llamadas' }, ({ new: fila }) => {
+        const llamada = fila as Llamada
+        // La RLS ya filtra: solo llegan las de conversaciones donde uno está.
+        if (llamada.iniciada_por === miIntegranteId) return
+        if (llamada.estado !== 'sonando') return
+
+        setEntrante((previa) => {
+          // Ya hay una sonando o uno ya está hablando: no encimar dos timbres.
+          if (previa) return previa
+          sonar()
+          return llamada
+        })
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'llamadas' }, ({ new: fila }) => {
+        const llamada = fila as Llamada
+        if (llamada.estado !== 'terminada') return
+
+        setEntrante((previa) => {
+          if (previa?.id !== llamada.id) return previa
+          pararTimbre()
+          return null
+        })
+        // Si colgaron la que se estaba ofreciendo, el ofrecimiento sobra: unirse
+        // a una llamada terminada deja a la persona sola en una sala vacía.
+        setEnCurso((previa) => (previa?.id === llamada.id ? null : previa))
+        setActiva((previa) => (previa?.llamada.id === llamada.id ? null : previa))
+      })
+      .subscribe((estado) => {
+        /**
+         * Una suscripción caída es invisible: el socket sigue conectado, no hay
+         * error en pantalla y las llamadas simplemente no llegan. Dejar rastro en
+         * la consola es la diferencia entre diagnosticarlo en un minuto y probar
+         * a ciegas entre dos personas.
+         *
+         * Al reconectar se vuelve a preguntar qué hay vivo: mientras el canal
+         * estuvo caído pudo empezar una llamada, y ese evento ya no vuelve.
+         */
+        if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT' || estado === 'CLOSED') {
+          console.warn('[llamadas] canal de Realtime en estado', estado)
+          return
+        }
+        if (estado === 'SUBSCRIBED') void buscarEnCurso()
+      })
+
+    return () => {
+      pararTimbre()
+      supabase.removeChannel(canal)
+    }
+  }, [miIntegranteId, pararTimbre, sonar, buscarEnCurso])
+
+  // Soltar el timbre si el componente muere con una llamada sonando.
+  useEffect(() => () => pararTimbre(), [pararTimbre])
+
 
   useEffect(() => {
     // Solo si no estoy ya en una llamada: ofrecerle otra a alguien que está
