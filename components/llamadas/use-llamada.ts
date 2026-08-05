@@ -267,6 +267,27 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         pc.addTransceiver('video', { direction: 'sendrecv' })
       }
 
+      /**
+       * Si ya se está compartiendo pantalla, la conexión nueva tiene que nacer
+       * con ella puesta.
+       *
+       * La pantalla NO vive en `local.current` -- vive en `pantalla.current` y se
+       * reparte con `replaceTrack` sobre los pares que existían en ese momento.
+       * Una conexión creada después se quedaba con la ranura de video vacía para
+       * siempre: nadie volvía a llenarla. El que comparte seguía viéndose bien,
+       * porque lee su propia pantalla en local, y el otro veía negro mientras el
+       * cartel de "está transmitiendo" sí aparecía, porque eso viaja por la
+       * señalización y no por la media.
+       *
+       * Pasa con quien entra tarde a la llamada, y también en cada reconexión:
+       * `presence sync` cierra el par caído y crea uno nuevo.
+       */
+      const pistaPantalla = pantalla.current?.getVideoTracks()[0]
+      if (pistaPantalla) {
+        const sender = senderDeVideo(pc)
+        if (sender) void sender.replaceTrack(pistaPantalla).catch(() => {})
+      }
+
       pc.onicecandidate = (ev) => {
         if (ev.candidate) {
           enviar({ tipo: 'ice', de: miIntegranteId, para: otroId, candidato: ev.candidate.toJSON() })
@@ -402,6 +423,13 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           // Al contestar se avisa cómo está uno: el otro no puede deducir de un
           // track mudo si el micrófono está apagado o si simplemente no hablo.
           enviar({ tipo: 'estado', de: miIntegranteId, micro: microRef.current, camara: camaraRef.current })
+
+          // Y si uno ya venía compartiendo, también. El aviso de "pantalla" se
+          // manda una sola vez, al empezar: quien llegó después nunca se enteró y
+          // veía la transmisión sin el rótulo, o el rótulo sin la transmisión.
+          if (pantalla.current) {
+            enviar({ tipo: 'pantalla', de: miIntegranteId, activa: true })
+          }
         }
 
         if (senal.tipo === 'respuesta') {
