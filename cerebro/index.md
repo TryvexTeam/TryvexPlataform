@@ -18,11 +18,41 @@
 
 ## Decisiones de Arquitectura
 
-*(vacío — se documentarán aquí las decisiones clave del proyecto)*
+### [estado-plataforma](estado-plataforma.md) — qué hay construido (2026-08-05)
+
+`contexto-tryvex.md` cuenta **sobre qué** es el negocio; éste cuenta **qué está
+construido y en qué punto quedó**.
+
+- **Llamadas y video en malla P2P**: sin servidor de medios, sin límite de
+  minutos, TURN de Cloudflare solo como respaldo, señalización por Realtime.
+  Encima: chat con adjuntos, pantalla compartida con audio, música compartida y
+  panel de diagnóstico.
+- **Chat interno y notificaciones** por dos caminos que fallan aparte (in-app y
+  Web Push; en iOS el push exige la PWA instalada).
+- **Watchtower** (monitoreo de uptime) y **Vex** (agente comercial).
+- **Deuda abierta** y el patrón de fondo: casi todo construido, poco encendido —
+  lo que falta rara vez es código.
 
 ---
 
 ## Gotchas Conocidos
+
+### [gotchas-supabase](gotchas-supabase.md) — base de datos y despliegue
+
+Trampas que ya costaron caro, en este CRM y en proyectos de clientes. **Leer
+antes de escribir una migración o de diagnosticar un deploy.**
+
+| Gotcha | Regla en una línea |
+|---|---|
+| RLS sin GRANT = `42501` | El GRANT va en la misma migración que la policy. Ya pasó tres veces |
+| La clave de servicio no ve lo mismo que la app | Decidir qué camino usa cada operación y no mezclarlos |
+| El SQL Editor no es psql | Bloques cortos, etiqueta propia en `$fn$`, verificar el efecto |
+| `SUBSCRIBED` no garantiza eventos | Comprobar que la tabla esté en `supabase_realtime` |
+| Código nuevo con base vieja | En la ventana de deploy hay que degradar, no romper |
+| Mergear no es desplegar | Se comprueba en la URL pública; un PR toma los commits del momento |
+| Defaults silenciosos | Lo que produce efectos hacia afuera debe fallar ruidoso |
+| El perímetro debe ser "pertenecer" | ¿Qué ve alguien que se registró y no pertenece a nada? |
+| Capacidad no es rol | Una marca que no produce efecto es peor que no tenerla |
 
 ### [llamadas-webrtc](llamadas-webrtc.md) — llamadas y video (2026-08-05)
 
