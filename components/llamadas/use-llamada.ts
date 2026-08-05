@@ -133,7 +133,24 @@ async function comoConecto(pc: RTCPeerConnection): Promise<TipoConexion> {
  */
 export interface DiagnosticoLlamada {
   pistaLocal: { existe: boolean; activa: boolean; silenciadaPorSistema: boolean; estado: string }
-  porPersona: { id: string; paquetesEnviados: number; paquetesRecibidos: number }[]
+  porPersona: {
+    id: string
+    paquetesEnviados: number
+    paquetesRecibidos: number
+    /**
+     * Lo mismo para el video, que se medía por separado justamente porque el
+     * audio puede ir perfecto mientras el video no llega: son m-lines distintas
+     * y fallan por causas distintas.
+     *
+     * Sin este número, "no veo su pantalla" tiene dos explicaciones opuestas
+     * -- llega y no se pinta, o no llega -- y no había forma de elegir entre
+     * ellas salvo probar a ciegas con tres personas conectadas.
+     */
+    videoEnviado: number
+    videoRecibido: number
+    /** La dirección negociada de la ranura de video: 'sendrecv', 'recvonly'… */
+    direccionVideo: string
+  }[]
 }
 
 export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }: UseLlamadaOpts) {
@@ -688,17 +705,41 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       for (const [otroId, { pc }] of pares.current) {
         let enviados = 0
         let recibidos = 0
+        let videoEnviado = 0
+        let videoRecibido = 0
         try {
           const stats = await pc.getStats()
           stats.forEach((r) => {
             const rtp = r as RTCOutboundRtpStreamStats & RTCInboundRtpStreamStats
             if (r.type === 'outbound-rtp' && rtp.kind === 'audio') enviados += rtp.packetsSent ?? 0
             if (r.type === 'inbound-rtp' && rtp.kind === 'audio') recibidos += rtp.packetsReceived ?? 0
+            if (r.type === 'outbound-rtp' && rtp.kind === 'video') videoEnviado += rtp.packetsSent ?? 0
+            if (r.type === 'inbound-rtp' && rtp.kind === 'video') videoRecibido += rtp.packetsReceived ?? 0
           })
         } catch {
           // Una conexión que ya se cerró no tiene estadísticas. No es un fallo.
         }
-        porPersona.push({ id: otroId, paquetesEnviados: enviados, paquetesRecibidos: recibidos })
+
+        /**
+         * La dirección negociada de la ranura de video.
+         *
+         * Es el dato que separa "no me mandan" de "no puedo recibir": si acá dice
+         * `sendonly`, esta conexión quedó pactada para enviar y no recibir, y por
+         * mucho que el otro transmita nunca va a llegar nada. Eso no se ve en
+         * ningún otro lado y es invisible desde la interfaz.
+         */
+        const trVideo = pc
+          .getTransceivers()
+          .find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video')
+
+        porPersona.push({
+          id: otroId,
+          paquetesEnviados: enviados,
+          paquetesRecibidos: recibidos,
+          videoEnviado,
+          videoRecibido,
+          direccionVideo: trVideo?.currentDirection ?? trVideo?.direction ?? 'sin ranura',
+        })
       }
 
       setDiagnostico({
