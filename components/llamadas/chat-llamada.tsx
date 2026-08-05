@@ -78,6 +78,9 @@ export function ChatLlamada({
   }, [conversacionId])
 
   useEffect(() => {
+    // El `setState` de `recargar` ocurre después de un await, no en el cuerpo del
+    // efecto; la regla no puede verlo a través de la función asíncrona.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void recargar()
   }, [recargar])
 
@@ -184,9 +187,15 @@ export function ChatLlamada({
   }
 
   return (
+    /*
+      En el teléfono es una hoja sobre la llamada, no una columna apilada: abajo
+      del video dejaba a la gente en una franja donde no se distinguía a nadie.
+      Va sobre el video y bajo la botonera, como el chat de Meet en móvil. En
+      escritorio vuelve a ser la columna de siempre.
+    */
     <aside
-      className="flex flex-col min-h-0 w-full md:w-[320px] shrink-0"
-      style={{ borderLeft: '1px solid var(--tx-border)' }}
+      className="fixed inset-x-0 bottom-[84px] top-auto z-[82] h-[58vh] md:static md:z-auto md:h-auto md:inset-auto flex flex-col min-h-0 w-full md:w-[320px] shrink-0"
+      style={{ borderLeft: '1px solid var(--tx-border)', background: 'oklch(10% 0.004 240 / 96%)' }}
       aria-label="Chat de la llamada"
     >
       <header className="flex items-center justify-between px-3 py-2.5 shrink-0"

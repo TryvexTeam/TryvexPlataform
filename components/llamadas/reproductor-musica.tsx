@@ -48,6 +48,23 @@ import type { Musica } from './use-musica'
 /** Mínimo exigido por los términos de la API. No bajar de acá. */
 const LADO_MINIMO = 200
 
+/**
+ * En iOS el volumen de cualquier audio web lo manda el botón físico y nada más:
+ * `setVolume` no falla, simplemente no hace nada, y leerlo devuelve siempre 1.
+ * Es una restricción del sistema operativo, no de la API de YouTube ni de acá.
+ *
+ * Importa porque un slider que no mueve nada es peor que no tener slider: quien
+ * lo arrastra cree que la app está rota. Detectarlo permite decirlo.
+ *
+ * `maxTouchPoints` va porque el iPad se declara Mac desde iPadOS 13 y con solo
+ * mirar el userAgent se cuela como escritorio.
+ */
+function volumenLoMandaElTelefono(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+}
+
 /** Música de fondo mientras se trabaja, no un concierto. */
 const VOLUMEN_INICIAL = 30
 
@@ -61,12 +78,18 @@ interface ReproductorMusicaProps {
   volumenVoces: number
   onVolumenVoces: (valor: number) => void
   /**
-   * Controlado desde afuera porque el ancho del panel decide cuánto espacio le
+   * Controlado desde afuera porque el tamaño del panel decide cuánto espacio le
    * queda a la grilla de video, y de eso se encarga el panel de la llamada.
+   *
+   *  - `encogido`: columna angosta, solo el video y los controles
+   *  - `normal`:   columna con cola, buscador y volúmenes
+   *  - `grande`:   el video toma el área principal y la gente pasa a la tira
    */
-  encogido: boolean
-  onEncogido: (valor: boolean) => void
+  tamano: TamanoMusica
+  onTamano: (valor: TamanoMusica) => void
 }
+
+export type TamanoMusica = 'encogido' | 'normal' | 'grande'
 
 // ── Tipos mínimos del IFrame Player API ────────────────────────────────────
 // Se declaran acá y no se instala un paquete de tipos: la superficie que se usa
@@ -145,15 +168,23 @@ export function ReproductorMusica({
   onCerrar,
   volumenVoces,
   onVolumenVoces,
-  encogido,
-  onEncogido,
+  tamano,
+  onTamano,
 }: ReproductorMusicaProps) {
+  const encogido = tamano === 'encogido'
+  const grande = tamano === 'grande'
   const { sala, aviso, limpiarAviso, ejecutar, poner, alTerminar } = musica
 
   const contenedorRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<YTPlayer | null>(null)
   const [listo, setListo] = useState(false)
   const [volumen, setVolumen] = useState(VOLUMEN_INICIAL)
+  /**
+   * Se calcula una sola vez al montar. No hay riesgo de descalce con el servidor:
+   * este componente solo existe dentro de una llamada ya abierta, que es una
+   * pantalla a la que se llega interactuando, nunca renderizada de entrada.
+   */
+  const [sinControlDeVolumen] = useState(volumenLoMandaElTelefono)
   /**
    * El navegador exige un gesto del usuario para que algo suene. Si el arranque
    * automático falla se muestra un botón: quedarse en silencio sin explicar nada
@@ -332,19 +363,32 @@ export function ReproductorMusica({
               <SearchIcon className="size-4" />
             </button>
           )}
-          <button
-            onClick={() => {
-              onEncogido(!encogido)
-              // Con el panel encogido el buscador no se ve; dejarlo abierto haría
-              // que reapareciera solo al extender, sin que nadie lo pidiera.
-              setBuscador(false)
-            }}
-            aria-label={encogido ? 'Extender el panel de música' : 'Encoger el panel de música'}
-            aria-pressed={encogido}
-            className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
-          >
-            {encogido ? <Maximize2Icon className="size-4" /> : <Minimize2Icon className="size-4" />}
-          </button>
+          {/* Achicar y agrandar son dos botones y no un ciclo de tres estados:
+              con un solo botón hay que acordarse de qué viene después, y la
+              mitad de las veces se pasa de largo y hay que dar la vuelta. */}
+          {!encogido && (
+            <button
+              onClick={() => {
+                onTamano(grande ? 'normal' : 'encogido')
+                // Con el panel encogido el buscador no se ve; dejarlo abierto haría
+                // que reapareciera solo al extender, sin que nadie lo pidiera.
+                setBuscador(false)
+              }}
+              aria-label={grande ? 'Volver el video a la columna' : 'Encoger el panel de música'}
+              className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+            >
+              <Minimize2Icon className="size-4" />
+            </button>
+          )}
+          {!grande && (
+            <button
+              onClick={() => onTamano(encogido ? 'normal' : 'grande')}
+              aria-label={encogido ? 'Extender el panel de música' : 'Agrandar el video'}
+              className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+            >
+              <Maximize2Icon className="size-4" />
+            </button>
+          )}
           <button
             onClick={onCerrar}
             aria-label="Cerrar el panel de música"
@@ -359,19 +403,24 @@ export function ReproductorMusica({
         El reproductor. 200×200 px visibles: es el mínimo que exigen los términos
         de la YouTube API, no una decisión estética. No reducir, no ocultar.
       */}
-      <div className="flex justify-center px-3 pt-3 shrink-0">
+      <div className={`flex justify-center px-3 pt-3 ${grande ? 'flex-1 min-h-0 pb-3' : 'shrink-0'}`}>
         <div
-          className="relative overflow-hidden rounded-lg"
+          className={`relative overflow-hidden rounded-lg ${grande ? 'w-full h-full' : ''}`}
           style={{
-            width: LADO_MINIMO,
-            height: LADO_MINIMO,
+            // En grande el video toma todo el hueco; en los otros dos tamaños se
+            // queda en el cuadrado mínimo, que es el piso que exigen los términos.
+            width: grande ? undefined : LADO_MINIMO,
+            height: grande ? undefined : LADO_MINIMO,
             minWidth: LADO_MINIMO,
             minHeight: LADO_MINIMO,
             background: 'oklch(14% 0.004 240)',
             border: '1px solid var(--tx-border)',
           }}
         >
-          <div ref={contenedorRef} className="size-full" />
+          {/* El iframe se crea con width y height de 200 como atributos: la API
+              los escribe en el elemento, no en una clase. Sin forzarlos por CSS,
+              agrandar el panel dejaba el video chico en una esquina negra. */}
+          <div ref={contenedorRef} className="size-full [&_iframe]:size-full [&_iframe]:block" />
 
           {!actual && !errorApi && (
             <div className="absolute inset-0 grid place-items-center px-3 text-center">
@@ -468,23 +517,36 @@ export function ReproductorMusica({
         compartiera control con la llamada, bajarla para escuchar a alguien
         bajaría también a la persona que habla.
       */}
-      {!encogido && (
-        <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
-          <Volume2Icon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={volumen}
-            onChange={(e) => setVolumen(Number(e.target.value))}
-            aria-label="Volumen de la música"
-            className="flex-1 accent-[var(--tx-accent)]"
-          />
-          <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
-            {volumen}%
-          </span>
-        </div>
-      )}
+      {/*
+        En iPhone y iPad no se dibuja el slider de música. No es que se prefiera
+        esconderlo: ahí `setVolume` no hace nada y el control se quedaba quieto
+        mientras la música seguía igual de fuerte -- se ve como una app rota. Se
+        dice qué pasa y se deja el de voces, que sí funciona porque pasa por
+        WebAudio y no por el volumen del sistema.
+      */}
+      {!encogido &&
+        (sinControlDeVolumen ? (
+          <p className="px-3 pb-3 shrink-0 text-[11px] text-[var(--tx-ink-muted)]">
+            El volumen de la música lo maneja el botón del teléfono: iOS no deja que
+            una web lo cambie. Para escucharla mejor, baja las voces acá abajo.
+          </p>
+        ) : (
+          <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
+            <Volume2Icon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={volumen}
+              onChange={(e) => setVolumen(Number(e.target.value))}
+              aria-label="Volumen de la música"
+              className="flex-1 accent-[var(--tx-accent)]"
+            />
+            <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
+              {volumen}%
+            </span>
+          </div>
+        ))}
 
       {/*
         Bajar las voces, que es la única forma real de que la música se oiga más.

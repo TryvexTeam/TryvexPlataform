@@ -20,7 +20,7 @@ import {
 import { MusicIcon } from 'lucide-react'
 import { AvatarChat } from '@/components/chat/avatar-chat'
 import { ChatLlamada } from './chat-llamada'
-import { ReproductorMusica } from './reproductor-musica'
+import { ReproductorMusica, type TamanoMusica } from './reproductor-musica'
 import { useGrillaVideo } from './use-grilla-video'
 import { useHablando } from './use-hablando'
 import { useMusica } from './use-musica'
@@ -73,15 +73,18 @@ export function PanelLlamada({
    */
   const [volumenVoces, setVolumenVoces] = useState(1)
   /**
-   * Panel de música encogido: queda el video y los controles, se van la cola, el
-   * volumen, el buscador y los datos de la pista.
+   * Cuánto ocupa el panel de música: `encogido` deja el video y los controles,
+   * `normal` suma cola y volúmenes, `grande` le da el área principal y manda a la
+   * gente a la tira de arriba -- el mismo trato que a una pantalla compartida.
    *
-   * Vive acá y no en el reproductor porque decide el ancho del hueco, y con eso
-   * cuánto le queda a la grilla: los recuadros de la gente se reacomodan solos
-   * porque la grilla mide su caja con un ResizeObserver.
+   * Vive acá y no en el reproductor porque decide el hueco, y con eso cuánto le
+   * queda a la grilla: los recuadros se reacomodan solos porque la grilla mide su
+   * caja con un ResizeObserver.
    */
-  const [musicaEncogida, setMusicaEncogida] = useState(false)
-  const anclaMusicaRef = useRef<HTMLDivElement>(null)
+  const [musicaTamano, setMusicaTamano] = useState<TamanoMusica>('normal')
+  // Callback ref por lo mismo que la grilla: minimizar y volver monta un ancla
+  // nueva, y con un `useRef` el efecto que la mide no se enteraba.
+  const [anclaMusica, setAnclaMusica] = useState<HTMLDivElement | null>(null)
   /** Dónde está el hueco reservado, en coordenadas de viewport. */
   const [huecoMusica, setHuecoMusica] = useState<DOMRect | null>(null)
   /**
@@ -225,25 +228,27 @@ export function PanelLlamada({
    * cambia el tamaño de la ventana, y eso no cambia el tamaño del ancla.
    */
   useEffect(() => {
-    const ancla = anclaMusicaRef.current
-    if (!ancla || minimizado) {
-      setHuecoMusica(null)
-      return
-    }
+    if (!anclaMusica) return
 
-    const medir = () => setHuecoMusica(ancla.getBoundingClientRect())
+    const medir = () => setHuecoMusica(anclaMusica.getBoundingClientRect())
     medir()
 
     const observador = new ResizeObserver(medir)
-    observador.observe(ancla)
-    if (ancla.parentElement) observador.observe(ancla.parentElement)
+    observador.observe(anclaMusica)
+    // También el padre: el hueco se corre cuando se abre el chat al lado, y eso
+    // no cambia el tamaño del ancla, solo su posición.
+    if (anclaMusica.parentElement) observador.observe(anclaMusica.parentElement)
     window.addEventListener('resize', medir)
 
     return () => {
       observador.disconnect()
       window.removeEventListener('resize', medir)
     }
-  }, [musicaVisible, minimizado, musicaEncogida, chatAbierto])
+  }, [anclaMusica])
+
+  // Minimizada no hay hueco que seguir: se descarta al derivar y no reseteando el
+  // estado desde el efecto, que dejaría un render con la medida vieja.
+  const huecoVigente = minimizado ? null : huecoMusica
 
   const terminar = async () => {
     await colgar()
@@ -288,13 +293,21 @@ export function PanelLlamada({
     }),
   ]
 
+  const musicaGrande = musicaVisible && musicaTamano === 'grande' && !minimizado
   const enGrande = recuadros.find((r) => r.id === destacado) ?? null
-  const enGrilla = recuadros.filter((r) => r.id !== destacado)
+  // Con el video en grande la gente va entera a la tira: nadie queda destacado,
+  // porque el lugar de destacado ya lo ocupa el video.
+  const enGrilla = musicaGrande ? recuadros : recuadros.filter((r) => r.id !== destacado)
+  /** Si los recuadros van en tira horizontal en vez de repartidos en la caja. */
+  const enTira = Boolean(enGrande) || musicaGrande
 
   // La caja real que le queda a los videos, ya descontado el chat si está
   // abierto. De acá sale el tamaño de cada recuadro.
-  const cajaRef = useRef<HTMLDivElement>(null)
-  const grilla = useGrillaVideo(cajaRef, enGrande ? 0 : enGrilla.length)
+  // Callback ref y no `useRef`: hace falta que el hook se entere cuando el nodo
+  // cambia. Minimizar y restaurar la llamada monta uno nuevo, y con un ref el
+  // observador se quedaba mirando el viejo. Ver `useGrillaVideo`.
+  const [cajaGrilla, setCajaGrilla] = useState<HTMLDivElement | null>(null)
+  const grilla = useGrillaVideo(cajaGrilla, enTira ? 0 : enGrilla.length)
 
   /**
    * Quién está hablando, incluido uno mismo.
@@ -529,10 +542,16 @@ export function PanelLlamada({
 
       <div className="flex-1 min-h-0 flex flex-col md:flex-row">
         <div className="flex-1 min-h-0 flex flex-col px-4 pb-4 gap-3">
+          {/* El video de YouTube agrandado. Ocupa el área principal y manda a la
+              gente a la tira, igual que una pantalla compartida: si están viendo
+              algo juntos, lo que importa es lo que se ve, no las caras. El
+              reproductor no se dibuja acá -- esto es el hueco que le reserva. */}
+          {musicaGrande && <div ref={setAnclaMusica} className="flex-1 min-h-0" aria-hidden />}
+
           {/* Vista destacada. Cuando hay alguien elegido ocupa casi todo y el
               resto baja a una tira: es lo que uno quiere cuando alguien comparte
               pantalla y hay que leer lo que muestra. */}
-          {enGrande && (
+          {enGrande && !musicaGrande && (
             <div className="flex-1 min-h-0">
               <Recuadro
                 {...enGrande}
@@ -560,9 +579,9 @@ export function PanelLlamada({
               calculado, el wrap deja la última fila centrada sola -- que es
               exactamente el detalle que hace que se vea como Meet. */}
           <div
-            ref={cajaRef}
+            ref={setCajaGrilla}
             className={
-              enGrande
+              enTira
                 ? 'shrink-0 flex gap-2 overflow-x-auto pb-1'
                 : 'flex-1 min-h-0 flex flex-wrap items-center justify-center content-center gap-3 overflow-hidden'
             }
@@ -570,9 +589,9 @@ export function PanelLlamada({
             {enGrilla.map((r) => (
               <div
                 key={r.id}
-                className={enGrande ? 'w-40 shrink-0' : 'shrink-0'}
+                className={enTira ? 'w-40 shrink-0' : 'shrink-0'}
                 style={
-                  enGrande
+                  enTira
                     ? undefined
                     : { width: grilla.ancho || undefined, height: grilla.alto || undefined }
                 }
@@ -614,10 +633,19 @@ export function PanelLlamada({
             se monta una sola vez fuera de esta vista y se posiciona encima de
             este ancla. Lo que hace este div es reservar el ancho, que es lo que
             corre los recuadros de la gente. */}
-        {musicaVisible && (
+        {/*
+          En escritorio el hueco va en el flujo y empuja: la grilla se achica y
+          los recuadros se reacomodan. En el teléfono no puede empujar -- apilado
+          bajo el video dejaba a la gente en una franja de nada. Ahí es una hoja
+          sobre la llamada, por encima del video y por debajo de la botonera, que
+          es lo que hacen Meet y Discord con el chat en móvil.
+        */}
+        {musicaVisible && !musicaGrande && (
           <div
-            ref={anclaMusicaRef}
-            className={`shrink-0 w-full ${musicaEncogida ? 'md:w-[224px]' : 'md:w-[320px]'} min-h-[280px] md:min-h-0`}
+            ref={setAnclaMusica}
+            className={`fixed inset-x-0 bottom-[84px] top-auto h-[58vh] md:static md:h-auto md:inset-auto md:shrink-0 w-full ${
+              musicaTamano === 'encogido' ? 'md:w-[224px]' : 'md:w-[320px]'
+            }`}
             aria-hidden
           />
         )}
@@ -704,12 +732,12 @@ export function PanelLlamada({
         <div
           className="fixed z-[81]"
           style={
-            huecoMusica
+            huecoVigente
               ? {
-                  top: huecoMusica.top,
-                  left: huecoMusica.left,
-                  width: huecoMusica.width,
-                  height: huecoMusica.height,
+                  top: huecoVigente.top,
+                  left: huecoVigente.left,
+                  width: huecoVigente.width,
+                  height: huecoVigente.height,
                 }
               : // Con la llamada minimizada el hueco no existe, pero el reproductor
                 // tiene que seguir a la vista: apagarlo cortaría la música, y
@@ -732,8 +760,8 @@ export function PanelLlamada({
             // Con la llamada minimizada solo cabe la miniatura, sin cola ni
             // sliders: se fuerza encogido sin tocar la preferencia de la persona,
             // que vuelve tal cual estaba al restaurar.
-            encogido={musicaEncogida || minimizado}
-            onEncogido={setMusicaEncogida}
+            tamano={minimizado ? 'encogido' : musicaTamano}
+            onTamano={setMusicaTamano}
           />
         </div>
       )}
