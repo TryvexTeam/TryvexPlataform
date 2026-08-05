@@ -52,6 +52,20 @@ interface Par {
   negociando: boolean
 }
 
+/**
+ * La ranura de video de una conexión.
+ *
+ * Se busca por el transceiver y no por `sender.track?.kind`: cuando la ranura
+ * está vacía —llamada que empezó en audio— el sender no tiene pista y no hay
+ * `kind` que mirar. El receiver sí declara 'video' desde que se crea.
+ */
+function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
+  const tr = pc
+    .getTransceivers()
+    .find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video')
+  return tr?.sender ?? null
+}
+
 export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }: UseLlamadaOpts) {
   const [participantes, setParticipantes] = useState<ParticipanteVivo[]>([])
   const [micro, setMicro] = useState(true)
@@ -162,6 +176,19 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
 
       for (const track of local.current?.getTracks() ?? []) {
         pc.addTrack(track, local.current!)
+      }
+
+      // La ranura de video se reserva SIEMPRE, aunque la llamada haya empezado
+      // en audio y no haya cámara que poner.
+      //
+      // El porqué: agregar una pista después con `addTrack` obliga a renegociar
+      // toda la conexión, y si esa renegociación no ocurre el otro lado nunca
+      // recibe nada -- ve un recuadro negro mientras quien comparte ve su propia
+      // pantalla perfectamente, porque la está leyendo en local. Con la ranura ya
+      // creada, prender la cámara o compartir pantalla es solo llenarla con
+      // `replaceTrack`, que no renegocia nada y se aplica al instante.
+      if (!local.current?.getVideoTracks().length) {
+        pc.addTransceiver('video', { direction: 'sendrecv' })
       }
 
       pc.onicecandidate = (ev) => {
@@ -411,10 +438,12 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         const nueva = extra.getVideoTracks()[0]
         local.current?.addTrack(nueva)
 
-        for (const [otroId, { pc }] of pares.current) {
-          pc.addTrack(nueva, local.current!)
-          // Agregar una pista obliga a renegociar; si no, el otro no la ve nunca.
-          void ofrecer(otroId)
+        // La ranura ya existe desde `crearPar`, así que basta con llenarla. Antes
+        // esto hacía `addTrack` + renegociación, que es justo lo que dejaba al
+        // otro lado en negro cuando la renegociación no llegaba a completarse.
+        for (const { pc } of pares.current.values()) {
+          const sender = senderDeVideo(pc)
+          if (sender) await sender.replaceTrack(nueva).catch(() => {})
         }
 
         setCamara(true)
@@ -429,7 +458,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     pista.enabled = !pista.enabled
     setCamara(pista.enabled)
     enviar({ tipo: 'estado', de: miIntegranteId, micro: microRef.current, camara: pista.enabled })
-  }, [aplicarCalidad, enviar, miIntegranteId, ofrecer])
+  }, [aplicarCalidad, enviar, miIntegranteId])
 
   /**
    * Devuelve la cámara a su lugar con `replaceTrack`, que no obliga a renegociar.
@@ -442,9 +471,11 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const dejarDeCompartir = useCallback(async () => {
     if (!pantalla.current) return
 
+    // Si la cámara está apagada esto pone null: la ranura queda vacía y el otro
+    // lado deja de recibir cuadros, que es lo correcto.
     const camaraPista = local.current?.getVideoTracks()[0] ?? null
     for (const { pc } of pares.current.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+      const sender = senderDeVideo(pc)
       if (sender) await sender.replaceTrack(camaraPista).catch(() => {})
     }
     pantalla.current.getTracks().forEach((t) => t.stop())
@@ -471,9 +502,9 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       setStreamPantalla(stream)
 
       for (const { pc } of pares.current.values()) {
-        const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+        const sender = senderDeVideo(pc)
+        // Siempre existe: `crearPar` reserva la ranura aunque no haya cámara.
         if (sender) await sender.replaceTrack(pista).catch(() => {})
-        else pc.addTrack(pista, stream)
       }
 
       // El botón "Dejar de compartir" del navegador no pasa por nuestra UI: sin
