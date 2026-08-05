@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { Llamada, MotivoFin, ParticipanteLlamada } from '@/lib/types/llamada'
+import type { ConsumoLlamadas, Llamada, MotivoFin, ParticipanteLlamada } from '@/lib/types/llamada'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -31,6 +31,23 @@ export class LlamadasRepository {
 
     if (error) throw new Error(error.message)
     return (data ?? null) as Llamada | null
+  }
+
+  /**
+   * Cuánto se habló este mes y cuánto de eso pasó por relay.
+   *
+   * Solo el relay consume: lo directo no toca ningún servidor. Devuelve null si
+   * no hay nada todavía, para que la tarjeta muestre ceros en vez de romperse.
+   */
+  async consumoDelMes(mes: string): Promise<ConsumoLlamadas | null> {
+    const { data, error } = await this.sb
+      .from('llamadas_resumen_mes')
+      .select('*')
+      .eq('mes', mes)
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    return (data ?? null) as ConsumoLlamadas | null
   }
 
   async porId(llamadaId: string): Promise<Llamada | null> {
@@ -148,10 +165,21 @@ export class LlamadasRepository {
    * Alguien se fue. Si queda una sola persona la llamada se cierra: nadie está
    * "en una llamada" consigo mismo, y dejarla viva bloquearía la próxima.
    */
-  async salir(llamadaId: string, integranteId: string): Promise<void> {
+  async salir(
+    llamadaId: string,
+    integranteId: string,
+    medicion?: { viaRelay?: boolean; segundos?: number },
+  ): Promise<void> {
     await this.sb
       .from('llamada_participantes')
-      .update({ estado: 'salio', salio_at: new Date().toISOString() })
+      .update({
+        estado: 'salio',
+        salio_at: new Date().toISOString(),
+        // `undefined` no se envía; la columna queda NULL y el resumen lo cuenta
+        // como "sin medir" en vez de suponer que fue directa.
+        via_relay: medicion?.viaRelay,
+        segundos: medicion?.segundos,
+      })
       .eq('llamada_id', llamadaId)
       .eq('integrante_id', integranteId)
 

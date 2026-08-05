@@ -4,6 +4,8 @@ import { FinanzasRepository } from '@/lib/repos/finanzas'
 import { ClientesRepository } from '@/lib/repos/clientes'
 import { PermisosRepository, puede } from '@/lib/repos/permisos'
 import { FinanzasWorkspace } from '@/components/finanzas/finanzas-workspace'
+import { CostoLlamadas } from '@/components/finanzas/costo-llamadas'
+import { LlamadasRepository } from '@/lib/repos/llamadas'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,6 +66,12 @@ export default async function FinanzasPage() {
   const repo = new FinanzasRepository(supabase)
   const { desde, hasta } = rangoMesActual()
 
+  // El consumo de llamadas no debe tumbar la página de finanzas si la migración
+  // 037 todavía no se aplicó: la tarjeta muestra ceros y el resto funciona.
+  const consumoLlamadas = await new LlamadasRepository(supabase)
+    .consumoDelMes(desde)
+    .catch(() => null)
+
   const [movimientos, resumenMensual, clientes] = await Promise.all([
     repo.list({ desde, hasta }),
     repo.resumenMensual(inicioSeisMeses()),
@@ -71,6 +79,10 @@ export default async function FinanzasPage() {
   ])
 
   return (
+    <>
+    <div className="px-4 pt-4 md:px-6 md:pt-6">
+      <CostoLlamadas consumo={consumoLlamadas} />
+    </div>
     <FinanzasWorkspace
       movimientosIniciales={movimientos}
       resumenMensual={resumenMensual}
@@ -80,5 +92,6 @@ export default async function FinanzasPage() {
         .filter((c) => c.estado === 'activo')
         .map((c) => ({ id: c.id, nombre: c.nombre_negocio || c.nombre_contacto || 'Sin nombre' }))}
     />
+    </>
   )
 }

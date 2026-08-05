@@ -75,6 +75,14 @@ export function PanelLlamada({
   /** De quién está abierto el control de volumen. */
   const [volumenAbierto, setVolumenAbierto] = useState<string | null>(null)
   /**
+   * A quién silencié yo, solo para mí. Como en Discord: el otro sigue hablando
+   * normalmente y el resto lo sigue oyendo — no se le impone nada a nadie.
+   *
+   * Va aparte del volumen en 0 para no perder el nivel que tenía: al quitarle el
+   * silencio vuelve a como estaba, no a 100%.
+   */
+  const [silenciados, setSilenciados] = useState<Set<string>>(() => new Set())
+  /**
    * A quién se está mirando en grande. `null` = todos parejos en la grilla.
    *
    * Con cinco recuadros del mismo tamaño no se lee una pantalla compartida ni se
@@ -83,6 +91,7 @@ export function PanelLlamada({
   const [destacado, setDestacado] = useState<string | null>(null)
   const {
     participantes,
+    conexion,
     streamLocal,
     streamPantalla,
     micro,
@@ -192,7 +201,7 @@ export function PanelLlamada({
         <AudioRemoto
           key={p.integranteId}
           stream={p.stream}
-          mudo={ensordecido}
+          mudo={ensordecido || silenciados.has(p.integranteId)}
           volumen={volumenes.get(p.integranteId) ?? 1}
         />
       ))}
@@ -267,10 +276,34 @@ export function PanelLlamada({
       <header className="flex items-center justify-between gap-3 px-4 py-3 shrink-0">
         <div className="min-w-0">
           <p className="text-[15px] font-semibold text-[var(--tx-ink-primary)] truncate">{titulo}</p>
-          <p className="text-[12px] text-[var(--tx-ink-muted)]">
-            {participantes.length === 0
-              ? 'Esperando a que entren…'
-              : `${participantes.length + 1} en la llamada`}
+          <p className="flex items-center gap-1.5 text-[12px] text-[var(--tx-ink-muted)]">
+            <span>
+              {participantes.length === 0
+                ? 'Esperando a que entren…'
+                : `${participantes.length + 1} en la llamada`}
+            </span>
+
+            {/* Directa o por relay. No es un detalle técnico: una llamada directa
+                no toca ningún servidor y no consume nada; una por relay sale de
+                los 1.000 GB gratis. Verlo en el momento evita tener que deducirlo
+                después mirando un panel de Cloudflare. */}
+            {conexion && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                style={
+                  conexion === 'directa'
+                    ? { background: 'oklch(62% 0.17 150 / 18%)', color: 'oklch(75% 0.16 150)' }
+                    : { background: 'oklch(70% 0.15 75 / 18%)', color: 'oklch(80% 0.13 75)' }
+                }
+                title={
+                  conexion === 'directa'
+                    ? 'El audio y el video van directo entre navegadores. No consume nada.'
+                    : 'Pasa por un servidor de retransmisión. Consume de los 1.000 GB gratis al mes.'
+                }
+              >
+                {conexion === 'directa' ? 'Directa · $0' : 'Por relay'}
+              </span>
+            )}
           </p>
         </div>
         <button
@@ -303,6 +336,15 @@ export function PanelLlamada({
                 grande
                 hablando={quienesHablan.has(enGrande.id)}
                 volumen={enGrande.id === miIntegranteId ? null : (volumenes.get(enGrande.id) ?? 1)}
+                silenciado={silenciados.has(enGrande.id)}
+                onSilenciar={() =>
+                  setSilenciados((s) => {
+                    const n = new Set(s)
+                    if (n.has(enGrande.id)) n.delete(enGrande.id)
+                    else n.add(enGrande.id)
+                    return n
+                  })
+                }
                 volumenAbierto={volumenAbierto === enGrande.id}
                 onAbrirVolumen={() => setVolumenAbierto((v) => (v === enGrande.id ? null : enGrande.id))}
                 onVolumen={(v) => setVolumenes((m) => new Map(m).set(enGrande.id, v))}
@@ -336,6 +378,15 @@ export function PanelLlamada({
                   {...r}
                   hablando={quienesHablan.has(r.id)}
                   volumen={r.id === miIntegranteId ? null : (volumenes.get(r.id) ?? 1)}
+                  silenciado={silenciados.has(r.id)}
+                  onSilenciar={() =>
+                    setSilenciados((s) => {
+                      const n = new Set(s)
+                      if (n.has(r.id)) n.delete(r.id)
+                      else n.add(r.id)
+                      return n
+                    })
+                  }
                   volumenAbierto={volumenAbierto === r.id}
                   onAbrirVolumen={() => setVolumenAbierto((v) => (v === r.id ? null : r.id))}
                   onVolumen={(v) => setVolumenes((m) => new Map(m).set(r.id, v))}
@@ -458,6 +509,9 @@ interface RecuadroProps {
   /** null para el propio recuadro: uno no se sube el volumen a sí mismo. */
   volumen?: number | null
   volumenAbierto?: boolean
+  /** Silenciado solo para mí. El resto lo sigue oyendo. */
+  silenciado?: boolean
+  onSilenciar?: () => void
   onAbrirVolumen?: () => void
   onVolumen?: (v: number) => void
   onClick?: () => void
@@ -476,6 +530,8 @@ function Recuadro({
   hablando = false,
   volumen = null,
   volumenAbierto = false,
+  silenciado = false,
+  onSilenciar,
   onAbrirVolumen,
   onVolumen,
   onClick,
@@ -547,7 +603,11 @@ function Recuadro({
             title={`Volumen de ${nombre}`}
             className="shrink-0 p-1 text-white/70 hover:text-white"
           >
-            {volumen === 0 ? <VolumeXIcon className="size-3.5" /> : <Volume2Icon className="size-3.5" />}
+            {silenciado || volumen === 0 ? (
+              <VolumeXIcon className="size-3.5 text-[oklch(75%_0.16_25)]" />
+            ) : (
+              <Volume2Icon className="size-3.5" />
+            )}
           </button>
         )}
       </div>
@@ -558,15 +618,30 @@ function Recuadro({
           className="absolute inset-x-2 bottom-10 flex items-center gap-2 rounded-lg px-2.5 py-2"
           style={{ background: 'oklch(12% 0.004 240 / 92%)', border: '1px solid var(--tx-border)' }}
         >
-          <VolumeXIcon className="size-3.5 shrink-0 text-white/60" />
+          {/* Silenciar a esta persona solo para mí. Es lo primero del control
+              porque es la acción más común: alguien deja el micrófono abierto en
+              un lugar ruidoso y uno quiere seguir la reunión igual. */}
+          {onSilenciar && (
+            <button
+              onClick={onSilenciar}
+              aria-pressed={silenciado}
+              aria-label={silenciado ? `Volver a oír a ${nombre}` : `Silenciar a ${nombre} solo para mí`}
+              title={silenciado ? 'Volver a oír' : 'Silenciar solo para mí'}
+              className="shrink-0 rounded px-1.5 py-1"
+              style={{ color: silenciado ? 'oklch(75% 0.16 25)' : 'rgba(255,255,255,0.6)' }}
+            >
+              {silenciado ? <VolumeXIcon className="size-3.5" /> : <Volume2Icon className="size-3.5" />}
+            </button>
+          )}
           <input
             type="range"
             min={0}
             max={200}
             value={Math.round(volumen * 100)}
             onChange={(e) => onVolumen(Number(e.target.value) / 100)}
+            disabled={silenciado}
             aria-label={`Volumen de ${nombre}`}
-            className="flex-1 accent-[var(--tx-accent)]"
+            className="flex-1 accent-[var(--tx-accent)] disabled:opacity-40"
           />
           {/* Hasta 200%: el caso real no es bajarle a quien grita, es subirle a
               quien tiene un micrófono malo y no se le entiende. */}

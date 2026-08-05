@@ -66,8 +66,56 @@ function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
   return tr?.sender ?? null
 }
 
+/**
+ * Como esta conectada esta llamada.
+ *
+ * 'directa' = el media va navegador a navegador y no cuesta nada.
+ * 'relay'   = pasa por TURN y consume de la cuota de Cloudflare.
+ * null      = todavia no se sabe (la conexion aun no se establecio).
+ */
+export type TipoConexion = 'directa' | 'relay' | null
+
+/**
+ * Pregunta a WebRTC por que camino quedo la conexion.
+ *
+ * Se mira el par de candidatos ACTIVO (`nominated` + `state === 'succeeded'`),
+ * no la lista de candidatos ofrecidos: se ofrecen varios y se usa uno solo. Si
+ * cualquiera de las dos puntas es de tipo 'relay', el trafico pasa por TURN.
+ */
+async function comoConecto(pc: RTCPeerConnection): Promise<TipoConexion> {
+  try {
+    const stats = await pc.getStats()
+    let activo: RTCIceCandidatePairStats | null = null
+    const candidatos = new Map<string, { candidateType?: string }>()
+
+    stats.forEach((r) => {
+      if (r.type === 'local-candidate' || r.type === 'remote-candidate') {
+        candidatos.set(r.id, r as { candidateType?: string })
+      }
+      const par = r as RTCIceCandidatePairStats & { nominated?: boolean }
+      if (r.type === 'candidate-pair' && par.state === 'succeeded' && par.nominated) {
+        activo = par
+      }
+    })
+
+    if (!activo) return null
+    const par = activo as RTCIceCandidatePairStats
+    const local = candidatos.get(par.localCandidateId ?? '')
+    const remoto = candidatos.get(par.remoteCandidateId ?? '')
+
+    return local?.candidateType === 'relay' || remoto?.candidateType === 'relay' ? 'relay' : 'directa'
+  } catch {
+    return null
+  }
+}
+
 export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }: UseLlamadaOpts) {
   const [participantes, setParticipantes] = useState<ParticipanteVivo[]>([])
+  /** Si alguna de las conexiones pasa por relay, la llamada cuenta como relay. */
+  const [conexion, setConexion] = useState<TipoConexion>(null)
+  /** Para reportar la duracion real al colgar. */
+  const inicioRef = useRef<number>(0)
+  const viaRelayRef = useRef(false)
   const [micro, setMicro] = useState(true)
   const [camara, setCamara] = useState(conVideo)
   const [compartiendo, setCompartiendo] = useState(false)
@@ -213,6 +261,19 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
 
         actualizar(otroId, { estado })
 
+        // Al conectar se pregunta por que camino quedo. Es lo que alimenta el
+        // indicador de "directa o por relay" y lo que se reporta al colgar: si
+        // fue directa no consumio nada, si fue relay salio de la cuota.
+        if (pc.connectionState === 'connected') {
+          void comoConecto(pc).then((tipo) => {
+            if (!tipo) return
+            if (tipo === 'relay') viaRelayRef.current = true
+            // Basta con que UNA conexion sea por relay para que la llamada
+            // cuente como tal: esa es la que esta consumiendo.
+            setConexion((previa) => (previa === 'relay' ? previa : tipo))
+          })
+        }
+
         // 'failed' es definitivo: hay que rehacer la ruta, no esperar. Se reintenta
         // una vez con ICE restart; si tampoco, se muestra fallido y el resto de la
         // llamada sigue viva -- que uno no conecte no puede tumbar a los demás.
@@ -317,6 +378,9 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     let vigente = true
     const supabase = createClient()
     const misPares = pares.current
+
+    inicioRef.current = Date.now()
+    viaRelayRef.current = false
 
     const arrancar = async () => {
       // 1. Micrófono y cámara. Si el usuario dice que no, se corta acá con un
@@ -525,7 +589,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       await fetch(`/api/llamadas/${llamadaId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accion: 'salir' }),
+        body: JSON.stringify({
+          accion: 'salir',
+          // El navegador es el unico que sabe por donde fue el trafico. Si esto
+          // no llega, la fila queda con via_relay NULL y el resumen lo cuenta
+          // como "sin medir" en vez de suponer.
+          via_relay: viaRelayRef.current,
+          segundos: Math.max(0, Math.round((Date.now() - inicioRef.current) / 1000)),
+        }),
       })
     } catch {
       // Aunque el aviso al servidor falle, hay que soltar cámara y micrófono: la
@@ -536,6 +607,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
 
   return {
     participantes,
+    conexion,
     streamLocal,
     streamPantalla,
     micro,
