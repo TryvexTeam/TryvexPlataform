@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ListMusicIcon,
+  Maximize2Icon,
+  MicIcon,
+  Minimize2Icon,
   MusicIcon,
   PauseIcon,
   PlayIcon,
@@ -54,6 +57,15 @@ const REVISION_MS = 1000
 interface ReproductorMusicaProps {
   musica: Musica
   onCerrar: () => void
+  /** 0 a 1, donde 1 es el volumen normal de las voces. */
+  volumenVoces: number
+  onVolumenVoces: (valor: number) => void
+  /**
+   * Controlado desde afuera porque el ancho del panel decide cuánto espacio le
+   * queda a la grilla de video, y de eso se encarga el panel de la llamada.
+   */
+  encogido: boolean
+  onEncogido: (valor: boolean) => void
 }
 
 // ── Tipos mínimos del IFrame Player API ────────────────────────────────────
@@ -128,7 +140,14 @@ function cargarApiYouTube(): Promise<YTApi> {
   return cargando
 }
 
-export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) {
+export function ReproductorMusica({
+  musica,
+  onCerrar,
+  volumenVoces,
+  onVolumenVoces,
+  encogido,
+  onEncogido,
+}: ReproductorMusicaProps) {
   const { sala, aviso, limpiarAviso, ejecutar, poner, alTerminar } = musica
 
   const contenedorRef = useRef<HTMLDivElement>(null)
@@ -287,9 +306,11 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
   const posicion = actual ? Math.floor(posicionActual(sala, new Date())) : 0
 
   return (
+    /* Sin ancho propio: lo decide el hueco que le reserva el panel de la llamada,
+       que es el que sabe cuánto espacio le queda a la grilla de video. */
     <aside
-      className="flex flex-col min-h-0 w-full md:w-[320px] shrink-0 overflow-y-auto"
-      style={{ borderLeft: '1px solid var(--tx-border)' }}
+      className="flex flex-col min-h-0 size-full shrink-0 overflow-y-auto"
+      style={{ borderLeft: '1px solid var(--tx-border)', background: 'oklch(10% 0.004 240 / 92%)' }}
       aria-label="Música de la llamada"
     >
       <header
@@ -301,13 +322,28 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
           Música
         </p>
         <div className="flex items-center gap-1">
+          {!encogido && (
+            <button
+              onClick={() => setBuscador((v) => !v)}
+              aria-label={buscador ? 'Cerrar el buscador' : 'Buscar música'}
+              aria-pressed={buscador}
+              className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+            >
+              <SearchIcon className="size-4" />
+            </button>
+          )}
           <button
-            onClick={() => setBuscador((v) => !v)}
-            aria-label={buscador ? 'Cerrar el buscador' : 'Buscar música'}
-            aria-pressed={buscador}
+            onClick={() => {
+              onEncogido(!encogido)
+              // Con el panel encogido el buscador no se ve; dejarlo abierto haría
+              // que reapareciera solo al extender, sin que nadie lo pidiera.
+              setBuscador(false)
+            }}
+            aria-label={encogido ? 'Extender el panel de música' : 'Encoger el panel de música'}
+            aria-pressed={encogido}
             className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
           >
-            <SearchIcon className="size-4" />
+            {encogido ? <Maximize2Icon className="size-4" /> : <Minimize2Icon className="size-4" />}
           </button>
           <button
             onClick={onCerrar}
@@ -370,15 +406,30 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
 
       {actual && (
         <div className="px-3 pt-3 shrink-0">
-          <p className="text-[13px] font-medium text-[var(--tx-ink-primary)] line-clamp-2">{actual.titulo}</p>
-          <p className="text-[11px] text-[var(--tx-ink-muted)] truncate">{actual.canal}</p>
-          <p className="mt-1 text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
-            {reloj(posicion)} / {reloj(actual.duracion_seg)}
+          {/* Encogido queda solo el título: es lo único que se pregunta de un
+              vistazo ("¿qué está sonando?"). El canal y el reloj están en el
+              propio reproductor de YouTube, ahí arriba. */}
+          <p
+            className={`text-[13px] font-medium text-[var(--tx-ink-primary)] ${
+              encogido ? 'truncate' : 'line-clamp-2'
+            }`}
+          >
+            {actual.titulo}
           </p>
+          {!encogido && (
+            <>
+              <p className="text-[11px] text-[var(--tx-ink-muted)] truncate">{actual.canal}</p>
+              <p className="mt-1 text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
+                {reloj(posicion)} / {reloj(actual.duracion_seg)}
+              </p>
+            </>
+          )}
         </div>
       )}
 
-      <div className="flex items-center justify-center gap-1 px-3 py-3 shrink-0">
+      {/* `flex-wrap`: encogido son 224 px y los seis botones quedan al filo. Que
+          bajen a una segunda fila es mejor que verlos recortados. */}
+      <div className="flex flex-wrap items-center justify-center gap-1 px-3 py-3 shrink-0">
         <BotonMini onClick={() => void ejecutar('previous')} etiqueta="Anterior">
           <SkipBackIcon className="size-4" />
         </BotonMini>
@@ -417,21 +468,53 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
         compartiera control con la llamada, bajarla para escuchar a alguien
         bajaría también a la persona que habla.
       */}
-      <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
-        <Volume2Icon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={volumen}
-          onChange={(e) => setVolumen(Number(e.target.value))}
-          aria-label="Volumen de la música"
-          className="flex-1 accent-[var(--tx-accent)]"
-        />
-        <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
-          {volumen}%
-        </span>
-      </div>
+      {!encogido && (
+        <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
+          <Volume2Icon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={volumen}
+            onChange={(e) => setVolumen(Number(e.target.value))}
+            aria-label="Volumen de la música"
+            className="flex-1 accent-[var(--tx-accent)]"
+          />
+          <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
+            {volumen}%
+          </span>
+        </div>
+      )}
+
+      {/*
+        Bajar las voces, que es la única forma real de que la música se oiga más.
+        El audio sale del iframe de YouTube, que es cross-origin: no se puede
+        enganchar a WebAudio ni pasarle un GainNode, y `setVolume` recorta
+        cualquier valor sobre 100. Sacar la pista por otro camino para
+        amplificarla es justo lo que hace que YouTube cierre el acceso a la API.
+
+        Las voces sí pasan por WebAudio, así que atenuarlas es la palanca que
+        queda: se baja acá y se sube el volumen del sistema. El volumen por
+        persona sigue mandando encima de éste -- a quien no se le entiende se le
+        puede subir igual.
+      */}
+      {!encogido && (
+        <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
+          <MicIcon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(volumenVoces * 100)}
+            onChange={(e) => onVolumenVoces(Number(e.target.value) / 100)}
+            aria-label="Volumen de las voces"
+            className="flex-1 accent-[var(--tx-accent)]"
+          />
+          <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
+            {Math.round(volumenVoces * 100)}%
+          </span>
+        </div>
+      )}
 
       {aviso && (
         <p
@@ -443,9 +526,12 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
         </p>
       )}
 
-      {buscador && <Buscador onElegir={(p) => void poner(p)} />}
+      {buscador && !encogido && <Buscador onElegir={(p) => void poner(p)} />}
 
-      <div className="px-3 pb-4">
+      {/* La cola es lo primero que sobra cuando se necesita espacio: dice qué
+          viene después, no qué está pasando. Los comandos del chat la siguen
+          manejando con el panel encogido. */}
+      <div className={`px-3 pb-4 ${encogido ? 'hidden' : ''}`}>
         <p className="flex items-center gap-1.5 mb-2 text-[12px] font-semibold text-[var(--tx-ink-primary)]">
           <ListMusicIcon className="size-3.5" aria-hidden />
           En cola ({sala.cola.length})
