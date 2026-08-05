@@ -143,12 +143,14 @@ export function ClientesWorkspace({ clientes, proyectos, ventas }: ClientesWorks
 
       {/* Main content */}
       <div className="flex flex-1 min-h-0 gap-0">
-        {/* Left: feed or pipeline */}
+        {/* Left: feed or pipeline.
+            En un teléfono se esconde mientras el panel está abierto: los dos juntos
+            no entran, y antes el panel de 380px era más ancho que la pantalla y
+            aplastaba la lista hasta hacerla ilegible. */}
         <motion.div
           layout
           transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-          className="flex-1 min-w-0 overflow-hidden"
-          style={{ paddingRight: panelOpen ? 0 : 0 }}
+          className={`flex-1 min-w-0 overflow-hidden ${panelOpen ? 'hidden md:block' : ''}`}
         >
           <AnimatePresence mode="wait">
             {view === 'lista' ? (
@@ -189,18 +191,21 @@ export function ClientesWorkspace({ clientes, proyectos, ventas }: ClientesWorks
           </AnimatePresence>
         </motion.div>
 
-        {/* Right: detail panel */}
+        {/* Right: detail panel.
+            En móvil ocupa todo el ancho disponible; desde md vuelve a ser el panel
+            lateral de 380px. Animar el ancho a 380 en un teléfono de 375 dejaba el
+            contenido cortado por el borde de la pantalla. */}
         <AnimatePresence>
           {panelOpen && selectedCliente && (
             <motion.div
               key="panel"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 380, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-              className="shrink-0 overflow-hidden h-full"
+              className="shrink-0 overflow-hidden h-full w-full md:w-[380px]"
             >
-              <div className="w-[380px] h-full">
+              <div className="h-full w-full">
                 <ClientePanel
                   cliente={selectedCliente}
                   proyectos={selectedProyectos}

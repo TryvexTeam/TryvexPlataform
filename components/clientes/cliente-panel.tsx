@@ -25,6 +25,7 @@ import {
   Ban,
   RotateCcw,
   Check,
+  Maximize2,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { ClienteForm } from './cliente-form'
@@ -214,6 +215,24 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
 
             {/* Close + actions */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* La ficha completa existía en /clientes/[id] pero no había forma de
+                  llegar desde acá: el panel es angosto a propósito, y el historial
+                  entero no entra en 380px. */}
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => router.push(`/clientes/${cliente.id}`)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+                style={{
+                  background: 'oklch(100% 0 0 / 5%)',
+                  border: '1px solid oklch(100% 0 0 / 8%)',
+                  color: 'var(--tx-ink-primary)',
+                }}
+                title="Ver ficha completa"
+                aria-label="Ver ficha completa"
+              >
+                <Maximize2 size={12} />
+              </motion.button>
               <motion.button
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.92 }}
