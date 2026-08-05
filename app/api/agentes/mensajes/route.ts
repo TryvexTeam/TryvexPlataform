@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { tokenCoincide, tokenDeCabecera } from '@/lib/agentes/token'
+import {
+  LoteMensajesAgenteSchema,
+  MensajeAgenteSchema,
+  type MensajeAgenteInput,
+} from '@/lib/types/agente'
 
 /**
  * La puerta del canal de agentes.
@@ -80,31 +85,104 @@ export async function GET(req: Request) {
   return NextResponse.json({ success: true, data: (data ?? []).reverse() })
 }
 
+/**
+ * Cuáles de esos `origen_ref` ya están en la base.
+ *
+ * La idempotencia real la garantiza el índice único de la 031; esto es solo para
+ * poder informar cuántos se saltaron y no gastar un insert que va a rebotar.
+ */
+async function refsYaIngestados(admin: SB, refs: string[]): Promise<Set<string>> {
+  if (refs.length === 0) return new Set()
+  const { data, error } = await admin.from('mensajes').select('origen_ref').in('origen_ref', refs)
+  if (error) throw new Error(error.message)
+  return new Set((data ?? []).map((r: { origen_ref: string }) => r.origen_ref))
+}
+
 export async function POST(req: Request) {
   const agente = await autenticar(req)
   if (!agente) return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })
 
-  const cuerpo = (await req.json().catch(() => null)) as { contenido?: string; hilo?: string } | null
-  const contenido = cuerpo?.contenido?.trim()
-  if (!contenido) {
-    return NextResponse.json({ success: false, error: 'Falta el contenido' }, { status: 400 })
-  }
-  if (contenido.length > 8000) {
-    return NextResponse.json({ success: false, error: 'Máximo 8000 caracteres' }, { status: 400 })
+  const cuerpo = await req.json().catch(() => null)
+  if (!cuerpo) return NextResponse.json({ success: false, error: 'Cuerpo inválido' }, { status: 400 })
+
+  // Dos formas de llamar, un solo camino interno:
+  //   { contenido, hilo? }            → un mensaje (la forma original, se conserva)
+  //   { mensajes: [...], hilo? }      → un lote (migrar #chatia sin mil requests)
+  const lote = LoteMensajesAgenteSchema.safeParse(cuerpo)
+  const uno = lote.success ? null : MensajeAgenteSchema.safeParse(cuerpo)
+
+  if (!lote.success && !uno!.success) {
+    // Se reporta el error de la forma que el cuerpo intentó ser, no el de las dos.
+    const esLote = typeof cuerpo === 'object' && cuerpo !== null && 'mensajes' in cuerpo
+    const detalle = esLote ? lote.error.issues : uno!.error.issues
+    return NextResponse.json({ success: false, error: detalle }, { status: 400 })
   }
 
+  const mensajes: MensajeAgenteInput[] = lote.success ? lote.data.mensajes : [uno!.data!]
+  const nombreHilo = (lote.success ? lote.data.hilo : uno!.data!.hilo) ?? undefined
+
   const admin = createAdminClient() as SB
-  const hilo = await hiloDeAgentes(admin, cuerpo?.hilo)
+  const hilo = await hiloDeAgentes(admin, nombreHilo)
   if (!hilo) return NextResponse.json({ success: false, error: 'No existe ese canal' }, { status: 404 })
+
+  let yaEstan: Set<string>
+  try {
+    yaEstan = await refsYaIngestados(
+      admin,
+      mensajes.map((m) => m.origen_ref).filter((r): r is string => Boolean(r)),
+    )
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'error consultando duplicados'
+    return NextResponse.json({ success: false, error: msg }, { status: 500 })
+  }
+
+  const nuevos = mensajes.filter((m) => !m.origen_ref || !yaEstan.has(m.origen_ref))
+  const duplicados = mensajes.length - nuevos.length
+
+  if (nuevos.length === 0) {
+    return NextResponse.json({ success: true, data: { insertados: 0, duplicados, ids: [] } })
+  }
+
+  const filas = nuevos.map((m) => ({
+    conversacion_id: hilo,
+    // autor_id va nulo: el constraint de la 024 exige exactamente uno de los dos.
+    agente_id: agente.id,
+    contenido: m.contenido,
+    origen_ref: m.origen_ref ?? null,
+    // Solo se fuerza la fecha si vino: para un mensaje en vivo manda el DEFAULT.
+    ...(m.created_at ? { created_at: m.created_at } : {}),
+  }))
 
   const { data, error } = await admin
     .from('mensajes')
-    // autor_id va nulo: el constraint de la 024 exige exactamente uno de los dos.
-    .insert({ conversacion_id: hilo, agente_id: agente.id, contenido })
-    .select('id, contenido, created_at, agente_id')
-    .single()
+    .insert(filas)
+    .select('id, contenido, created_at, agente_id, origen_ref')
 
-  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+  if (error) {
+    // 23505 = el índice único frenó una carrera entre dos ingestas simultáneas.
+    // Es el mecanismo funcionando, no una falla: se informa como duplicado.
+    if (error.code === '23505') {
+      return NextResponse.json({
+        success: true,
+        data: { insertados: 0, duplicados: mensajes.length, ids: [] },
+      })
+    }
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+  }
 
-  return NextResponse.json({ success: true, data })
+  const insertados = data ?? []
+
+  // Un mensaje suelto sigue devolviendo el mensaje, como antes de existir el lote.
+  if (!lote.success) {
+    return NextResponse.json({ success: true, data: insertados[0] ?? null })
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      insertados: insertados.length,
+      duplicados,
+      ids: insertados.map((m: { id: string }) => m.id),
+    },
+  })
 }
