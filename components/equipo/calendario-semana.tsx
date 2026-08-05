@@ -17,6 +17,25 @@ const ROW_H = 48
 // Horas reales menores a este umbral (0-1 am) pertenecen al día extendido anterior
 const UMBRAL_MADRUGADA = HORA_MAX - 24
 
+/* ── Ancho de las columnas ─────────────────────────────────────────────────
+   Antes: `minWidth: 860px` fijo, y el cuerpo envuelto en su PROPIO contenedor
+   con `overflowX: hidden` dentro del contenedor que hacía el scroll.
+
+   Un hijo `block` toma el ancho del padding box de su contenedor, no del
+   scrollWidth. Así que la cabecera se estiraba a 860px (su `minWidth`) pero
+   el envoltorio del cuerpo se quedaba en el ancho visible — 250px medidos a
+   320px de pantalla — y su `overflowX: hidden` recortaba ahí el grid de 860.
+   Ambos se desplazaban a la par, pero el cuerpo se **acababa** a los 250px:
+   al deslizar más allá aparecían los días en la cabecera y debajo, nada.
+   Ese era el "margen del calendario vacío".
+
+   Ahora hay UN solo contenedor de scroll para ambos, y el ancho de columna
+   sale de la medición: entran 1-7 días completos, nunca uno partido, y el
+   resto se alcanza deslizando con encaje por día. La gutter de horas queda
+   congelada a la izquierda y la cabecera arriba (tabla 2D con sticky). */
+const GUTTER_W = 48
+const COL_MIN_W = 90
+
 type TipoEvento = (typeof TIPOS_EVENTO)[number]['id']
 
 // ─── Date helpers ─────────────────────────────────────────────────────
@@ -199,8 +218,29 @@ export function CalendarioSemana() {
   // Hover slot state
   const [hoverSlot, setHoverSlot] = useState<{ dayIdx: number; hora: number } | null>(null)
 
-  // Grid scroll container ref (for auto-scroll)
+  // Grid scroll container ref (auto-scroll vertical + desplazamiento horizontal)
   const gridScrollRef = useRef<HTMLDivElement>(null)
+  // Primera celda del cuerpo: marca dónde termina la cabecera dentro del scroll
+  const hourGutterRef = useRef<HTMLDivElement>(null)
+
+  // Ancho medido del calendario → cuántos días caben y cuánto mide cada uno
+  const [gridWidth, setGridWidth] = useState(0)
+  useEffect(() => {
+    const el = gridScrollRef.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => setGridWidth(entry.contentRect.width))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const diasVisibles = gridWidth <= 0
+    ? 7
+    : Math.min(Math.max(Math.floor((gridWidth - GUTTER_W) / COL_MIN_W), 1), 7)
+  const semanaCompleta = diasVisibles >= 7
+  // Sin medir todavía: columnas fluidas, igual que el render del servidor
+  const colWidth = gridWidth <= 0 ? null : (gridWidth - GUTTER_W) / diasVisibles
+  const gridCols = `${GUTTER_W}px repeat(7, ${colWidth === null ? 'minmax(0, 1fr)' : `${colWidth}px`})`
+  const snapAlign = semanaCompleta ? undefined : 'start'
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 
@@ -279,13 +319,33 @@ export function CalendarioSemana() {
     const nowH = horaExtendida(now)
     const nowM = now.getMinutes()
     if (nowH >= HORA_MIN && nowH < HORA_MAX) {
+      // El contenedor ahora también contiene la fila de cabecera, así que la
+      // posición de la línea se mide desde donde empieza el cuerpo.
+      const gutter = hourGutterRef.current
+      const bodyTop = gutter
+        ? gutter.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+        : 0
       const nowTop = ((nowH - HORA_MIN) * 60 + nowM) / 60 * ROW_H
-      const target = Math.max(0, nowTop - el.clientHeight / 3)
+      const target = Math.max(0, bodyTop + nowTop - el.clientHeight / 3)
       el.scrollTop = target
     }
     // Only run on mount / week change, not on every `now` tick
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart, isCurrentWeek])
+  }, [weekStart, isCurrentWeek, colWidth])
+
+  // ─── En pantallas donde no cabe la semana, abrir en el día de hoy ──
+  const yaCentradoH = useRef(false)
+  useEffect(() => {
+    const el = gridScrollRef.current
+    if (!el || colWidth === null || semanaCompleta || yaCentradoH.current) return
+    yaCentradoH.current = true
+    if (!isCurrentWeek) return
+    const idxHoy = days.findIndex((d) => isSameDay(d, diaExtendido(now)))
+    if (idxHoy < 0) return
+    const destino = (idxHoy - Math.floor(diasVisibles / 2)) * colWidth
+    el.scrollLeft = Math.min(Math.max(destino, 0), el.scrollWidth - el.clientWidth)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colWidth, semanaCompleta])
 
   // ─── Navigation ──────────────────────────────────────────────────
   const prevWeek = useCallback(() => setWeekStart((w) => addDays(w, -7)), [])
@@ -811,32 +871,40 @@ export function CalendarioSemana() {
         )}
       </div>
 
-      {/* ── Grid ──────────────────────────────────────────────── */}
+      {/* ── Grid ──────────────────────────────────────────────────
+          Cabecera y cuerpo son celdas del MISMO grid dentro de UN solo
+          contenedor de scroll (ver la nota sobre GUTTER_W arriba). */}
       <div
+        ref={gridScrollRef}
         style={{
-          overflowX: 'auto',
+          maxHeight: 'calc(100vh - 320px)',
+          overflow: 'auto',
+          overscrollBehaviorX: 'contain',
+          scrollSnapType: semanaCompleta ? undefined : 'x mandatory',
+          // el encaje se mide desde el borde de los días, no del calendario
+          scrollPaddingLeft: `${GUTTER_W}px`,
           borderRadius: '12px',
           border: '1px solid rgba(255,255,255,0.08)',
           background: 'rgba(255,255,255,0.02)',
         }}
       >
-        {/* Sticky day headers */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '56px repeat(7, minmax(110px, 1fr))',
+            gridTemplateColumns: gridCols,
+            width: colWidth === null ? '100%' : 'max-content',
             userSelect: 'none',
-            minWidth: '860px',
-            position: 'sticky',
-            top: 0,
-            zIndex: 20,
-            background: 'rgba(10,10,12,0.92)',
-            backdropFilter: 'blur(8px)',
           }}
         >
-          {/* Gutter header with timezone */}
+          {/* Gutter header with timezone — esquina: fija arriba y a la izquierda */}
           <div
             style={{
+              position: 'sticky',
+              top: 0,
+              left: 0,
+              zIndex: 30,
+              background: 'rgba(10,10,12,0.92)',
+              backdropFilter: 'blur(8px)',
               borderBottom: '1px solid rgba(255,255,255,0.06)',
               padding: '10px 4px',
               display: 'flex',
@@ -866,6 +934,12 @@ export function CalendarioSemana() {
               <div
                 key={`dh-${i}`}
                 style={{
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 20,
+                  background: 'rgba(10,10,12,0.92)',
+                  backdropFilter: 'blur(8px)',
+                  scrollSnapAlign: snapAlign,
                   fontSize: '12px',
                   fontWeight: 700,
                   color: isToday
@@ -939,28 +1013,18 @@ export function CalendarioSemana() {
               </div>
             )
           })}
-        </div>
-
-        {/* Scrollable body */}
-        <div
-          ref={gridScrollRef}
-          style={{
-            maxHeight: 'calc(100vh - 320px)',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-          }}
-        >
-          {/* Body: hour rows + columns with absolute positioning */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '56px repeat(7, minmax(110px, 1fr))',
-              minWidth: '860px',
-              position: 'relative',
-            }}
-          >
-            {/* Hour gutter */}
-            <div style={{ position: 'relative' }}>
+            {/* Hour gutter — congelada a la izquierda: al deslizar, ninguna
+                columna queda sin su referencia horaria. */}
+            <div
+              ref={hourGutterRef}
+              style={{
+                position: 'sticky',
+                left: 0,
+                zIndex: 18,
+                background: 'rgba(10,10,12,0.92)',
+                backdropFilter: 'blur(8px)',
+              }}
+            >
               {HORAS.map((h) => {
                 const isColliding = h === nowCollidesHour && isCurrentWeek
                 return (
@@ -1033,6 +1097,7 @@ export function CalendarioSemana() {
                   key={`dc-${dayIdx}`}
                   style={{
                     position: 'relative',
+                    scrollSnapAlign: snapAlign,
                     borderLeft: '1px solid rgba(255,255,255,0.04)',
                     height: `${HORAS.length * ROW_H}px`,
                     cursor: 'crosshair',
@@ -1281,7 +1346,6 @@ export function CalendarioSemana() {
                 </div>
               )
             })}
-          </div>
         </div>
       </div>
 
