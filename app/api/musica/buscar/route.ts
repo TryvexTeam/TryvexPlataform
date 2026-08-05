@@ -41,14 +41,29 @@ export async function GET(req: Request) {
   const musica = new MusicaRepository(supabase)
   const videoId = extraerVideoId(consulta)
 
-  // Sin clave no se cae con un 500 mudo: se dice qué falta y qué se puede hacer
-  // igual. Un error que no explica nada es indiagnosticable para quien lo ve.
+  // Sin clave, un enlace pegado igual funciona: los datos salen de oEmbed, que
+  // es público y no pide credenciales. Es lo que hace que la función sirva desde
+  // el minuto cero, sin depender de que alguien pase por Google Cloud.
+  //
+  // El mensaje anterior decía "mientras tanto pegue un enlace", pero el camino
+  // del enlace TAMBIÉN pasaba por la API: mandaba a la persona a un callejón sin
+  // salida. La diferencia entre buscar y pegar era de cuota (100 unidades contra
+  // 1), no de credencial.
   if (!clave) {
+    if (videoId) {
+      const pista = await porOEmbed(videoId)
+      if (pista) return NextResponse.json({ success: true, data: [pista] })
+      return NextResponse.json(
+        { success: false, error: 'Ese enlace no se pudo leer. ¿Es un video público de YouTube?' },
+        { status: 404 },
+      )
+    }
+
     return NextResponse.json(
       {
         success: false,
         error:
-          'Falta configurar YOUTUBE_API_KEY. Mientras tanto se puede pegar directamente el enlace de un video de YouTube.',
+          'Para buscar por nombre falta configurar YOUTUBE_API_KEY. Pegando el enlace del video funciona igual, sin clave.',
       },
       { status: 503 },
     )
@@ -98,6 +113,49 @@ type ItemVideo = {
  * el avance automatico depende de que el reproductor llegue al final, la sala se
  * queda muerta hasta que alguien salte a mano.
  */
+/**
+ * Los datos de un video sin usar la API ni una clave.
+ *
+ * oEmbed es un endpoint público de YouTube: devuelve título, canal y miniatura
+ * de cualquier video público e incrustable. Si el video no se puede incrustar,
+ * responde error -- así que sirve además como filtro, que es justo lo que hacía
+ * falta para no encolar una pista que nadie va a poder reproducir.
+ *
+ * Lo único que NO da es la duración. Se deja en 0 y la completa el reproductor
+ * cuando carga el video, que es quien realmente la sabe. Mientras tanto la cola
+ * no puede calcular sola cuándo avanzar, pero el fin de pista igual llega por el
+ * evento del reproductor.
+ */
+async function porOEmbed(videoId: string): Promise<Pista | null> {
+  try {
+    const url = new URL('https://www.youtube.com/oembed')
+    url.searchParams.set('url', `https://www.youtube.com/watch?v=${videoId}`)
+    url.searchParams.set('format', 'json')
+
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+
+    const datos = (await res.json()) as {
+      title?: string
+      author_name?: string
+      thumbnail_url?: string
+    }
+
+    return {
+      video_id: videoId,
+      titulo: datos.title ?? 'Video de YouTube',
+      canal: datos.author_name ?? '',
+      duracion_seg: 0,
+      miniatura_url: datos.thumbnail_url ?? null,
+      // Lo completa el route de comandos con quien la encoló; acá todavía no se
+      // sabe, es solo el resultado de una búsqueda.
+      puesta_por: null,
+    }
+  } catch {
+    return null
+  }
+}
+
 async function porId(videoId: string, clave: string): Promise<Pista | null> {
   const url = new URL(`${API}/videos`)
   url.searchParams.set('part', 'snippet,contentDetails,status')
