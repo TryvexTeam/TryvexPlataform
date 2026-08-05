@@ -26,6 +26,60 @@ interface ContextoLlamadas {
 
 const Contexto = createContext<ContextoLlamadas | null>(null)
 
+/**
+ * El timbre: dos notas que suben y se quedan arriba (La5 → Mi6 → La6).
+ *
+ * Sube en vez de bajar porque una figura descendente se lee como algo que se
+ * cierra -- sirve para colgar, no para avisar. Y son notas de un acorde, no
+ * frecuencias sueltas: dos tonos sin relación entre sí suenan a alarma.
+ */
+const NOTAS = [880, 1318.5, 1760]
+
+/** Cada cuánto vuelve a sonar, en ms. Ver `pulso`. */
+const CADENCIA_MS = 2400
+
+/**
+ * El contexto de audio del timbre, desbloqueado con el primer gesto de la
+ * sesión.
+ *
+ * Sin esto el timbre no suena y nadie sabe por qué: el navegador crea todo
+ * AudioContext en pausa hasta que la persona toca la página, y una llamada
+ * entrante no es un gesto de la persona -- llega justo cuando uno está leyendo,
+ * sin tocar nada. `resume()` en ese momento no sirve: la política pide un gesto
+ * *previo*, y el que uno haga después de ver el modal ya llega tarde.
+ *
+ * Entonces se toma el primer clic o tecla que ocurra en la sesión, sea cual sea,
+ * y se deja el contexto abierto y corriendo. Cuando llegue la llamada ya está
+ * listo. Es un contexto en reposo: no consume nada mientras no se le conecte un
+ * oscilador.
+ *
+ * Es global al módulo y no un estado: sobrevive a cualquier remontaje del
+ * proveedor, y desbloquear dos veces no tiene sentido.
+ */
+let ctxTimbre: AudioContext | null = null
+
+function contextoTimbre(): AudioContext | null {
+  if (typeof window === 'undefined') return null
+  if (ctxTimbre) {
+    // Los navegadores pueden volver a pausarlo (cambio de pestaña, ahorro de
+    // energía). Pedir `resume` acá sí funciona: ya hubo un gesto antes.
+    if (ctxTimbre.state === 'suspended') void ctxTimbre.resume().catch(() => {})
+    return ctxTimbre
+  }
+
+  try {
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    if (!Ctor) return null
+    ctxTimbre = new Ctor()
+    void ctxTimbre.resume().catch(() => {})
+    return ctxTimbre
+  } catch {
+    return null
+  }
+}
+
 export function useLlamadas(): ContextoLlamadas {
   const ctx = useContext(Contexto)
   if (!ctx) throw new Error('useLlamadas fuera del ProveedorLlamadas')
@@ -60,20 +114,19 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
   }, [])
 
   /**
-   * El timbre se sintetiza en vez de cargar un mp3: son dos tonos alternados,
-   * pesa cero y no hay un archivo más que servir. Si el navegador lo bloquea por
-   * no haber gesto previo del usuario, no pasa nada: la notificación push y la
-   * tarjeta en pantalla siguen avisando.
+   * El timbre se sintetiza en vez de cargar un mp3: pesa cero, no hay un archivo
+   * más que servir y no depende de que la red lo entregue a tiempo -- un timbre
+   * que llega tarde no es un timbre. Si el navegador lo bloquea por no haber
+   * gesto previo del usuario, no pasa nada: el modal y la notificación push
+   * siguen avisando.
    */
   const sonar = useCallback(() => {
     try {
-      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      const ctx = new Ctor()
-
-      // Sin un gesto previo del usuario el navegador crea el contexto en pausa.
-      // Sin este `resume` el timbre existe y no suena -- que es peor que no
-      // tenerlo, porque uno cree que está avisando.
-      void ctx.resume().catch(() => {})
+      // El contexto ya viene desbloqueado desde el primer gesto de la sesión.
+      // Crear uno nuevo acá era lo que dejaba el timbre mudo: nacía en pausa y
+      // la llamada entrante no cuenta como gesto de la persona.
+      const ctx = contextoTimbre()
+      if (!ctx) return
 
       const ganancia = ctx.createGain()
       ganancia.gain.value = 0.14
@@ -82,40 +135,51 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
       let vivo = true
 
       /**
-       * La cadencia del teléfono: dos tonos cortos, silencio, y otra vez. Se
+       * Un toque: las tres notas seguidas, y silencio hasta el siguiente. Se
        * repite hasta que se conteste o se rechace -- no se rinde a los tres
-       * intentos. Una llamada directa a la que nadie llega es una llamada
-       * perdida; si el timbre se apaga solo, ni siquiera es eso.
+       * intentos. Una llamada a la que nadie llega es una llamada perdida; si el
+       * timbre se apaga solo, ni siquiera es eso.
        */
       const pulso = () => {
         if (!vivo) return
-        for (const [i, hz] of [880, 660, 880, 660].entries()) {
-          const osc = ctx.createOscillator()
-          const env = ctx.createGain()
-          osc.type = 'sine'
-          osc.frequency.value = hz
+        for (const [i, hz] of NOTAS.entries()) {
+          const t = ctx.currentTime + i * 0.17
 
-          const t = ctx.currentTime + i * 0.32
-          // Envolvente: el tono entra y sale suave. Un cuadrado seco suena a
-          // error del sistema, no a teléfono.
-          env.gain.setValueAtTime(0, t)
-          env.gain.linearRampToValueAtTime(1, t + 0.02)
-          env.gain.setValueAtTime(1, t + 0.22)
-          env.gain.linearRampToValueAtTime(0, t + 0.28)
+          /**
+           * Dos osciladores por nota: la fundamental y su octava, esta última
+           * bastante más baja. Una sinusoide sola suena a pitido de aparato
+           * médico; el armónico encima le da el cuerpo de campana que uno asocia
+           * a una notificación y no a una alarma.
+           */
+          for (const [armonico, volumen] of [
+            [1, 1],
+            [2, 0.32],
+          ]) {
+            const osc = ctx.createOscillator()
+            const env = ctx.createGain()
+            osc.type = 'triangle'
+            osc.frequency.value = hz * armonico
 
-          osc.connect(env)
-          env.connect(ganancia)
-          osc.start(t)
-          osc.stop(t + 0.3)
+            // Ataque instantáneo y cola que decae sola, como algo que se golpea.
+            // La envolvente cuadrada de antes sonaba a error del sistema.
+            env.gain.setValueAtTime(0, t)
+            env.gain.linearRampToValueAtTime(volumen, t + 0.012)
+            env.gain.exponentialRampToValueAtTime(0.0001, t + 0.7)
+
+            osc.connect(env)
+            env.connect(ganancia)
+            osc.start(t)
+            osc.stop(t + 0.75)
+          }
         }
 
         // En el teléfono la vibración llega donde el sonido no: con el aparato
         // en silencio, es lo único que avisa.
-        if ('vibrate' in navigator) navigator.vibrate([300, 150, 300, 900])
+        if ('vibrate' in navigator) navigator.vibrate([120, 90, 120, 700])
       }
 
       pulso()
-      const id = window.setInterval(pulso, 2600)
+      const id = window.setInterval(pulso, CADENCIA_MS)
 
       timbre.current = {
         ctx,
@@ -123,7 +187,10 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
           vivo = false
           window.clearInterval(id)
           if ('vibrate' in navigator) navigator.vibrate(0)
-          void ctx.close()
+          // El contexto NO se cierra: es el compartido y desbloqueado. Cerrarlo
+          // dejaría la próxima llamada sin timbre hasta que la persona vuelva a
+          // tocar la pantalla, que es justo el problema que esto resuelve.
+          ganancia.disconnect()
         },
       }
     } catch {
@@ -178,6 +245,26 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
 
   // Soltar el timbre si el componente muere con una llamada sonando.
   useEffect(() => () => pararTimbre(), [pararTimbre])
+
+  /**
+   * Desbloquear el audio con el primer gesto de la sesión, sea cual sea.
+   *
+   * No se le pide nada a nadie ni se muestra un "activa el sonido": el primer
+   * clic en cualquier parte del CRM sirve, y para cuando llegue una llamada ya
+   * hubo decenas. `once` porque con uno basta.
+   */
+  useEffect(() => {
+    const desbloquear = () => void contextoTimbre()
+    const opciones = { once: true, passive: true } as const
+
+    window.addEventListener('pointerdown', desbloquear, opciones)
+    window.addEventListener('keydown', desbloquear, opciones)
+
+    return () => {
+      window.removeEventListener('pointerdown', desbloquear)
+      window.removeEventListener('keydown', desbloquear)
+    }
+  }, [])
 
   const llamar = useCallback(
     async (conversacionId: string, opciones?: { conVideo?: boolean; titulo?: string }): Promise<boolean> => {
@@ -264,46 +351,71 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
           estar en una sala de voz y recibir una llamada directa. */}
       {entrante && (
         <div
-          className="fixed inset-x-3 top-3 md:inset-x-auto md:right-6 md:top-6 md:w-[340px] z-[90] rounded-2xl p-4 shadow-2xl"
-          style={{ background: 'var(--tx-surface-1)', border: '1px solid var(--tx-border)' }}
+          className="fixed inset-0 z-[90] grid place-items-center p-4"
+          style={{ background: 'oklch(0% 0 0 / 55%)', backdropFilter: 'blur(6px)' }}
           role="alertdialog"
-          aria-label="Llamada entrante"
+          aria-modal="true"
+          aria-labelledby="llamada-entrante-quien"
         >
-          <div className="flex items-center gap-3">
-            <AvatarChat
-              nombre={quien?.nombre ?? 'Alguien'}
-              avatarUrl={quien?.avatar_url ?? null}
-              color={quien?.color ?? null}
-              size={48}
-            />
-            <div className="min-w-0">
-              <p className="text-[15px] font-semibold text-[var(--tx-ink-primary)] truncate">
+          <div
+            className="w-full max-w-[380px] rounded-3xl px-6 py-7 shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+            style={{ background: 'var(--tx-surface-1)', border: '1px solid var(--tx-border)' }}
+          >
+            <div className="flex flex-col items-center text-center">
+              {/* El anillo late al ritmo del timbre. Es lo que hace que se lea
+                  como "está sonando ahora" y no como un aviso de algo que ya
+                  pasó -- que era el problema de la tarjeta en la esquina. */}
+              <div className="relative">
+                <span
+                  className="absolute -inset-2 rounded-full animate-ping"
+                  style={{ background: 'oklch(62% 0.17 150 / 25%)' }}
+                  aria-hidden
+                />
+                <span className="relative block rounded-full">
+                  <AvatarChat
+                    nombre={quien?.nombre ?? 'Alguien'}
+                    avatarUrl={quien?.avatar_url ?? null}
+                    color={quien?.color ?? null}
+                    size={88}
+                  />
+                </span>
+              </div>
+
+              <p
+                id="llamada-entrante-quien"
+                className="mt-5 text-[20px] font-semibold text-[var(--tx-ink-primary)] truncate max-w-full"
+              >
                 {quien?.nombre ?? 'Alguien'}
               </p>
-              <p className="flex items-center gap-1.5 text-[12px] text-[var(--tx-ink-muted)]">
-                {entrante.con_video ? <VideoIcon className="size-3.5" /> : <PhoneIcon className="size-3.5" />}
+              <p className="mt-1 flex items-center gap-1.5 text-[13px] text-[var(--tx-ink-muted)]">
+                {entrante.con_video ? <VideoIcon className="size-4" /> : <PhoneIcon className="size-4" />}
                 {entrante.con_video ? 'Videollamada entrante' : 'Llamada entrante'}
               </p>
             </div>
-          </div>
 
-          <div className="mt-4 flex gap-2">
-            <button
-              onClick={rechazar}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl py-3 text-[14px] font-medium"
-              style={{ background: 'oklch(100% 0 0 / 6%)', color: 'var(--tx-ink-primary)' }}
-            >
-              <PhoneOffIcon className="size-4" />
-              Rechazar
-            </button>
-            <button
-              onClick={contestar}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl py-3 text-[14px] font-semibold"
-              style={{ background: 'oklch(62% 0.17 150)', color: 'oklch(15% 0.02 150)' }}
-            >
-              <PhoneIcon className="size-4" />
-              Contestar
-            </button>
+            {/* Rechazar a la izquierda y contestar a la derecha, separados: es el
+                orden de cualquier teléfono, y con los pulgares encima de la
+                pantalla la distancia entre ambos es lo que evita colgarle a
+                alguien por error. */}
+            <div className="mt-7 flex gap-3">
+              <button
+                onClick={rechazar}
+                className="flex-1 inline-flex flex-col items-center justify-center gap-1.5 rounded-2xl py-4 text-[13px] font-medium transition-transform active:scale-95"
+                style={{ background: 'oklch(58% 0.19 25)', color: 'oklch(98% 0 0)' }}
+              >
+                <PhoneOffIcon className="size-5" />
+                Rechazar
+              </button>
+              <button
+                onClick={contestar}
+                autoFocus
+                className="flex-1 inline-flex flex-col items-center justify-center gap-1.5 rounded-2xl py-4 text-[13px] font-semibold transition-transform active:scale-95"
+                style={{ background: 'oklch(62% 0.17 150)', color: 'oklch(15% 0.02 150)' }}
+              >
+                <PhoneIcon className="size-5" />
+                Contestar
+              </button>
+            </div>
           </div>
         </div>
       )}
