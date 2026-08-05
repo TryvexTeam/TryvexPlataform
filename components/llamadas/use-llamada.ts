@@ -58,6 +58,15 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const [camara, setCamara] = useState(conVideo)
   const [compartiendo, setCompartiendo] = useState(false)
   const [streamLocal, setStreamLocal] = useState<MediaStream | null>(null)
+  /**
+   * Lo que uno está compartiendo, para verlo en su propio recuadro.
+   *
+   * Sin esto, quien comparte es el único que no ve lo que comparte: su recuadro
+   * seguía mostrando la cámara. Y no saber si está proyectando la ventana
+   * correcta —o si sigue proyectando— es justo lo que hace que alguien muestre
+   * sin querer lo que no quería.
+   */
+  const [streamPantalla, setStreamPantalla] = useState<MediaStream | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** Falso cuando no hay TURN configurado: hay redes donde no va a conectar. */
   const [hayTurn, setHayTurn] = useState(true)
@@ -368,6 +377,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       local.current = null
       pantalla.current = null
       setStreamLocal(null)
+      setStreamPantalla(null)
       setParticipantes([])
       if (canal.current) supabase.removeChannel(canal.current)
       canal.current = null
@@ -439,6 +449,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     }
     pantalla.current.getTracks().forEach((t) => t.stop())
     pantalla.current = null
+    setStreamPantalla(null)
     setCompartiendo(false)
     aplicarCalidad()
     enviar({ tipo: 'pantalla', de: miIntegranteId, activa: false })
@@ -457,6 +468,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       })
       const pista = stream.getVideoTracks()[0]
       pantalla.current = stream
+      setStreamPantalla(stream)
 
       for (const { pc } of pares.current.values()) {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
@@ -494,6 +506,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   return {
     participantes,
     streamLocal,
+    streamPantalla,
     micro,
     camara,
     compartiendo,
