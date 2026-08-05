@@ -63,3 +63,47 @@ export async function DELETE(req: Request) {
 
   return NextResponse.json({ success: true })
 }
+
+/**
+ * Cuántos dispositivos tiene registrados quien pregunta, y si el servidor puede
+ * mandar push.
+ *
+ * Existe para poder responder "¿por qué no me llega la notificación?" sin
+ * adivinar. Son tres causas distintas con arreglos distintos y hasta ahora
+ * ninguna era visible: el teléfono no está suscrito, faltan las llaves VAPID en
+ * el entorno, o el envío sale y el sistema operativo no la muestra.
+ */
+export async function GET() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
+
+  const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+  if (!perfil) return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
+
+  const { data, error } = await supabase
+    .from('push_subscriptions')
+    .select('endpoint, last_used_at, created_at')
+    .eq('integrante_id', perfil.id)
+
+  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+
+  const subs = (data ?? []) as { endpoint: string; last_used_at: string | null; created_at: string }[]
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      // El endpoint completo es una credencial: se recorta al servicio y poco más.
+      dispositivos: subs.map((s) => ({
+        servicio: new URL(s.endpoint).hostname,
+        creado: s.created_at,
+        ultimo_uso: s.last_used_at,
+      })),
+      // Sin esto no se puede distinguir "no tengo el teléfono registrado" de
+      // "el servidor no tiene con qué firmar el envío".
+      servidor_puede_enviar: Boolean(
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY,
+      ),
+    },
+  })
+}
