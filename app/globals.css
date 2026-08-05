@@ -1214,3 +1214,21 @@
 .pb-nav-movil {
   padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 }
+
+/* ── Puntero fino vs. táctil ───────────────────────────────────────────────
+   Las acciones de un mensaje se revelan al pasar el mouse (`group-hover`). En
+   un dispositivo táctil ese estado no existe nunca, así que la barra jamás se
+   mostraba y desde el celular no había forma de reaccionar ni de fijar.
+
+   El corte NO puede ser por ancho de pantalla: un notebook táctil es ancho y
+   no tiene hover fiable, y una tablet apaisada supera el breakpoint `md`. Lo
+   que decide es el dispositivo de entrada, no cuántos píxeles mide. */
+.solo-puntero-fino {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .solo-puntero-fino {
+    display: contents;
+  }
+}

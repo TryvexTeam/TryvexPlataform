@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Menu, LogOut, Settings } from 'lucide-react'
+import { LogOut, Settings } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
@@ -16,8 +16,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { Sidebar } from './sidebar'
 
 const routeLabels: Record<string, string> = {
   '/dashboard':           'Dashboard',
@@ -63,7 +61,6 @@ interface TopbarProps {
 
 export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
   const router = useRouter()
-  const [sheetOpen, setSheetOpen] = useState(false)
   const [status, setStatus] = useState<'online' | 'offline'>('online')
 
   useEffect(() => {
@@ -112,20 +109,13 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
         borderBottom: '1px solid var(--tx-border)',
       }}
     >
-      {/* Left: mobile menu + breadcrumb */}
+      {/* Left: breadcrumb.
+          El botón de menú que abría el lateral en el teléfono se quitó: la barra
+          inferior ya lleva los atajos y un menú con todas las secciones. Dos
+          navegaciones para lo mismo obligan a adivinar cuál usar, y en una
+          pantalla chica ese botón le comía espacio a la única cosa que la barra
+          superior tiene que decir, que es dónde estoy parado. */}
       <div className="flex items-center gap-3">
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetTrigger
-            className="md:hidden inline-flex items-center justify-center h-7 w-7 rounded-md text-[var(--tx-ink-muted)] hover:bg-[var(--tx-surface-1)] transition-colors"
-            aria-label="Abrir menú"
-          >
-            <Menu size={16} />
-          </SheetTrigger>
-          <SheetContent side="left" className="p-0 w-[220px]">
-            <Sidebar onNavigate={() => setSheetOpen(false)} forceExpand />
-          </SheetContent>
-        </Sheet>
-
         <Breadcrumb />
       </div>
 

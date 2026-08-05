@@ -257,8 +257,20 @@ export class ChatRepository {
     if (errorBusca) throw new Error(errorBusca.message)
 
     if (existente) {
-      const { error } = await this.sb.from('mensaje_reacciones').delete().eq('id', existente.id)
+      // El `.select()` no es decorativo: sin él, un DELETE que la RLS bloquea
+      // borra cero filas y devuelve éxito. La UI quitaba la píldora, el servidor
+      // no borraba nada, y al recargar la reacción seguía ahí. Un rechazo mudo es
+      // indiagnosticable: si no se pudo borrar, hay que decirlo.
+      const { data: borradas, error } = await this.sb
+        .from('mensaje_reacciones')
+        .delete()
+        .eq('id', existente.id)
+        .select('id')
+
       if (error) throw new Error(error.message)
+      if (!borradas || borradas.length === 0) {
+        throw new Error('42501: no se pudo quitar la reacción')
+      }
       return { puesta: false }
     }
 
@@ -267,8 +279,32 @@ export class ChatRepository {
       .insert({ mensaje_id: mensajeId, integrante_id: integranteId, emoji })
 
     if (error) {
-      // 23505 = el índice único frenó un doble clic. El resultado deseado ya está.
-      if (error.code === '23505') return { puesta: true }
+      // 23505 = el índice único rebotó el INSERT, o sea que la fila SÍ existe.
+      //
+      // Antes se devolvía `puesta: true` dando por hecho un doble clic. Pero el
+      // índice no entiende de RLS: valida contra todas las filas, las vea o no el
+      // SELECT de arriba. Así que si el pre-SELECT no encontró la reacción y el
+      // INSERT choca, lo que pasó es que el usuario quiso QUITARLA y el código la
+      // reportó como puesta -- éxito falso. La píldora desaparecía de la pantalla
+      // y al recargar seguía ahí.
+      //
+      // En un interruptor, un conflicto prueba que la fila existe, y existir
+      // significa que tocaba borrarla.
+      if (error.code === '23505') {
+        const { data: borradas } = await this.sb
+          .from('mensaje_reacciones')
+          .delete()
+          .eq('mensaje_id', mensajeId)
+          .eq('integrante_id', integranteId)
+          .eq('emoji', emoji)
+          .select('id')
+
+        if (borradas && borradas.length > 0) return { puesta: false }
+
+        // La fila existe pero no se pudo borrar: es un permiso, no un doble clic.
+        // Decirlo es lo único honesto -- callarlo devuelve la pantalla a mentir.
+        throw new Error('42501: no se pudo quitar la reacción')
+      }
       throw new Error(error.message)
     }
     return { puesta: true }
@@ -399,5 +435,15 @@ export class ChatRepository {
       .eq('integrante_id', integranteId)
       .maybeSingle()
     return Boolean(data)
+  }
+
+  /** Los IDs de quienes están en el hilo. A ellos les timbra una llamada. */
+  async miembrosDe(conversacionId: string): Promise<string[]> {
+    const { data, error } = await this.sb
+      .from('conversacion_miembros')
+      .select('integrante_id')
+      .eq('conversacion_id', conversacionId)
+    if (error) throw new Error(error.message)
+    return ((data ?? []) as { integrante_id: string }[]).map((m) => m.integrante_id)
   }
 }

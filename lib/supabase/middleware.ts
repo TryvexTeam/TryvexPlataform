@@ -35,7 +35,11 @@ export async function updateSession(request: NextRequest) {
   )
 
   let user = null
-  if (process.env.BYPASS_AUTH === 'true') {
+  // El fusible de entorno importa: `BYPASS_AUTH` apaga la autenticación entera.
+  // En Vercel es fácil marcar las tres casillas al crear una variable y dejarla
+  // también en producción; sin esta condición, eso abre el CRM a cualquiera que
+  // pase por la URL, haciéndose pasar por el superadmin.
+  if (process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true') {
     user = { id: '1230b7c1-8086-4f14-b6b1-2afa9deb56ae', email: 'ignacio.andres.navarrete.silva@gmail.com' }
   } else {
     const res = await supabase.auth.getUser()

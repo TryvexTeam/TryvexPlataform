@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeftIcon, PaperclipIcon, PinIcon, SendIcon, XIcon } from 'lucide-react'
+import { ChevronLeftIcon, PaperclipIcon, PhoneIcon, PinIcon, SendIcon, VideoIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
@@ -20,6 +20,7 @@ import { ReaccionesMensaje } from './reacciones-mensaje'
 import { GestosMensaje } from './gestos-mensaje'
 import { CitaMensaje } from './cita-mensaje'
 import { PanelHilo } from './panel-hilo'
+import { useLlamadas } from '@/components/llamadas/proveedor-llamadas'
 import type { AgenteChat } from './chat-workspace'
 
 interface HiloChatProps {
@@ -65,6 +66,9 @@ export function HiloChat({
   const finRef = useRef<HTMLDivElement>(null)
   const cajaRef = useRef<HTMLTextAreaElement>(null)
   const archivosRef = useRef<HTMLInputElement>(null)
+
+  const { llamar, conversacionActiva } = useLlamadas()
+  const hayLlamadaAca = conversacionActiva === conversacion.id
 
   const porId = new Map<string, MiembroChat>(conversacion.miembros.map((m) => [m.integrante_id, m]))
   const agentePorId = new Map(agentes.map((a) => [a.id, a]))
@@ -210,8 +214,18 @@ export function HiloChat({
    * Se pinta antes de que responda el servidor: una reacción que tarda medio segundo
    * en aparecer se siente rota, y es la interacción más liviana del chat. Si el POST
    * falla, se revierte y se avisa.
+   *
+   * El servidor devuelve `puesta` con el estado FINAL y esa es la verdad, no lo que
+   * adivinó el optimismo de acá. Antes se descartaba: si el cliente creía estar
+   * quitando y el servidor terminaba dejando la reacción puesta, la píldora
+   * desaparecía de la pantalla, nadie se enteraba, y al recargar seguía ahí. Un
+   * desacuerdo silencioso entre cliente y servidor es indiagnosticable: si el
+   * resultado no fue el que se pintó, hay que volver atrás y decirlo.
    */
   const alternarReaccion = async (mensaje: Mensaje, emoji: string) => {
+    // Lo que el usuario quiso hacer, leído de la píldora que efectivamente tocó.
+    const queriaPoner = !(mensaje.reacciones ?? []).find((r) => r.emoji === emoji)?.mia
+
     const aplicar = (lista: Mensaje[], invertir: boolean) =>
       lista.map((m) => {
         if (m.id !== mensaje.id) return m
@@ -251,6 +265,19 @@ export function HiloChat({
       })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo reaccionar')
+
+      // El servidor es un interruptor y decide él: si su estado final no coincide
+      // con el que se pintó, gana el suyo. Se revierte y se avisa en vez de dejar
+      // la pantalla mintiendo hasta la próxima recarga.
+      const puesta = (json.data as { puesta?: boolean } | undefined)?.puesta
+      if (typeof puesta === 'boolean' && puesta !== queriaPoner) {
+        setMensajes((previos) => aplicar(previos, true))
+        toast.error(
+          puesta
+            ? 'No se pudo quitar la reacción: sigue puesta.'
+            : 'No se pudo poner la reacción.',
+        )
+      }
     } catch (err) {
       setMensajes((previos) => aplicar(previos, true))
       toast.error(err instanceof Error ? err.message : 'Error al reaccionar')
@@ -339,7 +366,7 @@ export function HiloChat({
           estado={conversacion.tipo === 'dm' ? estadoOtro : undefined}
           size={36}
         />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-[15px] font-semibold text-[var(--tx-ink-primary)] truncate">{titulo}</p>
           <p className="text-[12px] text-[var(--tx-ink-muted)]">
             {conversacion.tipo !== 'dm'
@@ -348,6 +375,26 @@ export function HiloChat({
                  (estadoOtro ? PRESENCIA_LABEL[estadoOtro] : 'Sin datos'))}
           </p>
         </div>
+
+        {/* Llamar. En el canal de agentes no va: no hay nadie del otro lado que
+            pueda contestar. */}
+        {conversacion.tipo !== 'agentes' && (
+          <div className="flex items-center gap-1 shrink-0">
+            <BotonLlamar
+              etiqueta={hayLlamadaAca ? 'Unirse a la llamada' : 'Llamar por voz'}
+              destacado={hayLlamadaAca}
+              onClick={() => llamar(conversacion.id, { titulo })}
+            >
+              <PhoneIcon className="size-5" />
+            </BotonLlamar>
+            <BotonLlamar
+              etiqueta="Videollamada"
+              onClick={() => llamar(conversacion.id, { conVideo: true, titulo })}
+            >
+              <VideoIcon className="size-5" />
+            </BotonLlamar>
+          </div>
+        )}
       </header>
 
       {/* Fijados: lo que hay que tener a mano sin buscarlo. Se muestra el más
@@ -418,9 +465,12 @@ export function HiloChat({
               <GestosMensaje
                 key={m.id}
                 puedeBorrar={mio || soyAdmin}
+                fijado={Boolean(m.fijado_at)}
                 onResponder={() => setCitando(m)}
                 onAbrirHilo={() => setHiloAbierto(m)}
                 onBorrar={() => borrar(m)}
+                onReaccionar={(emoji) => alternarReaccion(m, emoji)}
+                onFijar={() => alternarFijado(m)}
               >
               <div className={`flex gap-2 min-w-0 ${mio ? 'justify-end' : 'justify-start'}`}>
                 {/* La foto va en todos los hilos, no solo en grupos: es la cara de
@@ -518,9 +568,10 @@ export function HiloChat({
                         fijado
                       </span>
                     )}
-                    {/* Solo con mouse: en el teléfono se usa deslizar o mantener
-                        presionado, que no requieren apuntar a un botón de 28px. */}
-                    <span className="hidden md:contents">
+                    {/* Solo donde hay hover real: en táctil se usa deslizar o
+                        mantener presionado. El corte va por tipo de puntero, no
+                        por ancho — un notebook táctil es ancho y no tiene hover. */}
+                    <span className="solo-puntero-fino">
                       <AccionesMensaje
                         puedeBorrar={mio || soyAdmin}
                         fijado={Boolean(m.fijado_at)}
@@ -658,5 +709,34 @@ export function HiloChat({
         />
       )}
     </div>
+  )
+}
+
+interface BotonLlamarProps {
+  etiqueta: string
+  onClick: () => void
+  /** Pinta el botón como "hay algo pasando acá": una llamada ya en curso. */
+  destacado?: boolean
+  children: React.ReactNode
+}
+
+/**
+ * 40px de lado y con `title`: en el teléfono se toca con el pulgar sin apuntar,
+ * y en el escritorio se entiende sin adivinar qué hace el icono.
+ */
+function BotonLlamar({ etiqueta, onClick, destacado = false, children }: BotonLlamarProps) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={etiqueta}
+      title={etiqueta}
+      className="inline-flex size-10 items-center justify-center rounded-full transition-colors"
+      style={{
+        color: destacado ? 'var(--tx-accent)' : 'var(--tx-ink-muted)',
+        background: destacado ? 'oklch(62% 0.19 255 / 15%)' : 'transparent',
+      }}
+    >
+      {children}
+    </button>
   )
 }

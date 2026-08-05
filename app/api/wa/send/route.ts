@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { normalizarTelefono } from '@/lib/vex/telefono'
+import { IntegrantesRepository } from '@/lib/repos/integrantes'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -28,6 +29,13 @@ export async function POST(req: Request) {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+
+  // Tener sesión no alcanza. Más abajo esta ruta usa la clave de servicio, que
+  // salta la RLS: sin este chequeo, cualquiera con una cuenta podía mandar un
+  // WhatsApp a un cliente desde el número de la agencia. El daño no es leer
+  // datos, es hablar en nombre de Tryvex.
+  const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+  if (!perfil) return NextResponse.json({ error: 'No eres integrante activo' }, { status: 403 })
 
   const raw = await req.json().catch(() => null)
   const parsed = bodySchema.safeParse(raw)

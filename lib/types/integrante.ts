@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { esTelefonoValido, normalizarTelefonoCL } from '@/lib/telefono'
 
 /** Paleta curada estilo Google Calendar — el selector solo permite estos valores */
 export const PALETA_CALENDARIO = [
@@ -44,12 +45,34 @@ export const NotificacionesSchema = z.object({
   cobro_proximo: z.boolean().default(true),
   tarea_asignada: z.boolean().default(true),
   cita_invitado: z.boolean().default(true),
+  llamada_entrante: z.boolean().default(true),
 })
+
+/**
+ * Teléfono del integrante: entra como lo escriba la persona y sale en E.164.
+ *
+ * El porqué de normalizar acá y no en el componente: la ficha arma el botón de
+ * llamar con `tel:` directo sobre este valor, y el CHECK de la migración 034 rechaza
+ * cualquier otro formato. Si el schema dejara pasar "920394617", el guardado
+ * explotaría con un error de Postgres ilegible en vez de un mensaje al usuario.
+ *
+ * El string vacío se trata como "borrar el teléfono", no como error: es lo que
+ * produce un input al que le limpiaron el contenido.
+ */
+const TelefonoSchema = z
+  .string()
+  .nullable()
+  .refine((valor) => valor === null || valor.trim() === '' || esTelefonoValido(valor), {
+    message: 'Teléfono chileno inválido. Ej: +56 9 1234 5678',
+  })
+  .transform((valor): string | null =>
+    valor === null || valor.trim() === '' ? null : normalizarTelefonoCL(valor)
+  )
 
 export const PerfilUpdateSchema = z.object({
   nombre: z.string().min(1, 'El nombre es requerido').optional(),
   especialidad: z.string().nullable().optional(),
-  telefono: z.string().nullable().optional(),
+  telefono: TelefonoSchema.optional(),
   color: z.enum(COLORES_HEX).nullable().optional(),
   horario: z.array(HorarioDiaSchema).nullable().optional(),
   notificaciones: NotificacionesSchema.partial().nullable().optional(),
@@ -84,6 +107,7 @@ export const NOTIFICACIONES_LABELS: { key: keyof Notificaciones; label: string; 
   { key: 'cobro_proximo', label: 'Cobro próximo', descripcion: 'Cuando se acerca una fecha de cobro pendiente' },
   { key: 'tarea_asignada', label: 'Tarea asignada', descripcion: 'Cuando te asignan una tarea con fecha' },
   { key: 'cita_invitado', label: 'Citas', descripcion: 'Cuando te invitan a una cita o evento' },
+  { key: 'llamada_entrante', label: 'Llamadas', descripcion: 'Cuando alguien del equipo te llama por la app' },
 ]
 
 export const DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as const
