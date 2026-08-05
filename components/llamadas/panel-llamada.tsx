@@ -63,6 +63,28 @@ export function PanelLlamada({
   const [chatAbierto, setChatAbierto] = useState(false)
   const [musicaAbierta, setMusicaAbierta] = useState(false)
   /**
+   * Atenuación general de las voces, de 0 a 1. Multiplica al volumen por persona
+   * en vez de reemplazarlo: se puede bajar a todos para escuchar la música y
+   * seguir subiendo al que no se le entiende.
+   *
+   * Existe porque la música no se puede subir por encima del 100%: sale del
+   * iframe de YouTube, que es cross-origin y no admite un GainNode. Bajar el otro
+   * lado es la única palanca real.
+   */
+  const [volumenVoces, setVolumenVoces] = useState(1)
+  /**
+   * Panel de música encogido: queda el video y los controles, se van la cola, el
+   * volumen, el buscador y los datos de la pista.
+   *
+   * Vive acá y no en el reproductor porque decide el ancho del hueco, y con eso
+   * cuánto le queda a la grilla: los recuadros de la gente se reacomodan solos
+   * porque la grilla mide su caja con un ResizeObserver.
+   */
+  const [musicaEncogida, setMusicaEncogida] = useState(false)
+  const anclaMusicaRef = useRef<HTMLDivElement>(null)
+  /** Dónde está el hueco reservado, en coordenadas de viewport. */
+  const [huecoMusica, setHuecoMusica] = useState<DOMRect | null>(null)
+  /**
    * Ensordecer: dejar de oír a todos. Como en Discord, también apaga el propio
    * micrófono -- si uno no está escuchando, seguir transmitiendo es hablarle a
    * una conversación que no sigue.
@@ -189,6 +211,40 @@ export function PanelLlamada({
    */
   const musicaVisible = musicaAbierta || Boolean(musica.sala.video_id)
 
+  /**
+   * Seguir al hueco reservado para el panel de música.
+   *
+   * El reproductor se monta UNA vez y fuera de la vista, por la misma razón que
+   * la capa de audio: si viviera dentro, minimizar la llamada lo desmontaría y
+   * la música se cortaría -- y al restaurar nacía un iframe nuevo, que es el
+   * negro con el cargando de YouTube. Como no puede estar en el flujo, se le
+   * calca la posición al ancla, que sí está y sí empuja a los recuadros.
+   *
+   * Se mide con ResizeObserver sobre el ancla y con uno sobre el contenedor
+   * entero: el hueco también se mueve cuando se abre el chat al lado o cuando
+   * cambia el tamaño de la ventana, y eso no cambia el tamaño del ancla.
+   */
+  useEffect(() => {
+    const ancla = anclaMusicaRef.current
+    if (!ancla || minimizado) {
+      setHuecoMusica(null)
+      return
+    }
+
+    const medir = () => setHuecoMusica(ancla.getBoundingClientRect())
+    medir()
+
+    const observador = new ResizeObserver(medir)
+    observador.observe(ancla)
+    if (ancla.parentElement) observador.observe(ancla.parentElement)
+    window.addEventListener('resize', medir)
+
+    return () => {
+      observador.disconnect()
+      window.removeEventListener('resize', medir)
+    }
+  }, [musicaVisible, minimizado, musicaEncogida, chatAbierto])
+
   const terminar = async () => {
     await colgar()
     onCerrar()
@@ -294,7 +350,11 @@ export function PanelLlamada({
           key={p.integranteId}
           stream={p.stream}
           mudo={ensordecido || silenciados.has(p.integranteId)}
-          volumen={volumenes.get(p.integranteId) ?? 1}
+          // La atenuación general se aplica acá, sobre el audio, y NO en el
+          // control de cada persona: si multiplicara el valor que alimenta ese
+          // slider, mover el volumen de alguien guardaría el nivel ya atenuado
+          // como si fuera el suyo, y al subir las voces quedaría al doble.
+          volumen={(volumenes.get(p.integranteId) ?? 1) * volumenVoces}
         />
       ))}
     </div>
@@ -550,16 +610,15 @@ export function PanelLlamada({
           />
         )}
 
+        {/* El hueco del panel de música. El reproductor no se dibuja acá dentro:
+            se monta una sola vez fuera de esta vista y se posiciona encima de
+            este ancla. Lo que hace este div es reservar el ancho, que es lo que
+            corre los recuadros de la gente. */}
         {musicaVisible && (
-          <ReproductorMusica
-            musica={musica}
-            // Cerrar con algo sonando es detener la música: si solo se ocultara,
-            // el reproductor se desmontaría y el audio se cortaría igual, pero sin
-            // que el resto del equipo se entere de por qué.
-            onCerrar={() => {
-              if (musica.sala.video_id) void musica.ejecutar('stop')
-              setMusicaAbierta(false)
-            }}
+          <div
+            ref={anclaMusicaRef}
+            className={`shrink-0 w-full ${musicaEncogida ? 'md:w-[224px]' : 'md:w-[320px]'} min-h-[280px] md:min-h-0`}
+            aria-hidden
           />
         )}
       </div>
@@ -631,13 +690,53 @@ export function PanelLlamada({
     )
   }
 
-  // La capa de audio va SIEMPRE en el mismo lugar del árbol, hermana de la vista
-  // y nunca dentro de ella. Es lo que hace que minimizar y restaurar no la
-  // desmonte: React solo reconcilia `vista`, y el audio ni se entera.
+  // La capa de audio y el reproductor de música van SIEMPRE en el mismo lugar del
+  // árbol, hermanos de la vista y nunca dentro de ella. Es lo que hace que
+  // minimizar y restaurar no los desmonte: React solo reconcilia `vista`, y ellos
+  // ni se enteran. Para la música eso es la diferencia entre seguir sonando y
+  // cortarse cada vez que alguien vuelve al CRM un momento.
   return (
     <>
       {capaAudio}
       {vista}
+
+      {musicaVisible && (
+        <div
+          className="fixed z-[81]"
+          style={
+            huecoMusica
+              ? {
+                  top: huecoMusica.top,
+                  left: huecoMusica.left,
+                  width: huecoMusica.width,
+                  height: huecoMusica.height,
+                }
+              : // Con la llamada minimizada el hueco no existe, pero el reproductor
+                // tiene que seguir a la vista: apagarlo cortaría la música, y
+                // esconderlo rompe los términos de la API. Queda como miniatura
+                // sobre la píldora de "En llamada".
+                { bottom: 88, right: 12, width: 224, height: 300 }
+          }
+        >
+          <ReproductorMusica
+            musica={musica}
+            // Cerrar con algo sonando es detener la música: si solo se ocultara,
+            // el reproductor se desmontaría y el audio se cortaría igual, pero sin
+            // que el resto del equipo se entere de por qué.
+            onCerrar={() => {
+              if (musica.sala.video_id) void musica.ejecutar('stop')
+              setMusicaAbierta(false)
+            }}
+            volumenVoces={volumenVoces}
+            onVolumenVoces={setVolumenVoces}
+            // Con la llamada minimizada solo cabe la miniatura, sin cola ni
+            // sliders: se fuerza encogido sin tocar la preferencia de la persona,
+            // que vuelve tal cual estaba al restaurar.
+            encogido={musicaEncogida || minimizado}
+            onEncogido={setMusicaEncogida}
+          />
+        </div>
+      )}
     </>
   )
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ListMusicIcon,
   Maximize2Icon,
+  MicIcon,
   Minimize2Icon,
   MusicIcon,
   PauseIcon,
@@ -56,6 +57,15 @@ const REVISION_MS = 1000
 interface ReproductorMusicaProps {
   musica: Musica
   onCerrar: () => void
+  /** 0 a 1, donde 1 es el volumen normal de las voces. */
+  volumenVoces: number
+  onVolumenVoces: (valor: number) => void
+  /**
+   * Controlado desde afuera porque el ancho del panel decide cuánto espacio le
+   * queda a la grilla de video, y de eso se encarga el panel de la llamada.
+   */
+  encogido: boolean
+  onEncogido: (valor: boolean) => void
 }
 
 // ── Tipos mínimos del IFrame Player API ────────────────────────────────────
@@ -130,7 +140,14 @@ function cargarApiYouTube(): Promise<YTApi> {
   return cargando
 }
 
-export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) {
+export function ReproductorMusica({
+  musica,
+  onCerrar,
+  volumenVoces,
+  onVolumenVoces,
+  encogido,
+  onEncogido,
+}: ReproductorMusicaProps) {
   const { sala, aviso, limpiarAviso, ejecutar, poner, alTerminar } = musica
 
   const contenedorRef = useRef<HTMLDivElement>(null)
@@ -145,17 +162,6 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
   const [necesitaGesto, setNecesitaGesto] = useState(false)
   const [errorApi, setErrorApi] = useState<string | null>(null)
   const [buscador, setBuscador] = useState(false)
-  /**
-   * Encogido: queda el video y los controles de transporte, se van la cola, el
-   * volumen, el buscador y los datos de la pista.
-   *
-   * No desmonta nada: el iframe sigue siendo el mismo nodo y a la vista con sus
-   * 200×200, así que la música no se corta ni se infringen los términos. Lo que
-   * se gana son ~100 px de columna que la grilla de video recupera sola -- mide
-   * su caja con un ResizeObserver, así que los recuadros de la gente se
-   * reacomodan sin que nadie los avise.
-   */
-  const [encogido, setEncogido] = useState(false)
 
   const actual = pistaActual(sala)
 
@@ -300,11 +306,11 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
   const posicion = actual ? Math.floor(posicionActual(sala, new Date())) : 0
 
   return (
+    /* Sin ancho propio: lo decide el hueco que le reserva el panel de la llamada,
+       que es el que sabe cuánto espacio le queda a la grilla de video. */
     <aside
-      className={`flex flex-col min-h-0 w-full shrink-0 overflow-y-auto ${
-        encogido ? 'md:w-[224px]' : 'md:w-[320px]'
-      }`}
-      style={{ borderLeft: '1px solid var(--tx-border)' }}
+      className="flex flex-col min-h-0 size-full shrink-0 overflow-y-auto"
+      style={{ borderLeft: '1px solid var(--tx-border)', background: 'oklch(10% 0.004 240 / 92%)' }}
       aria-label="Música de la llamada"
     >
       <header
@@ -328,7 +334,7 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
           )}
           <button
             onClick={() => {
-              setEncogido((v) => !v)
+              onEncogido(!encogido)
               // Con el panel encogido el buscador no se ve; dejarlo abierto haría
               // que reapareciera solo al extender, sin que nadie lo pidiera.
               setBuscador(false)
@@ -476,6 +482,36 @@ export function ReproductorMusica({ musica, onCerrar }: ReproductorMusicaProps) 
           />
           <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
             {volumen}%
+          </span>
+        </div>
+      )}
+
+      {/*
+        Bajar las voces, que es la única forma real de que la música se oiga más.
+        El audio sale del iframe de YouTube, que es cross-origin: no se puede
+        enganchar a WebAudio ni pasarle un GainNode, y `setVolume` recorta
+        cualquier valor sobre 100. Sacar la pista por otro camino para
+        amplificarla es justo lo que hace que YouTube cierre el acceso a la API.
+
+        Las voces sí pasan por WebAudio, así que atenuarlas es la palanca que
+        queda: se baja acá y se sube el volumen del sistema. El volumen por
+        persona sigue mandando encima de éste -- a quien no se le entiende se le
+        puede subir igual.
+      */}
+      {!encogido && (
+        <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
+          <MicIcon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(volumenVoces * 100)}
+            onChange={(e) => onVolumenVoces(Number(e.target.value) / 100)}
+            aria-label="Volumen de las voces"
+            className="flex-1 accent-[var(--tx-accent)]"
+          />
+          <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-[var(--tx-ink-muted)]">
+            {Math.round(volumenVoces * 100)}%
           </span>
         </div>
       )}
