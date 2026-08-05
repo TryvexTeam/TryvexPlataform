@@ -319,7 +319,17 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
       />
 
       <ClienteForm open={editOpen} onOpenChange={setEditOpen} cliente={cliente} onSubmit={handleEdit} />
-      <PagoForm open={pagoOpen} onOpenChange={setPagoOpen} clienteId={cliente.id} proyectos={proyectos} onCreated={() => router.refresh()} />
+      <PagoForm
+        open={pagoOpen}
+        onOpenChange={setPagoOpen}
+        clienteId={cliente.id}
+        proyectos={proyectos}
+        onCreated={() => router.refresh()}
+        ventasPendientes={ventas.filter(
+          (v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado'
+        )}
+        onMarcarPagada={handleMarcarPagado}
+      />
     </div>
   )
 }
