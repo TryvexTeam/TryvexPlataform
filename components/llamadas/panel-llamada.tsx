@@ -1,19 +1,25 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  HeadphoneOffIcon,
+  HeadphonesIcon,
   MessageSquareIcon,
   MicIcon,
   MicOffIcon,
   MonitorUpIcon,
   MonitorXIcon,
   PhoneOffIcon,
+  Volume2Icon,
+  VolumeXIcon,
   ShieldAlertIcon,
   VideoIcon,
   VideoOffIcon,
 } from 'lucide-react'
 import { AvatarChat } from '@/components/chat/avatar-chat'
 import { ChatLlamada } from './chat-llamada'
+import { useGrillaVideo } from './use-grilla-video'
+import { useHablando } from './use-hablando'
 import { useLlamada, type ParticipanteVivo } from './use-llamada'
 
 interface PersonaLlamada {
@@ -51,6 +57,32 @@ export function PanelLlamada({
   const [minimizado, setMinimizado] = useState(false)
   const [chatAbierto, setChatAbierto] = useState(false)
   /**
+   * Ensordecer: dejar de oír a todos. Como en Discord, también apaga el propio
+   * micrófono -- si uno no está escuchando, seguir transmitiendo es hablarle a
+   * una conversación que no sigue.
+   */
+  const [ensordecido, setEnsordecido] = useState(false)
+  /** Para devolver el micrófono como estaba si se ensordeció con él prendido. */
+  const microAntesRef = useRef(true)
+  /**
+   * Volumen por persona, de 0 a 1. Como en Discord.
+   *
+   * Sirve para lo que pasa de verdad en una llamada de equipo: uno tiene el
+   * micrófono muy arriba y otro casi no se oye. Bajarle a uno es mejor que
+   * pedirle que se arregle el micrófono a mitad de la conversación.
+   */
+  const [volumenes, setVolumenes] = useState<Map<string, number>>(() => new Map())
+  /** De quién está abierto el control de volumen. */
+  const [volumenAbierto, setVolumenAbierto] = useState<string | null>(null)
+  /**
+   * A quién silencié yo, solo para mí. Como en Discord: el otro sigue hablando
+   * normalmente y el resto lo sigue oyendo — no se le impone nada a nadie.
+   *
+   * Va aparte del volumen en 0 para no perder el nivel que tenía: al quitarle el
+   * silencio vuelve a como estaba, no a 100%.
+   */
+  const [silenciados, setSilenciados] = useState<Set<string>>(() => new Set())
+  /**
    * A quién se está mirando en grande. `null` = todos parejos en la grilla.
    *
    * Con cinco recuadros del mismo tamaño no se lee una pantalla compartida ni se
@@ -59,6 +91,7 @@ export function PanelLlamada({
   const [destacado, setDestacado] = useState<string | null>(null)
   const {
     participantes,
+    conexion,
     streamLocal,
     streamPantalla,
     micro,
@@ -94,6 +127,101 @@ export function PanelLlamada({
     return () => window.removeEventListener('keydown', alTeclear)
   }, [])
 
+  const recuadros: RecuadroProps[] = [
+    {
+      id: miIntegranteId,
+      // Si estoy compartiendo, mi recuadro muestra lo que comparto, no mi cara.
+      stream: streamPantalla ?? streamLocal,
+      nombre: yo?.nombre ? `${yo.nombre} (tú)` : 'Tú',
+      avatarUrl: yo?.avatar_url ?? null,
+      color: yo?.color ?? null,
+      micro,
+      camara,
+      compartiendo,
+      estado: 'conectado',
+    },
+    ...participantes.map((p) => {
+      const persona = porId.get(p.integranteId)
+      return {
+        id: p.integranteId,
+        stream: p.stream,
+        nombre: persona?.nombre ?? 'Alguien',
+        avatarUrl: persona?.avatar_url ?? null,
+        color: persona?.color ?? null,
+        micro: p.micro,
+        camara: p.camara,
+        compartiendo: p.compartiendo,
+        estado: p.estado,
+      }
+    }),
+  ]
+
+  const enGrande = recuadros.find((r) => r.id === destacado) ?? null
+  const enGrilla = recuadros.filter((r) => r.id !== destacado)
+
+  // La caja real que le queda a los videos, ya descontado el chat si está
+  // abierto. De acá sale el tamaño de cada recuadro.
+  const cajaRef = useRef<HTMLDivElement>(null)
+  const grilla = useGrillaVideo(cajaRef, enGrande ? 0 : enGrilla.length)
+
+  const quienesHablan = useHablando(
+    useMemo(
+      () => participantes.map((p) => ({ id: p.integranteId, stream: p.stream })),
+      [participantes],
+    ),
+  )
+
+  /**
+   * Si alguien empieza a compartir pantalla, se destaca solo.
+   *
+   * Es lo que hacen Meet y Discord, y por una razón práctica: nadie comparte
+   * pantalla para que la miren en un recuadro de 200 píxeles. Un clic en
+   * cualquier otro recuadro deshace la elección, así que no se le impone nada a
+   * quien prefiera la grilla.
+   */
+  const compartiendoAhora = participantes.find((p) => p.compartiendo)?.integranteId ?? null
+  useEffect(() => {
+    if (compartiendoAhora) setDestacado(compartiendoAhora)
+  }, [compartiendoAhora])
+
+  /**
+   * El audio de la llamada, separado de los recuadros.
+   *
+   * Tiene que estar acá y no dentro del video de cada recuadro: al minimizar se
+   * desmontaba la grilla entera y con ella los `<video>` que reproducían el
+   * sonido, así que la llamada se quedaba muda. Minimizar es justamente lo que
+   * uno hace para seguir hablando mientras trabaja.
+   *
+   * Esta capa se renderiza en los tres estados -- llamada abierta, minimizada y
+   * error -- así que el audio nunca depende de lo que se esté viendo.
+   */
+  const capaAudio = (
+    <div className="sr-only" aria-hidden>
+      {participantes.map((p) => (
+        <AudioRemoto
+          key={p.integranteId}
+          stream={p.stream}
+          mudo={ensordecido || silenciados.has(p.integranteId)}
+          volumen={volumenes.get(p.integranteId) ?? 1}
+        />
+      ))}
+    </div>
+  )
+
+  const alternarEnsordecer = () => {
+    if (!ensordecido) {
+      microAntesRef.current = micro
+      if (micro) alternarMicro()
+      setEnsordecido(true)
+      return
+    }
+    setEnsordecido(false)
+    // Solo se devuelve el micrófono si estaba prendido antes: si uno ya estaba
+    // en silencio y ensordeció, al volver no hay que abrirle el micrófono sin
+    // que lo pida.
+    if (microAntesRef.current && !micro) alternarMicro()
+  }
+
   if (error) {
     return (
       <div className="fixed inset-x-3 bottom-24 md:bottom-6 md:right-6 md:left-auto md:w-[360px] z-[80] rounded-xl p-4"
@@ -114,58 +242,28 @@ export function PanelLlamada({
   // significa no poder usar el CRM, que es justo lo contrario de lo que se busca.
   if (minimizado) {
     return (
-      <button
-        onClick={() => setMinimizado(false)}
-        className="fixed bottom-24 md:bottom-6 right-3 md:right-6 z-[80] flex items-center gap-2 rounded-full px-4 py-2.5 shadow-lg"
-        style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
-      >
-        <span className="relative flex size-2">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
-          <span className="relative inline-flex size-2 rounded-full bg-current" />
-        </span>
-        <span className="text-[13px] font-semibold">
-          En llamada · {participantes.length + 1}
-        </span>
-      </button>
+      <>
+        {capaAudio}
+        <button
+          onClick={() => setMinimizado(false)}
+          className="fixed bottom-24 md:bottom-6 right-3 md:right-6 z-[80] flex items-center gap-2 rounded-full px-4 py-2.5 shadow-lg"
+          style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
+        >
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
+            <span className="relative inline-flex size-2 rounded-full bg-current" />
+          </span>
+          <span className="text-[13px] font-semibold">
+            {ensordecido ? 'Ensordecido' : 'En llamada'} · {participantes.length + 1}
+          </span>
+        </button>
+      </>
     )
   }
-
-  const columnas = participantes.length === 0 ? 1 : participantes.length <= 3 ? 2 : 3
 
   // Un solo arreglo con todos los recuadros, el propio incluido. Así la vista
   // destacada no tiene que tratar "yo" como un caso aparte -- compartir pantalla
   // y querer verla en grande es justamente lo más común.
-  const recuadros: RecuadroProps[] = [
-    {
-      id: miIntegranteId,
-      // Si estoy compartiendo, mi recuadro muestra lo que comparto, no mi cara.
-      stream: streamPantalla ?? streamLocal,
-      nombre: yo?.nombre ? `${yo.nombre} (tú)` : 'Tú',
-      avatarUrl: yo?.avatar_url ?? null,
-      color: yo?.color ?? null,
-      micro,
-      camara,
-      compartiendo,
-      estado: 'conectado',
-      silenciado: true,
-    },
-    ...participantes.map((p) => {
-      const persona = porId.get(p.integranteId)
-      return {
-        id: p.integranteId,
-        stream: p.stream,
-        nombre: persona?.nombre ?? 'Alguien',
-        avatarUrl: persona?.avatar_url ?? null,
-        color: persona?.color ?? null,
-        micro: p.micro,
-        camara: p.camara,
-        compartiendo: p.compartiendo,
-        estado: p.estado,
-      }
-    }),
-  ]
-
-  const enGrande = recuadros.find((r) => r.id === destacado) ?? null
 
   return (
     <div
@@ -174,13 +272,38 @@ export function PanelLlamada({
       role="dialog"
       aria-label={`Llamada en ${titulo}`}
     >
+      {capaAudio}
       <header className="flex items-center justify-between gap-3 px-4 py-3 shrink-0">
         <div className="min-w-0">
           <p className="text-[15px] font-semibold text-[var(--tx-ink-primary)] truncate">{titulo}</p>
-          <p className="text-[12px] text-[var(--tx-ink-muted)]">
-            {participantes.length === 0
-              ? 'Esperando a que entren…'
-              : `${participantes.length + 1} en la llamada`}
+          <p className="flex items-center gap-1.5 text-[12px] text-[var(--tx-ink-muted)]">
+            <span>
+              {participantes.length === 0
+                ? 'Esperando a que entren…'
+                : `${participantes.length + 1} en la llamada`}
+            </span>
+
+            {/* Directa o por relay. No es un detalle técnico: una llamada directa
+                no toca ningún servidor y no consume nada; una por relay sale de
+                los 1.000 GB gratis. Verlo en el momento evita tener que deducirlo
+                después mirando un panel de Cloudflare. */}
+            {conexion && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                style={
+                  conexion === 'directa'
+                    ? { background: 'oklch(62% 0.17 150 / 18%)', color: 'oklch(75% 0.16 150)' }
+                    : { background: 'oklch(70% 0.15 75 / 18%)', color: 'oklch(80% 0.13 75)' }
+                }
+                title={
+                  conexion === 'directa'
+                    ? 'El audio y el video van directo entre navegadores. No consume nada.'
+                    : 'Pasa por un servidor de retransmisión. Consume de los 1.000 GB gratis al mes.'
+                }
+              >
+                {conexion === 'directa' ? 'Directa · $0' : 'Por relay'}
+              </span>
+            )}
           </p>
         </div>
         <button
@@ -208,25 +331,69 @@ export function PanelLlamada({
               pantalla y hay que leer lo que muestra. */}
           {enGrande && (
             <div className="flex-1 min-h-0">
-              <Recuadro {...enGrande} grande onClick={() => setDestacado(null)} />
+              <Recuadro
+                {...enGrande}
+                grande
+                hablando={quienesHablan.has(enGrande.id)}
+                volumen={enGrande.id === miIntegranteId ? null : (volumenes.get(enGrande.id) ?? 1)}
+                silenciado={silenciados.has(enGrande.id)}
+                onSilenciar={() =>
+                  setSilenciados((s) => {
+                    const n = new Set(s)
+                    if (n.has(enGrande.id)) n.delete(enGrande.id)
+                    else n.add(enGrande.id)
+                    return n
+                  })
+                }
+                volumenAbierto={volumenAbierto === enGrande.id}
+                onAbrirVolumen={() => setVolumenAbierto((v) => (v === enGrande.id ? null : enGrande.id))}
+                onVolumen={(v) => setVolumenes((m) => new Map(m).set(enGrande.id, v))}
+                onClick={() => setDestacado(null)}
+              />
             </div>
           )}
 
+          {/* La grilla. Flex con wrap y centrado, no CSS grid: con el tamaño ya
+              calculado, el wrap deja la última fila centrada sola -- que es
+              exactamente el detalle que hace que se vea como Meet. */}
           <div
+            ref={cajaRef}
             className={
               enGrande
                 ? 'shrink-0 flex gap-2 overflow-x-auto pb-1'
-                : 'flex-1 min-h-0 overflow-y-auto grid gap-3 content-start'
+                : 'flex-1 min-h-0 flex flex-wrap items-center justify-center content-center gap-3 overflow-hidden'
             }
-            style={enGrande ? undefined : { gridTemplateColumns: `repeat(${columnas}, minmax(0, 1fr))` }}
           >
-            {recuadros
-              .filter((r) => r.id !== destacado)
-              .map((r) => (
-                <div key={r.id} className={enGrande ? 'w-40 shrink-0' : ''}>
-                  <Recuadro {...r} onClick={() => setDestacado(r.id)} />
-                </div>
-              ))}
+            {enGrilla.map((r) => (
+              <div
+                key={r.id}
+                className={enGrande ? 'w-40 shrink-0' : 'shrink-0'}
+                style={
+                  enGrande
+                    ? undefined
+                    : { width: grilla.ancho || undefined, height: grilla.alto || undefined }
+                }
+              >
+                <Recuadro
+                  {...r}
+                  hablando={quienesHablan.has(r.id)}
+                  volumen={r.id === miIntegranteId ? null : (volumenes.get(r.id) ?? 1)}
+                  silenciado={silenciados.has(r.id)}
+                  onSilenciar={() =>
+                    setSilenciados((s) => {
+                      const n = new Set(s)
+                      if (n.has(r.id)) n.delete(r.id)
+                      else n.add(r.id)
+                      return n
+                    })
+                  }
+                  volumenAbierto={volumenAbierto === r.id}
+                  onAbrirVolumen={() => setVolumenAbierto((v) => (v === r.id ? null : r.id))}
+                  onVolumen={(v) => setVolumenes((m) => new Map(m).set(r.id, v))}
+                  onClick={() => setDestacado(r.id)}
+                />
+              </div>
+            ))}
           </div>
         </div>
 
@@ -259,6 +426,14 @@ export function PanelLlamada({
 
         {/* Compartir pantalla no existe en el navegador del teléfono: mostrar un
             botón que no puede funcionar es peor que no mostrarlo. */}
+        <Boton
+          activo={!ensordecido}
+          onClick={alternarEnsordecer}
+          etiqueta={ensordecido ? 'Volver a escuchar' : 'Ensordecer: dejar de oír a todos'}
+        >
+          {ensordecido ? <HeadphoneOffIcon className="size-5" /> : <HeadphonesIcon className="size-5" />}
+        </Boton>
+
         <Boton
           activo={chatAbierto}
           onClick={() => setChatAbierto((v) => !v)}
@@ -327,10 +502,18 @@ interface RecuadroProps {
   camara: boolean
   compartiendo: boolean
   estado: ParticipanteVivo['estado']
-  /** El propio video va mudo o se produce un acople insoportable. */
-  silenciado?: boolean
   /** Ocupa la vista principal en vez de ir en la grilla. */
   grande?: boolean
+  /** Está hablando ahora: se le enciende el borde. */
+  hablando?: boolean
+  /** null para el propio recuadro: uno no se sube el volumen a sí mismo. */
+  volumen?: number | null
+  volumenAbierto?: boolean
+  /** Silenciado solo para mí. El resto lo sigue oyendo. */
+  silenciado?: boolean
+  onSilenciar?: () => void
+  onAbrirVolumen?: () => void
+  onVolumen?: (v: number) => void
   onClick?: () => void
 }
 
@@ -343,8 +526,14 @@ function Recuadro({
   camara,
   compartiendo,
   estado,
-  silenciado = false,
   grande = false,
+  hablando = false,
+  volumen = null,
+  volumenAbierto = false,
+  silenciado = false,
+  onSilenciar,
+  onAbrirVolumen,
+  onVolumen,
   onClick,
 }: RecuadroProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -371,14 +560,21 @@ function Recuadro({
         }
       }}
       aria-label={onClick ? (grande ? `Volver a la grilla` : `Ver a ${nombre} en grande`) : undefined}
-      className={`relative overflow-hidden rounded-xl ${grande ? 'size-full' : 'aspect-video'} ${onClick ? 'cursor-pointer' : ''}`}
-      style={{ background: 'oklch(14% 0.004 240)', border: '1px solid var(--tx-border)' }}
+      className={`relative overflow-hidden rounded-xl ${grande ? 'size-full' : 'size-full'} ${onClick ? 'cursor-pointer' : ''}`}
+      style={{
+        background: 'oklch(14% 0.004 240)',
+        // El borde de "está hablando" reemplaza al normal en vez de sumarse: si
+        // engrosara el recuadro, todo se movería un pixel cada vez que alguien
+        // abre la boca.
+        border: hablando ? '2px solid oklch(72% 0.17 150)' : '2px solid var(--tx-border)',
+        transition: 'border-color 120ms ease',
+      }}
     >
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        muted={silenciado}
+        muted
         className={`size-full ${grande && compartiendo ? 'object-contain' : 'object-cover'}`}
         style={{ display: hayVideo ? 'block' : 'none' }}
       />
@@ -393,8 +589,67 @@ function Recuadro({
            style={{ background: 'linear-gradient(to top, oklch(0% 0 0 / 60%), transparent)' }}>
         {!micro && <MicOffIcon className="size-3.5 shrink-0 text-[oklch(75%_0.16_25)]" />}
         {compartiendo && <MonitorUpIcon className="size-3.5 shrink-0 text-[var(--tx-accent)]" />}
-        <span className="text-[12px] font-medium text-white truncate">{nombre}</span>
+        <span className="flex-1 text-[12px] font-medium text-white truncate">{nombre}</span>
+
+        {/* Volumen de esta persona. El `stopPropagation` es necesario: sin él,
+            tocar el control también destacaría el recuadro. */}
+        {volumen !== null && onAbrirVolumen && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onAbrirVolumen()
+            }}
+            aria-label={`Volumen de ${nombre}`}
+            title={`Volumen de ${nombre}`}
+            className="shrink-0 p-1 text-white/70 hover:text-white"
+          >
+            {silenciado || volumen === 0 ? (
+              <VolumeXIcon className="size-3.5 text-[oklch(75%_0.16_25)]" />
+            ) : (
+              <Volume2Icon className="size-3.5" />
+            )}
+          </button>
+        )}
       </div>
+
+      {volumen !== null && volumenAbierto && onVolumen && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-x-2 bottom-10 flex items-center gap-2 rounded-lg px-2.5 py-2"
+          style={{ background: 'oklch(12% 0.004 240 / 92%)', border: '1px solid var(--tx-border)' }}
+        >
+          {/* Silenciar a esta persona solo para mí. Es lo primero del control
+              porque es la acción más común: alguien deja el micrófono abierto en
+              un lugar ruidoso y uno quiere seguir la reunión igual. */}
+          {onSilenciar && (
+            <button
+              onClick={onSilenciar}
+              aria-pressed={silenciado}
+              aria-label={silenciado ? `Volver a oír a ${nombre}` : `Silenciar a ${nombre} solo para mí`}
+              title={silenciado ? 'Volver a oír' : 'Silenciar solo para mí'}
+              className="shrink-0 rounded px-1.5 py-1"
+              style={{ color: silenciado ? 'oklch(75% 0.16 25)' : 'rgba(255,255,255,0.6)' }}
+            >
+              {silenciado ? <VolumeXIcon className="size-3.5" /> : <Volume2Icon className="size-3.5" />}
+            </button>
+          )}
+          <input
+            type="range"
+            min={0}
+            max={200}
+            value={Math.round(volumen * 100)}
+            onChange={(e) => onVolumen(Number(e.target.value) / 100)}
+            disabled={silenciado}
+            aria-label={`Volumen de ${nombre}`}
+            className="flex-1 accent-[var(--tx-accent)] disabled:opacity-40"
+          />
+          {/* Hasta 200%: el caso real no es bajarle a quien grita, es subirle a
+              quien tiene un micrófono malo y no se le entiende. */}
+          <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-white/70">
+            {Math.round(volumen * 100)}%
+          </span>
+        </div>
+      )}
 
       {estado !== 'conectado' && (
         <div className="absolute inset-0 grid place-items-center"
@@ -406,4 +661,94 @@ function Recuadro({
       )}
     </div>
   )
+}
+
+/**
+ * El sonido de una persona, sin nada que mostrar.
+ *
+ * Existe aparte del recuadro por una razón concreta: al minimizar la llamada se
+ * desmontan los recuadros, y si el audio viviera dentro de ellos se cortaría —
+ * justo cuando uno minimiza para seguir hablando mientras hace otra cosa.
+ *
+ * `srcObject` va por ref y no como prop: es una referencia viva, no una URL.
+ */
+function AudioRemoto({
+  stream,
+  mudo,
+  volumen,
+}: {
+  stream: MediaStream | null
+  mudo: boolean
+  volumen: number
+}) {
+  const ref = useRef<HTMLAudioElement>(null)
+  const gananciaRef = useRef<GainNode | null>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || el.srcObject === stream) return
+    el.srcObject = stream
+  }, [stream])
+
+  /**
+   * El volumen pasa por WebAudio y no por `el.volume`.
+   *
+   * `volume` está limitado a 1: con él no se puede subir a alguien por encima de
+   * lo que grabó su micrófono, y ése es justamente el caso que importa -- al que
+   * grita se le baja, pero al que no se le entiende hay que subirle. Un GainNode
+   * no tiene ese techo.
+   *
+   * El elemento `<audio>` se queda igual, mudo: en Chrome hace falta tener el
+   * stream enganchado a un elemento para que el audio de WebRTC fluya, aunque el
+   * sonido salga por otro lado.
+   */
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !stream || stream.getAudioTracks().length === 0) return
+
+    let ctx: AudioContext
+    try {
+      const Ctor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      ctx = new Ctor()
+    } catch {
+      // Sin WebAudio se cae al camino simple, con el techo del 100%.
+      el.muted = false
+      el.volume = Math.min(1, volumen)
+      return
+    }
+
+    void ctx.resume().catch(() => {})
+
+    const fuente = ctx.createMediaStreamSource(stream)
+    const ganancia = ctx.createGain()
+    ganancia.gain.value = mudo ? 0 : volumen
+    fuente.connect(ganancia)
+    ganancia.connect(ctx.destination)
+    gananciaRef.current = ganancia
+
+    return () => {
+      gananciaRef.current = null
+      try {
+        fuente.disconnect()
+        ganancia.disconnect()
+      } catch {
+        // Ya desconectado al cerrarse el contexto.
+      }
+      void ctx.close()
+    }
+    // Solo se rearma si cambia el stream: mover el control no debe reconstruir
+    // el grafo de audio, para eso está el efecto de abajo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream])
+
+  // El cambio de volumen se aplica sobre el nodo que ya existe.
+  useEffect(() => {
+    const g = gananciaRef.current
+    if (g) g.gain.value = mudo ? 0 : volumen
+    else if (ref.current) ref.current.volume = mudo ? 0 : Math.min(1, volumen)
+  }, [volumen, mudo])
+
+  return <audio ref={ref} autoPlay playsInline muted />
 }

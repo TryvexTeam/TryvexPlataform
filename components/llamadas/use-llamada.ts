@@ -52,8 +52,70 @@ interface Par {
   negociando: boolean
 }
 
+/**
+ * La ranura de video de una conexión.
+ *
+ * Se busca por el transceiver y no por `sender.track?.kind`: cuando la ranura
+ * está vacía —llamada que empezó en audio— el sender no tiene pista y no hay
+ * `kind` que mirar. El receiver sí declara 'video' desde que se crea.
+ */
+function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
+  const tr = pc
+    .getTransceivers()
+    .find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video')
+  return tr?.sender ?? null
+}
+
+/**
+ * Como esta conectada esta llamada.
+ *
+ * 'directa' = el media va navegador a navegador y no cuesta nada.
+ * 'relay'   = pasa por TURN y consume de la cuota de Cloudflare.
+ * null      = todavia no se sabe (la conexion aun no se establecio).
+ */
+export type TipoConexion = 'directa' | 'relay' | null
+
+/**
+ * Pregunta a WebRTC por que camino quedo la conexion.
+ *
+ * Se mira el par de candidatos ACTIVO (`nominated` + `state === 'succeeded'`),
+ * no la lista de candidatos ofrecidos: se ofrecen varios y se usa uno solo. Si
+ * cualquiera de las dos puntas es de tipo 'relay', el trafico pasa por TURN.
+ */
+async function comoConecto(pc: RTCPeerConnection): Promise<TipoConexion> {
+  try {
+    const stats = await pc.getStats()
+    let activo: RTCIceCandidatePairStats | null = null
+    const candidatos = new Map<string, { candidateType?: string }>()
+
+    stats.forEach((r) => {
+      if (r.type === 'local-candidate' || r.type === 'remote-candidate') {
+        candidatos.set(r.id, r as { candidateType?: string })
+      }
+      const par = r as RTCIceCandidatePairStats & { nominated?: boolean }
+      if (r.type === 'candidate-pair' && par.state === 'succeeded' && par.nominated) {
+        activo = par
+      }
+    })
+
+    if (!activo) return null
+    const par = activo as RTCIceCandidatePairStats
+    const local = candidatos.get(par.localCandidateId ?? '')
+    const remoto = candidatos.get(par.remoteCandidateId ?? '')
+
+    return local?.candidateType === 'relay' || remoto?.candidateType === 'relay' ? 'relay' : 'directa'
+  } catch {
+    return null
+  }
+}
+
 export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }: UseLlamadaOpts) {
   const [participantes, setParticipantes] = useState<ParticipanteVivo[]>([])
+  /** Si alguna de las conexiones pasa por relay, la llamada cuenta como relay. */
+  const [conexion, setConexion] = useState<TipoConexion>(null)
+  /** Para reportar la duracion real al colgar. */
+  const inicioRef = useRef<number>(0)
+  const viaRelayRef = useRef(false)
   const [micro, setMicro] = useState(true)
   const [camara, setCamara] = useState(conVideo)
   const [compartiendo, setCompartiendo] = useState(false)
@@ -164,6 +226,19 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         pc.addTrack(track, local.current!)
       }
 
+      // La ranura de video se reserva SIEMPRE, aunque la llamada haya empezado
+      // en audio y no haya cámara que poner.
+      //
+      // El porqué: agregar una pista después con `addTrack` obliga a renegociar
+      // toda la conexión, y si esa renegociación no ocurre el otro lado nunca
+      // recibe nada -- ve un recuadro negro mientras quien comparte ve su propia
+      // pantalla perfectamente, porque la está leyendo en local. Con la ranura ya
+      // creada, prender la cámara o compartir pantalla es solo llenarla con
+      // `replaceTrack`, que no renegocia nada y se aplica al instante.
+      if (!local.current?.getVideoTracks().length) {
+        pc.addTransceiver('video', { direction: 'sendrecv' })
+      }
+
       pc.onicecandidate = (ev) => {
         if (ev.candidate) {
           enviar({ tipo: 'ice', de: miIntegranteId, para: otroId, candidato: ev.candidate.toJSON() })
@@ -185,6 +260,19 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
                 : 'conectando'
 
         actualizar(otroId, { estado })
+
+        // Al conectar se pregunta por que camino quedo. Es lo que alimenta el
+        // indicador de "directa o por relay" y lo que se reporta al colgar: si
+        // fue directa no consumio nada, si fue relay salio de la cuota.
+        if (pc.connectionState === 'connected') {
+          void comoConecto(pc).then((tipo) => {
+            if (!tipo) return
+            if (tipo === 'relay') viaRelayRef.current = true
+            // Basta con que UNA conexion sea por relay para que la llamada
+            // cuente como tal: esa es la que esta consumiendo.
+            setConexion((previa) => (previa === 'relay' ? previa : tipo))
+          })
+        }
 
         // 'failed' es definitivo: hay que rehacer la ruta, no esperar. Se reintenta
         // una vez con ICE restart; si tampoco, se muestra fallido y el resto de la
@@ -290,6 +378,9 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     let vigente = true
     const supabase = createClient()
     const misPares = pares.current
+
+    inicioRef.current = Date.now()
+    viaRelayRef.current = false
 
     const arrancar = async () => {
       // 1. Micrófono y cámara. Si el usuario dice que no, se corta acá con un
@@ -411,10 +502,12 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         const nueva = extra.getVideoTracks()[0]
         local.current?.addTrack(nueva)
 
-        for (const [otroId, { pc }] of pares.current) {
-          pc.addTrack(nueva, local.current!)
-          // Agregar una pista obliga a renegociar; si no, el otro no la ve nunca.
-          void ofrecer(otroId)
+        // La ranura ya existe desde `crearPar`, así que basta con llenarla. Antes
+        // esto hacía `addTrack` + renegociación, que es justo lo que dejaba al
+        // otro lado en negro cuando la renegociación no llegaba a completarse.
+        for (const { pc } of pares.current.values()) {
+          const sender = senderDeVideo(pc)
+          if (sender) await sender.replaceTrack(nueva).catch(() => {})
         }
 
         setCamara(true)
@@ -429,7 +522,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     pista.enabled = !pista.enabled
     setCamara(pista.enabled)
     enviar({ tipo: 'estado', de: miIntegranteId, micro: microRef.current, camara: pista.enabled })
-  }, [aplicarCalidad, enviar, miIntegranteId, ofrecer])
+  }, [aplicarCalidad, enviar, miIntegranteId])
 
   /**
    * Devuelve la cámara a su lugar con `replaceTrack`, que no obliga a renegociar.
@@ -442,9 +535,11 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const dejarDeCompartir = useCallback(async () => {
     if (!pantalla.current) return
 
+    // Si la cámara está apagada esto pone null: la ranura queda vacía y el otro
+    // lado deja de recibir cuadros, que es lo correcto.
     const camaraPista = local.current?.getVideoTracks()[0] ?? null
     for (const { pc } of pares.current.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+      const sender = senderDeVideo(pc)
       if (sender) await sender.replaceTrack(camaraPista).catch(() => {})
     }
     pantalla.current.getTracks().forEach((t) => t.stop())
@@ -471,9 +566,9 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       setStreamPantalla(stream)
 
       for (const { pc } of pares.current.values()) {
-        const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+        const sender = senderDeVideo(pc)
+        // Siempre existe: `crearPar` reserva la ranura aunque no haya cámara.
         if (sender) await sender.replaceTrack(pista).catch(() => {})
-        else pc.addTrack(pista, stream)
       }
 
       // El botón "Dejar de compartir" del navegador no pasa por nuestra UI: sin
@@ -494,7 +589,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       await fetch(`/api/llamadas/${llamadaId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accion: 'salir' }),
+        body: JSON.stringify({
+          accion: 'salir',
+          // El navegador es el unico que sabe por donde fue el trafico. Si esto
+          // no llega, la fila queda con via_relay NULL y el resumen lo cuenta
+          // como "sin medir" en vez de suponer.
+          via_relay: viaRelayRef.current,
+          segundos: Math.max(0, Math.round((Date.now() - inicioRef.current) / 1000)),
+        }),
       })
     } catch {
       // Aunque el aviso al servidor falle, hay que soltar cámara y micrófono: la
@@ -505,6 +607,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
 
   return {
     participantes,
+    conexion,
     streamLocal,
     streamPantalla,
     micro,

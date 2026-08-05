@@ -16,12 +16,24 @@ export type Llamada = {
   motivo_fin: MotivoFin | null
 }
 
+/** Resumen mensual de consumo. Ver la vista `llamadas_resumen_mes` (migración 037). */
+export type ConsumoLlamadas = {
+  llamadas: number
+  segundos_totales: number
+  segundos_relay: number
+  sin_medir: number
+  gb_estimados: number
+}
+
 export type ParticipanteLlamada = {
   llamada_id: string
   integrante_id: string
   estado: EstadoParticipante
   entro_at: string | null
   salio_at: string | null
+  /** null = no se pudo medir. Ver el comentario de la migración 037. */
+  via_relay?: boolean | null
+  segundos?: number | null
 }
 
 export const IniciarLlamadaSchema = z.object({
@@ -32,6 +44,14 @@ export const IniciarLlamadaSchema = z.object({
 /** Las cuatro cosas que le pueden pasar a una llamada desde el cliente. */
 export const AccionLlamadaSchema = z.object({
   accion: z.enum(['entrar', 'rechazar', 'salir', 'terminar']),
+  /**
+   * Solo al salir. El navegador es el único que sabe por dónde fue el tráfico:
+   * si la conexión quedó directa no consumió nada, y si pasó por relay salió de
+   * la cuota de TURN. Sin este dato, Finanzas no puede decir si las llamadas
+   * están costando algo.
+   */
+  via_relay: z.boolean().optional(),
+  segundos: z.number().int().min(0).max(86400).optional(),
 })
 
 export type IniciarLlamadaInput = z.infer<typeof IniciarLlamadaSchema>

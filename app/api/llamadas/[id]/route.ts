@@ -49,7 +49,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         await llamadas.rechazar(id, perfil.id)
         break
       case 'salir':
-        await llamadas.salir(id, perfil.id)
+        await llamadas.salir(id, perfil.id, {
+          viaRelay: parsed.data.via_relay,
+          segundos: parsed.data.segundos,
+        })
         break
       case 'terminar':
         await llamadas.terminar(id, 'colgada')

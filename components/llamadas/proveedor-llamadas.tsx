@@ -69,29 +69,60 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
     try {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       const ctx = new Ctor()
+
+      // Sin un gesto previo del usuario el navegador crea el contexto en pausa.
+      // Sin este `resume` el timbre existe y no suena -- que es peor que no
+      // tenerlo, porque uno cree que está avisando.
+      void ctx.resume().catch(() => {})
+
       const ganancia = ctx.createGain()
-      ganancia.gain.value = 0.08
+      ganancia.gain.value = 0.14
       ganancia.connect(ctx.destination)
 
       let vivo = true
+
+      /**
+       * La cadencia del teléfono: dos tonos cortos, silencio, y otra vez. Se
+       * repite hasta que se conteste o se rechace -- no se rinde a los tres
+       * intentos. Una llamada directa a la que nadie llega es una llamada
+       * perdida; si el timbre se apaga solo, ni siquiera es eso.
+       */
       const pulso = () => {
         if (!vivo) return
-        for (const [i, hz] of [440, 554].entries()) {
+        for (const [i, hz] of [880, 660, 880, 660].entries()) {
           const osc = ctx.createOscillator()
+          const env = ctx.createGain()
+          osc.type = 'sine'
           osc.frequency.value = hz
-          osc.connect(ganancia)
-          osc.start(ctx.currentTime + i * 0.28)
-          osc.stop(ctx.currentTime + i * 0.28 + 0.25)
+
+          const t = ctx.currentTime + i * 0.32
+          // Envolvente: el tono entra y sale suave. Un cuadrado seco suena a
+          // error del sistema, no a teléfono.
+          env.gain.setValueAtTime(0, t)
+          env.gain.linearRampToValueAtTime(1, t + 0.02)
+          env.gain.setValueAtTime(1, t + 0.22)
+          env.gain.linearRampToValueAtTime(0, t + 0.28)
+
+          osc.connect(env)
+          env.connect(ganancia)
+          osc.start(t)
+          osc.stop(t + 0.3)
         }
+
+        // En el teléfono la vibración llega donde el sonido no: con el aparato
+        // en silencio, es lo único que avisa.
+        if ('vibrate' in navigator) navigator.vibrate([300, 150, 300, 900])
       }
 
       pulso()
-      const id = window.setInterval(pulso, 2200)
+      const id = window.setInterval(pulso, 2600)
+
       timbre.current = {
         ctx,
         parar: () => {
           vivo = false
           window.clearInterval(id)
+          if ('vibrate' in navigator) navigator.vibrate(0)
           void ctx.close()
         },
       }
