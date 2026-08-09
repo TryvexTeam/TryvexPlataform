@@ -1,0 +1,26 @@
+[Unit]
+Description=Tryvex Scraper worker - corre lo que el equipo pide desde el CRM
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scraper
+WorkingDirectory=/opt/scraper
+EnvironmentFile=/opt/scraper/.env
+ExecStart=/opt/scraper/.venv/bin/python worker.py
+
+# Restart=always y no on-failure: on-failure NO relanza tras una parada limpia,
+# y por ese mismo detalle Coby estuvo 4 dias muerto sin que nadie lo notara
+# (1-ago-2026). Un proceso que se apaga sin ruido es peor que uno que revienta.
+Restart=always
+RestartSec=10
+
+# Mismo limite que el scraper: si se desboca, el kernel lo mata a EL. Ya paso
+# una vez con 1536M y dos Chromium -- estuvo 6 dias muriendose todas las mananas
+# por OOM de su propio cgroup, no por falta de RAM del servidor.
+MemoryMax=3G
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
