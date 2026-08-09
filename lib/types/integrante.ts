@@ -74,9 +74,21 @@ const UrlOpcionalSchema = z
   .string()
   .nullable()
   .optional()
-  .refine((v) => !v || v.trim() === '' || z.string().url().safeParse(v).success, {
-    message: 'URL inválida',
-  })
+  .refine(
+    (v) => {
+      if (!v || v.trim() === '') return true
+      const parsed = z.string().url().safeParse(v)
+      if (!parsed.success) return false
+      try {
+        return ['http:', 'https:'].includes(new URL(v).protocol)
+      } catch {
+        return false
+      }
+    },
+    // z.string().url() solo valida forma, no protocolo — sin esto "javascript:..."
+    // pasaba y termina en un <a href> de la landing pública (anon-legible).
+    { message: 'URL inválida (debe empezar con http:// o https://)' }
+  )
   .transform((v) => (v && v.trim() !== '' ? v : null))
 
 export const CATEGORIAS_EQUIPO = ['core', 'engineering'] as const
