@@ -90,7 +90,7 @@ export function NotificacionesBell() {
   return (
     <DropdownMenu onOpenChange={(open) => { if (open) void marcarTodasLeidas() }}>
       <DropdownMenuTrigger
-        className="relative inline-flex items-center justify-center h-7 w-7 rounded-md transition-colors hover:bg-[var(--tx-surface-1)] focus:outline-none"
+        className="relative inline-flex items-center justify-center h-7 w-7 rounded-md transition-colors hover:bg-[var(--tx-surface-1)]"
         style={{ color: 'var(--tx-ink-muted)' }}
         aria-label={`Notificaciones${noLeidas > 0 ? ` (${noLeidas} sin leer)` : ''}`}
       >

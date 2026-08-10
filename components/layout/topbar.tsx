@@ -130,8 +130,9 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger
-            className="flex items-center gap-2 pl-1 pr-1.5 h-7 rounded-lg transition-colors focus:outline-none"
+            className="flex items-center gap-2 pl-1 pr-1.5 h-7 rounded-lg transition-colors"
             style={{ color: 'var(--tx-ink-primary)' }}
+            aria-label="Menú de usuario"
           >
             <div className="relative">
               <Avatar className="h-6 w-6">

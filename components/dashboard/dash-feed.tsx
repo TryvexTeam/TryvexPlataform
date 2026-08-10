@@ -48,18 +48,29 @@ function TagBadge({ tag, tone }: { tag: string; tone: string }) {
 }
 
 /* ── Feed Card ── */
+/** Cuántas tarjetas entran en cascada antes de que el resto aparezca junto. */
+const MAX_ITEMS_EN_CASCADA = 8
+const PASO_CASCADA = 0.015
+
 function FeedCard({
   item,
   active,
+  index,
   onClick,
 }: {
   item: FeedItem
   active: boolean
+  index: number
   onClick: () => void
 }) {
   const featured = active && item.accent === 'gradient'
 
   // Spring animation variants for staggered load
+  //
+  // El retraso se calcula por tarjeta en vez de con `staggerChildren` porque
+  // así tiene techo: con ~20 tarjetas la cascada corrida hacía que la última
+  // llegara medio segundo tarde, y al cambiar de pestaña eso se lee como
+  // lentitud, no como animación. Pasado el tope, el resto entra junto.
   const itemVariants = {
     hidden: { opacity: 0, y: 12 },
     show: {
@@ -68,7 +79,8 @@ function FeedCard({
       transition: {
         type: 'spring' as const,
         stiffness: 350,
-        damping: 25
+        damping: 25,
+        delay: Math.min(index, MAX_ITEMS_EN_CASCADA) * PASO_CASCADA
       }
     }
   }
@@ -185,12 +197,7 @@ export function DashFeed({ items, selectedId, onSelect, title = 'Feed' }: DashFe
         key={filter} // Forces stagger transition when active tab changes
         variants={{
           hidden: { opacity: 0 },
-          show: {
-            opacity: 1,
-            transition: {
-              staggerChildren: 0.03
-            }
-          }
+          show: { opacity: 1 }
         }}
         initial="hidden"
         animate="show"
@@ -202,10 +209,11 @@ export function DashFeed({ items, selectedId, onSelect, title = 'Feed' }: DashFe
             Sin resultados
           </div>
         ) : (
-          filtered.map(item => (
+          filtered.map((item, index) => (
             <FeedCard
               key={item.id}
               item={item}
+              index={index}
               active={item.id === selectedId}
               onClick={() => onSelect(item.id)}
             />
