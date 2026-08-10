@@ -70,9 +70,20 @@ Es el mismo patrón de `scraper_runs` (migración 040), ya probado en producció
 mismo día. Consecuencias: sin puerto abierto, sin dirección que se mueva, y si el
 servidor está caído el mensaje queda encolado en vez de perderse.
 
-La tabla `outreach_messages` **ya tiene la forma exacta** de un buzón
-(`lead_id, canal, texto, estado, aprobado_por, wa_message_id, error, created_at,
-enviado_at`). No hace falta migración nueva.
+La tabla `outreach_messages` es la candidata natural (`lead_id, canal, texto,
+estado, aprobado_por, wa_message_id, error, created_at, enviado_at`), pero
+**necesita una migración chica** — verificado contra la base el 10-ago:
+
+- `estado` solo admite `borrador | enviado | fallido`. **No hay un estado para
+  "encolado, todavía sin mandar"**, que es lo único que un buzón necesita de
+  verdad. Se agrega `encolado` al CHECK.
+- Falta `enviado_por` (texto): sin eso no se puede saber quién del equipo mandó
+  cada mensaje, y el puente ya escribe esa atribución en `mensajes_wa`.
+- Índice parcial sobre los encolados, que es lo único que el puente consulta.
+
+`lead_id` es NOT NULL, así que el buzón sirve para **leads, no para clientes** —
+coincide con el alcance de este pedido. Mandarle a un cliente sigue siendo
+posible por el camino viejo hasta que se decida moverlo.
 
 **Los entrantes no necesitan nada:** el puente ya escribe directo en Supabase.
 
