@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from '@/lib/toast'
 import { LeadsInbox } from './leads-inbox'
@@ -46,6 +46,11 @@ export function LeadsWorkspace({ leads, selectedId, interacciones }: LeadsWorksp
 
   const selectedLead = selectedId ? (leads.find(l => l.id === selectedId) ?? null) : null
 
+  // Sin memo, `leads.slice(0, 4)` es un array nuevo en cada render y le llega
+  // como prop a un componente grande: cambia la identidad aunque los leads sean
+  // los mismos, y lo obliga a rerenderizar por nada.
+  const topLeads = useMemo(() => leads.slice(0, 4), [leads])
+
   const filteredLeads = activeEstado === 'todos'
     ? leads
     : leads.filter(l => l.estado === activeEstado)
@@ -75,7 +80,7 @@ export function LeadsWorkspace({ leads, selectedId, interacciones }: LeadsWorksp
         interacciones={interacciones}
         isTaskPanelOpen={isTaskPanelOpen && selectedLead !== null}
         onToggleTaskPanel={() => setIsTaskPanelOpen(true)}
-        topLeads={leads.slice(0, 4)}
+        topLeads={topLeads}
       />
 
       {selectedLead && (
