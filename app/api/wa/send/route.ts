@@ -7,8 +7,6 @@ import { IntegrantesRepository } from '@/lib/repos/integrantes'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
 
-const procEnv = process['env']
-
 // Contrato acordado con la vista de Leads (Jarvis): el panel llama a este
 // endpoint con { lead_id, telefono, texto, enviado_por } al apretar
 // "Enviar desde el CRM" (Botón 2). El telefono del body es solo referencia;
@@ -42,10 +40,16 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
   }
-  const { lead_id, cliente_id, texto, enviado_por, es_bot } = parsed.data
+  const { lead_id, texto, enviado_por } = parsed.data
 
-  if (!lead_id && !cliente_id) {
-    return NextResponse.json({ error: 'Falta lead_id o cliente_id.' }, { status: 400 })
+  // outreach_messages.lead_id es NOT NULL: el buzon sirve para leads. Mandarle
+  // a un cliente sigue siendo posible por el camino viejo hasta que se decida
+  // moverlo (fuera del alcance del pedido del 10-ago).
+  if (!lead_id) {
+    return NextResponse.json(
+      { error: 'Falta lead_id. El envio a clientes todavia no pasa por el buzon.' },
+      { status: 400 }
+    )
   }
 
   const admin = createAdminClient() as SB
@@ -66,36 +70,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Teléfono inválido o inexistente para ese destinatario.' }, { status: 400 })
   }
 
-  const bridgeUrl = procEnv.WA_BRIDGE_URL
-  const bridgeToken = procEnv.WA_BRIDGE_TOKEN
-  if (!bridgeUrl) {
-    return NextResponse.json(
-      { error: 'El puente de WhatsApp (wa-bridge) no está configurado (falta WA_BRIDGE_URL).' },
-      { status: 503 }
-    )
-  }
-
-  let bridgeRes: Response
-  try {
-    bridgeRes = await fetch(`${bridgeUrl}/send`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(bridgeToken ? { 'x-bridge-token': bridgeToken } : {}),
-      },
-      body: JSON.stringify({ telefono: numero, texto, lead_id: lead_id ?? null, cliente_id: cliente_id ?? null, es_bot: Boolean(es_bot), enviado_por }),
-      signal: AbortSignal.timeout(20000),
+  // El CRM ya no llama al puente: lo anota aca y el puente lo pasa a buscar.
+  // El puente escucha en 127.0.0.1 del VPS — desde Vercel es inalcanzable, y
+  // exponerlo pedia un tunel cuya direccion cambia en cada reinicio. Mismo
+  // patron que scraper_runs: si el puente esta caido, esto queda encolado en
+  // vez de perderse. Ver migracion 041 y el diseno del 10-ago-2026.
+  const { data: encolado, error: errorEncolar } = await admin
+    .from('outreach_messages')
+    .insert({
+      lead_id,
+      canal: 'whatsapp',
+      texto,
+      estado: 'encolado',
+      enviado_por: enviado_por.trim(),
+      aprobado_por: perfil.id,
     })
-  } catch (err) {
-    console.error('[api/wa/send] no se pudo contactar al wa-bridge:', err)
-    return NextResponse.json({ error: 'El puente de WhatsApp no respondió.' }, { status: 502 })
+    .select('id')
+    .single()
+
+  if (errorEncolar) {
+    console.error('[api/wa/send] no se pudo encolar:', errorEncolar)
+    return NextResponse.json({ error: 'No se pudo encolar el mensaje.' }, { status: 500 })
   }
 
-  const bridgeBody = await bridgeRes.json().catch(() => ({}))
-
-  if (!bridgeRes.ok) {
-    return NextResponse.json({ error: bridgeBody?.error ?? 'Falló el envío por el puente de WhatsApp.' }, { status: bridgeRes.status })
-  }
-
-  return NextResponse.json({ ok: true, mensajeWaId: bridgeBody.mensajeWaId, posicionCola: bridgeBody.posicionCola })
+  // 202 y no 200: el mensaje esta aceptado, todavia no entregado.
+  return NextResponse.json({ ok: true, encolado: true, id: encolado.id }, { status: 202 })
 }
