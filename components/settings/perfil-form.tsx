@@ -3,16 +3,19 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/lib/toast'
-import { Check, Clock, Bell, Palette, User } from 'lucide-react'
+import { Check, Clock, Bell, Palette, User, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   PALETA_CALENDARIO,
   NOTIFICACIONES_LABELS,
   DIAS_SEMANA,
+  CATEGORIAS_EQUIPO,
   type Integrante,
   type HorarioDia,
   type Notificaciones,
@@ -41,6 +44,11 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
   const [telefono, setTelefono] = useState(perfil.telefono ?? '')
   const [color, setColor] = useState<string | null>(perfil.color)
   const [horario, setHorario] = useState<HorarioDia[]>(horarioInicial(perfil.horario))
+  const [bioCorta, setBioCorta] = useState(perfil.bio_corta ?? '')
+  const [bio, setBio] = useState(perfil.bio ?? '')
+  const [linkedin, setLinkedin] = useState(perfil.linkedin ?? '')
+  const [portfolio, setPortfolio] = useState(perfil.portfolio ?? '')
+  const [category, setCategory] = useState(perfil.category)
   const [notifs, setNotifs] = useState<Partial<Notificaciones>>(
     Object.fromEntries(
       NOTIFICACIONES_LABELS.map(({ key }) => [key, perfil.notificaciones?.[key] ?? true])
@@ -79,6 +87,11 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
           color,
           horario,
           notificaciones: notifs,
+          bio_corta: bioCorta || null,
+          bio: bio || null,
+          linkedin: linkedin || null,
+          portfolio: portfolio || null,
+          category,
         }),
       })
       const json = await res.json()
@@ -233,6 +246,47 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
               />
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      {/* Ficha pública en tryvex.tech */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><Globe size={16} /> Ficha pública</CardTitle>
+          <CardDescription>
+            Se muestra en tryvex.tech/team mientras tu perfil esté activo. Tu foto y nombre ya salen ahí; esto es lo demás.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Bio corta (una línea, máx. 160)</Label>
+            <Input value={bioCorta} onChange={(e) => setBioCorta(e.target.value)} maxLength={160} placeholder="Ej: Construye la parte que se ve" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Bio</Label>
+            <Textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={2000} rows={4} placeholder="Un par de párrafos sobre vos" />
+          </div>
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>LinkedIn</Label>
+              <Input value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Portfolio</Label>
+              <Input value={portfolio} onChange={(e) => setPortfolio(e.target.value)} placeholder="https://..." />
+            </div>
+          </div>
+          <div className="space-y-1.5 max-w-[220px]">
+            <Label>Categoría</Label>
+            <Select value={category} onValueChange={(v) => setCategory(v as typeof category)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CATEGORIAS_EQUIPO.map((c) => (
+                  <SelectItem key={c} value={c}>{c === 'core' ? 'Core' : 'Engineering'}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 

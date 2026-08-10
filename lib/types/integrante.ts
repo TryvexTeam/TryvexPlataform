@@ -69,6 +69,30 @@ const TelefonoSchema = z
     valor === null || valor.trim() === '' ? null : normalizarTelefonoCL(valor)
   )
 
+/** Vacío se trata como "borrar el link", igual que el teléfono de arriba. */
+const UrlOpcionalSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .refine(
+    (v) => {
+      if (!v || v.trim() === '') return true
+      const parsed = z.string().url().safeParse(v)
+      if (!parsed.success) return false
+      try {
+        return ['http:', 'https:'].includes(new URL(v).protocol)
+      } catch {
+        return false
+      }
+    },
+    // z.string().url() solo valida forma, no protocolo — sin esto "javascript:..."
+    // pasaba y termina en un <a href> de la landing pública (anon-legible).
+    { message: 'URL inválida (debe empezar con http:// o https://)' }
+  )
+  .transform((v) => (v && v.trim() !== '' ? v : null))
+
+export const CATEGORIAS_EQUIPO = ['core', 'engineering'] as const
+
 export const PerfilUpdateSchema = z.object({
   nombre: z.string().min(1, 'El nombre es requerido').optional(),
   especialidad: z.string().nullable().optional(),
@@ -76,6 +100,12 @@ export const PerfilUpdateSchema = z.object({
   color: z.enum(COLORES_HEX).nullable().optional(),
   horario: z.array(HorarioDiaSchema).nullable().optional(),
   notificaciones: NotificacionesSchema.partial().nullable().optional(),
+  // Estos cinco solo alimentan la ficha pública en tryvex.tech (ver v_equipo_publico).
+  bio_corta: z.string().max(160, 'Máximo 160 caracteres').nullable().optional(),
+  bio: z.string().max(2000, 'Máximo 2000 caracteres').nullable().optional(),
+  linkedin: UrlOpcionalSchema,
+  portfolio: UrlOpcionalSchema,
+  category: z.enum(CATEGORIAS_EQUIPO).optional(),
 })
 
 export type BloqueHorario = z.infer<typeof BloqueHorarioSchema>
@@ -98,6 +128,11 @@ export type Integrante = {
   horario: HorarioDia[] | null
   notificaciones: Partial<Notificaciones> | null
   created_at: string
+  bio_corta: string | null
+  bio: string | null
+  linkedin: string | null
+  portfolio: string | null
+  category: (typeof CATEGORIAS_EQUIPO)[number]
 }
 
 export const NOTIFICACIONES_LABELS: { key: keyof Notificaciones; label: string; descripcion: string }[] = [

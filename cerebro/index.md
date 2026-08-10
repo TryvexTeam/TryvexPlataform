@@ -5,14 +5,20 @@
 
 **Proyecto**: Tryvex App (CRM: Leads → Clientes → Proyectos → Tareas)
 **Stack**: Next.js 16 + React 19 + Supabase + shadcn/ui + dnd-kit + Anthropic SDK
-**Last updated**: 2026-08-05
-**Total nodes**: 0 sessions
+**Last updated**: 2026-08-09
+**Total nodes**: 1 session
 
 ---
 
 ## Sessions
 
-*(vacío — se poblará con cada sesión de trabajo significativa)*
+### [2026-08-09-equipo-publico-landing](sessions/2026-08-09-equipo-publico-landing.md) — equipo del CRM conectado a /team de tryvex.tech (2026-08-09)
+
+Migración `040` (columnas + vista `v_equipo_publico` con GRANT a anon, tabla
+real sigue cerrada), fix de seguridad en `UrlOpcionalSchema` (bloqueaba
+`javascript:...`), sección "Ficha pública" en el perfil. PR #69 abierto sin
+mergear; falta aplicar migración en producción y configurar env vars en
+Vercel de `Tryvex-Landing`.
 
 ---
 
