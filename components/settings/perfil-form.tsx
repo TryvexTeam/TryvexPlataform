@@ -21,6 +21,7 @@ import {
   type Notificaciones,
 } from '@/lib/types/integrante'
 import { AvatarUploader } from './avatar-uploader'
+import { FotoLandingUploader } from './foto-landing-uploader'
 import { cn } from '@/lib/utils'
 
 interface PerfilFormProps {
@@ -258,6 +259,10 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Foto para la web</Label>
+            <FotoLandingUploader fotoInicial={perfil.foto_landing_url} avatarUrl={perfil.avatar_url} />
+          </div>
           <div className="space-y-1.5">
             <Label>Bio corta (una línea, máx. 160)</Label>
             <Input value={bioCorta} onChange={(e) => setBioCorta(e.target.value)} maxLength={160} placeholder="Ej: Construye la parte que se ve" />
