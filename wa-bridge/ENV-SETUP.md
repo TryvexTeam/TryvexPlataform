@@ -24,3 +24,20 @@ Antes de exponer `/qr` por un túnel público (ver `DEPLOY.md`), confirmar:
 - Los dos tokens de arriba están seteados con valores generados aleatoriamente (no vacíos, no reusados entre sí).
 - El túnel se cierra apenas termine el escaneo — un token filtrado en logs del túnel o en el historial del navegador de quien escaneó sigue siendo válido hasta que se rote manualmente.
 - `enviado_por` en `/send` solo acepta `JARVIS`/`ARIEL`/`SPIKE` o un nombre humano corto (2-60 caracteres) — no es una validación de identidad real (el token sigue siendo un secreto compartido, no una sesión por-usuario), es una barrera mínima contra basura/inyección en una columna de auditoría que lee todo el equipo.
+
+## `WA_BRIDGE_SOLO_NUMEROS` (opcional — modo prueba)
+
+Lista de números separados por coma, en formato `56XXXXXXXXX`.
+
+Si está puesta, el puente **solo** atiende esas conversaciones: los mensajes
+entrantes de cualquier otro número **se ignoran enteros** (no se guardan, no se
+crea ficha) y los envíos hacia otro número se rechazan con 403.
+
+Existe para poder pilotear con el WhatsApp **personal** de alguien sin que sus
+conversaciones privadas entren a la base de la empresa. Ver `permitidos.js`.
+
+Vacía o ausente = comportamiento normal, sin filtro.
+
+```env
+WA_BRIDGE_SOLO_NUMEROS=56911111111
+```

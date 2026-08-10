@@ -17,6 +17,8 @@ import pkg from 'whatsapp-web.js'
 import qrcodeTerminal from 'qrcode-terminal'
 import qrcodeImage from 'qrcode'
 import { createClient } from '@supabase/supabase-js'
+import { parsearPermitidos, estaPermitido } from './permitidos.js'
+import { aJobDeEnvio } from './buzon.js'
 
 const { Client, LocalAuth } = pkg
 const env = process['env']
@@ -24,6 +26,13 @@ const env = process['env']
 const PORT = Number(env.WA_BRIDGE_PORT || 4600)
 const CHIP_ID = env.WA_BRIDGE_CHIP_ID || 'tryvex-principal'
 const SEND_INTERVAL_MS = Number(env.WA_BRIDGE_SEND_INTERVAL_MS || 60000)
+
+// Modo prueba: si esta puesta, el puente SOLO toca estas conversaciones.
+// Vacia o ausente = comportamiento normal. Ver permitidos.js para el porque.
+const SOLO_NUMEROS = parsearPermitidos(env.WA_BRIDGE_SOLO_NUMEROS)
+if (SOLO_NUMEROS.length > 0) {
+  console.warn(`[wa-bridge] MODO PRUEBA: solo se atienden ${SOLO_NUMEROS.length} numero(s). El resto se ignora entero.`)
+}
 
 // Nombres de variable propios de este proceso (no los mismos que usa Next.js)
 // para no chocar de config y para poder rotar la key de este servicio sin
@@ -215,6 +224,12 @@ waClient.on('message', async (msg) => {
   if (msg.fromMe) return
   try {
     const numero = msg.from.replace('@c.us', '')
+
+    // Modo prueba: si no esta autorizado, no se guarda NADA — ni el texto, ni
+    // el numero, ni una ficha. Va antes de resolverLeadPorTelefono a proposito:
+    // ese camino crea leads, y crear una ficha ya seria registrar a la persona.
+    if (!estaPermitido(numero, SOLO_NUMEROS)) return
+
     let lead = await resolverLeadPorTelefono(numero)
     let leadCreadoAhora = false
 
@@ -436,6 +451,14 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: 'telefono invalido o ausente' }))
       return
     }
+
+    // En modo prueba, un envio a un numero no autorizado se rechaza: una prueba
+    // no puede terminar llegandole a un lead real.
+    if (!estaPermitido(telefono, SOLO_NUMEROS)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'modo prueba activo: ese numero no esta en WA_BRIDGE_SOLO_NUMEROS' }))
+      return
+    }
     if (typeof texto !== 'string' || texto.length === 0 || texto.length > TEXTO_MAX_LEN) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: `texto ausente o excede ${TEXTO_MAX_LEN} caracteres` }))
@@ -477,6 +500,96 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ error: 'no encontrado' }))
 })
+
+
+// ---------------------------------------------------------------------------
+// El buzon: el CRM anota en outreach_messages y este ciclo lo pasa a buscar.
+// El CRM corre en Vercel y este proceso escucha en 127.0.0.1 — no hay forma de
+// que nos llame. Ver la migracion 041 y el diseno del 10-ago-2026.
+// ---------------------------------------------------------------------------
+const BUZON_INTERVALO_MS = Number(env.WA_BRIDGE_BUZON_INTERVALO_MS || 10000)
+
+async function vaciarBuzon() {
+  if (!sesionLista) return
+
+  // Una por vuelta: el envio real ya tiene su propio throttle de un mensaje por
+  // minuto, no tiene sentido acumular aca.
+  const { data: filas, error } = await supabase
+    .from('outreach_messages')
+    .select('id, lead_id, texto, enviado_por')
+    .eq('estado', 'encolado')
+    .eq('canal', 'whatsapp')
+    .order('created_at')
+    .limit(1)
+
+  if (error) {
+    console.error('[wa-bridge] no pude leer el buzon:', error)
+    return
+  }
+  if (!filas || filas.length === 0) return
+
+  const fila = filas[0]
+
+  // Se RESERVA antes de mandar. Si se marcara despues, dos vueltas solapadas
+  // (o un reinicio a mitad de camino) mandarian el mismo mensaje dos veces —
+  // y un mensaje repetido a un cliente no se puede deshacer.
+  //
+  // 'enviando' y no 'enviado': todavia no salio, y decir que salio seria
+  // mentir. Si el proceso muere aca, la fila queda trabada en 'enviando' — es
+  // visible y se puede revisar, que es mucho mejor que un duplicado silencioso.
+  const { data: tomada } = await supabase
+    .from('outreach_messages')
+    .update({ estado: 'enviando' })
+    .eq('id', fila.id)
+    .eq('estado', 'encolado')
+    .select('id')
+  if (!tomada || tomada.length === 0) return   // otra vuelta se lo llevo
+
+  const { data: lead } = await supabase
+    .from('fact_leads')
+    .select('telefono')
+    .eq('id', fila.lead_id)
+    .single()
+
+  const job = aJobDeEnvio(fila, lead)
+  if (!job) {
+    await supabase
+      .from('outreach_messages')
+      .update({ estado: 'fallido', error: 'el lead no tiene un telefono usable' })
+      .eq('id', fila.id)
+    console.warn(`[wa-bridge] buzon: ${fila.id} sin telefono usable`)
+    return
+  }
+
+  if (!estaPermitido(job.telefono, SOLO_NUMEROS)) {
+    await supabase
+      .from('outreach_messages')
+      .update({ estado: 'fallido', error: 'modo prueba: numero no autorizado' })
+      .eq('id', fila.id)
+    console.warn(`[wa-bridge] buzon: ${fila.id} bloqueado por modo prueba`)
+    return
+  }
+
+  try {
+    await new Promise((resolve, reject) => encolarEnvio({ ...job, resolve, reject }))
+    // Recien AHORA salio de verdad.
+    await supabase
+      .from('outreach_messages')
+      .update({ estado: 'enviado', enviado_at: new Date().toISOString() })
+      .eq('id', fila.id)
+    console.log(`[wa-bridge] buzon: ${fila.id} enviado a ${job.telefono}`)
+  } catch (err) {
+    await supabase
+      .from('outreach_messages')
+      .update({ estado: 'fallido', error: String(err?.message || err) })
+      .eq('id', fila.id)
+    console.error(`[wa-bridge] buzon: fallo ${fila.id}:`, err)
+  }
+}
+
+setInterval(() => {
+  vaciarBuzon().catch((err) => console.error('[wa-bridge] vuelta del buzon fallida:', err))
+}, BUZON_INTERVALO_MS)
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[wa-bridge] servidor HTTP interno escuchando en 127.0.0.1:${PORT}`)
