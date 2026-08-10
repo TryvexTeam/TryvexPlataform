@@ -77,7 +77,13 @@ REVOKE TRUNCATE, REFERENCES, TRIGGER ON dim_integrantes FROM authenticated;
 -- fabrica y volvemos al principio. El repo venia revocando caso por caso (030,
 -- 042) sin tocar nunca el default, que es de donde salia el problema.
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
+-- El `FOR ROLE postgres` no es decorativo (lo marco Goku al revisar): sin el, la
+-- clausula aplica al rol que ESTA corriendo la migracion. Si ese rol no es
+-- exactamente `postgres`, se crea una entrada de default privileges nueva para
+-- ese otro rol y la de postgres queda intacta -- las tablas que cree postgres
+-- mañana seguirian naciendo abiertas a anon. Y no avisa: el REVOKE sale bien,
+-- simplemente no protege nada. Un placebo silencioso.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLES FROM anon;
 
 -- == 4 - Comprobacion ========================================================
@@ -95,3 +101,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 --
 -- Un candado que ademas rompe la aplicacion no sirve: las dos pruebas, no solo
 -- la primera.
+--
+-- Y contra que rol quedaron los default privileges -- debe decir `postgres`:
+--
+--   SELECT defaclrole::regrole, defaclacl
+--     FROM pg_default_acl WHERE defaclnamespace = 'public'::regnamespace;
+--
+-- Si apareciera otro rol, el punto 3 no protege nada y hay que rehacerlo desde
+-- una sesion que corra como postgres.
