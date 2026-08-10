@@ -24,7 +24,11 @@ let contadorCanales = 0
 
 export function useDatosVivos(tablas: string[], opciones?: { intervaloMs?: number }) {
   const router = useRouter()
-  const intervaloMs = opciones?.intervaloMs ?? 45_000
+  // Red de seguridad, no mecanismo principal: quien actualiza la pantalla es el
+  // tiempo real de Supabase. Este repaso solo existe por si se pierde un evento,
+  // y estaba afinado como si fuera el camino principal — cada disparo vuelve a
+  // ejecutar el server component entero, en las ocho pantallas que usan el hook.
+  const intervaloMs = opciones?.intervaloMs ?? 180_000
 
   // Una ráfaga de cambios no debe pedir cinco renders seguidos.
   const pendiente = useRef<ReturnType<typeof setTimeout> | null>(null)
