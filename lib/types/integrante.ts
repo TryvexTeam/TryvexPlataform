@@ -133,6 +133,12 @@ export type Integrante = {
   linkedin: string | null
   portfolio: string | null
   category: (typeof CATEGORIAS_EQUIPO)[number]
+  /**
+   * Si su ficha sale publicada en tryvex.tech (ver v_equipo_publico, migración 044).
+   * No está en PerfilUpdateSchema a propósito: lo enciende el dueño desde
+   * /admin/permisos, no la persona desde /settings.
+   */
+  visible_en_landing: boolean
 }
 
 export const NOTIFICACIONES_LABELS: { key: keyof Notificaciones; label: string; descripcion: string }[] = [

@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { toast } from '@/lib/toast'
 import {
   PERMISO_LABELS,
+  VISIBILIDAD_LABELS,
   normalizarPermisos,
   type IntegrantePermisos,
   type Permiso,
@@ -100,6 +101,34 @@ export function PermisosEquipo({ equipoInicial }: PermisosEquipoProps) {
                        degradarlo: dejar el switch activo solo produciría errores. */
                     disabled={integrante.es_superadmin || guardando === integrante.id}
                     checked={integrante.es_superadmin ? true : integrante[key]}
+                    onCheckedChange={(valor: boolean) => togglePermiso(integrante, key, valor)}
+                  />
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Aparte de los permisos, y con línea de por medio: esto no da acceso a nada,
+              decide qué se ve afuera. El dueño también se enciende y se apaga como
+              cualquiera — ser dueño no implica salir publicado. */}
+          <div className="mt-3 border-t border-neutral-200 pt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {VISIBILIDAD_LABELS.map(({ key, label, descripcion }) => {
+              const control = `visibilidad-${integrante.id}-${key}`
+              return (
+                <div key={key} className="flex items-start justify-between gap-3">
+                  <label htmlFor={control} className="min-w-0">
+                    <span className="block text-[13px] font-medium text-[var(--tx-ink-primary)]">
+                      {label}
+                    </span>
+                    <span className="block text-[11.5px] text-neutral-500 leading-snug">
+                      {descripcion}
+                    </span>
+                  </label>
+                  <Switch
+                    id={control}
+                    className="mt-0.5 shrink-0"
+                    disabled={guardando === integrante.id}
+                    checked={integrante[key]}
                     onCheckedChange={(valor: boolean) => togglePermiso(integrante, key, valor)}
                   />
                 </div>
