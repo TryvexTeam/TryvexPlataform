@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { PerfilUpdateSchema } from '@/lib/types/integrante'
+import { revalidarEquipoEnLanding } from '@/lib/revalidate-landing'
 
 export async function GET() {
   const supabase = await createClient()
@@ -41,6 +42,10 @@ export async function PATCH(req: Request) {
     }
     throw err
   }
+
+  // No bloquea la respuesta al usuario ni falla el guardado si la landing
+  // no responde — ver revalidarEquipoEnLanding().
+  void revalidarEquipoEnLanding()
 
   return NextResponse.json({ success: true })
 }
