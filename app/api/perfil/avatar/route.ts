@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { revalidarEquipoEnLanding } from '@/lib/revalidate-landing'
@@ -83,7 +83,9 @@ export async function POST(req: Request) {
   }
 
   await borrarAnteriores(admin, perfil.id, ruta)
-  void revalidarEquipoEnLanding()
+  // Va en after() y no suelta como promesa: al devolver la respuesta el runtime
+  // puede congelar la invocación antes de que el fetch llegue a salir.
+  after(() => revalidarEquipoEnLanding())
 
   return NextResponse.json({ success: true, data: { avatar_url: publica.publicUrl } })
 }
@@ -100,7 +102,7 @@ export async function DELETE() {
   const admin = createAdminClient()
   await (admin as SB).from('dim_integrantes').update({ avatar_url: null }).eq('id', perfil.id)
   await borrarAnteriores(admin, perfil.id, null)
-  void revalidarEquipoEnLanding()
+  after(() => revalidarEquipoEnLanding())
 
   return NextResponse.json({ success: true })
 }
