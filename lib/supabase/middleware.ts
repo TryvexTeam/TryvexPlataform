@@ -55,7 +55,16 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/recuperar') ||          // pedir el link de contraseña nueva
     pathname.startsWith('/auth/confirmar') ||     // canje del token del correo
     pathname.startsWith('/api/auth/recuperar') ||
-    pathname.startsWith('/api/invitaciones/')  // validación de token no requiere sesión
+    pathname.startsWith('/api/invitaciones/') ||  // validación de token no requiere sesión
+    // Se autentica con `Authorization: Bearer <token de agente>`, no con sesión de
+    // navegador: acá entran Jarvis, Ariel y Spike, que corren como servicios. Sin
+    // esta línea el middleware los rebota a /login y la ruta NUNCA llega a ejecutarse
+    // — por eso el canal de agentes existe desde la 024 y jamás se pudo usar.
+    // "Pública" acá solo significa que el middleware la deja pasar: la ruta valida el
+    // token por su cuenta (hash + comparación en tiempo constante) y sin uno válido
+    // responde 401. Va solo `/mensajes`: el alta de agentes (POST /api/agentes) sigue
+    // exigiendo sesión de admin, que es la que reparte llaves nuevas.
+    pathname.startsWith('/api/agentes/mensajes')
 
   // /nueva-password queda deliberadamente FUERA de las públicas: se llega con la
   // sesión de recuperación ya abierta, así que necesita sesión. Si estuviera en la
