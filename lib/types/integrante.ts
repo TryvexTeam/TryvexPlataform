@@ -121,6 +121,13 @@ export type Integrante = {
   rol_principal: string | null
   especialidad: string | null
   avatar_url: string | null
+  /**
+   * Foto en alta resolución para tryvex.tech/team. Se escribe solo desde
+   * /api/perfil/foto-landing, igual que avatar_url, y por eso NO está en
+   * PerfilUpdateSchema: no viaja en el PATCH del formulario.
+   * Cuando es null, la landing publica avatar_url (ver v_equipo_publico).
+   */
+  foto_landing_url: string | null
   activo: boolean
   es_admin: boolean
   color: string | null
