@@ -1,11 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
-import type { IntegrantePermisos, Permiso } from '@/lib/types/permisos'
+import type { IntegrantePermisos, Permiso, Privilegio } from '@/lib/types/permisos'
 import { normalizarPermisos } from '@/lib/types/permisos'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
 
-const CAMPOS = 'id, nombre, email, activo, es_superadmin, ver_jornadas_equipo, ver_finanzas, gestionar_finanzas'
+const CAMPOS =
+  'id, nombre, email, activo, es_superadmin, ver_jornadas_equipo, ver_finanzas, gestionar_finanzas, visible_en_landing'
 
 export class PermisosRepository {
   private sb: SB
@@ -39,8 +40,9 @@ export class PermisosRepository {
    * Cambia los permisos de un integrante.
    *
    * La autorización real no está aquí: la impone el trigger `guardar_flags_privilegio`
-   * de la migración 028, que rechaza el UPDATE si quien lo hace no es el dueño. Esta
-   * capa es conveniencia y mensajes claros, no el candado.
+   * de la migración 028 (extendido en la 044 para `visible_en_landing`), que rechaza el
+   * UPDATE si quien lo hace no es el dueño. Esta capa es conveniencia y mensajes claros,
+   * no el candado.
    */
   async actualizar(integranteId: string, cambios: Partial<Record<Permiso, boolean>>): Promise<void> {
     const { error } = await this.sb
@@ -57,10 +59,16 @@ export class PermisosRepository {
   }
 }
 
-/** Helper de servidor: ¿este integrante puede ver esta sección? */
+/**
+ * Helper de servidor: ¿este integrante puede ver esta sección?
+ *
+ * Solo privilegios. `visible_en_landing` queda fuera a propósito: no habilita ninguna
+ * sección, y el atajo de "el dueño puede todo" daría la respuesta equivocada (ser dueño
+ * no es lo mismo que estar publicado en la landing).
+ */
 export function puede(
   perfil: Pick<IntegrantePermisos, 'es_superadmin' | 'ver_jornadas_equipo' | 'ver_finanzas' | 'gestionar_finanzas'> | null,
-  permiso: Permiso,
+  permiso: Privilegio,
 ): boolean {
   if (!perfil) return false
   if (perfil.es_superadmin) return true
