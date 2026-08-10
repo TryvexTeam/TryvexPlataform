@@ -1,7 +1,8 @@
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse, after, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { PermisosRepository } from '@/lib/repos/permisos'
 import { ActualizarPermisosSchema } from '@/lib/types/permisos'
+import { revalidarEquipoEnLanding } from '@/lib/revalidate-landing'
 
 /**
  * Reparto de accesos. Solo el dueño (es_superadmin) entra aquí.
@@ -55,6 +56,15 @@ export async function PATCH(req: NextRequest) {
     }
     return NextResponse.json({ success: false, error: msg }, { status: 500 })
   }
+
+  // `visible_en_landing` se reparte desde acá, y decide quién sale en
+  // tryvex.tech/team. Sin este aviso el cambio esperaba al ISR de la landing:
+  // hasta 15 minutos. Molesto al encender a alguien; malo al apagarlo, que es
+  // justo cuando se quiere que desaparezca ya.
+  //
+  // Va en after() y no suelto como promesa: al devolver la respuesta el runtime
+  // puede congelar la invocación antes de que el fetch llegue a salir.
+  after(() => revalidarEquipoEnLanding())
 
   return NextResponse.json({ success: true })
 }
