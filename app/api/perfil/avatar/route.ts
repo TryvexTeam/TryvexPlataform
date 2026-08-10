@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
+import { revalidarEquipoEnLanding } from '@/lib/revalidate-landing'
 
 /**
  * Foto de perfil del integrante.
@@ -82,6 +83,7 @@ export async function POST(req: Request) {
   }
 
   await borrarAnteriores(admin, perfil.id, ruta)
+  void revalidarEquipoEnLanding()
 
   return NextResponse.json({ success: true, data: { avatar_url: publica.publicUrl } })
 }
@@ -98,6 +100,7 @@ export async function DELETE() {
   const admin = createAdminClient()
   await (admin as SB).from('dim_integrantes').update({ avatar_url: null }).eq('id', perfil.id)
   await borrarAnteriores(admin, perfil.id, null)
+  void revalidarEquipoEnLanding()
 
   return NextResponse.json({ success: true })
 }
