@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { PerfilUpdateSchema } from '@/lib/types/integrante'
@@ -45,7 +45,9 @@ export async function PATCH(req: Request) {
 
   // No bloquea la respuesta al usuario ni falla el guardado si la landing
   // no responde — ver revalidarEquipoEnLanding().
-  void revalidarEquipoEnLanding()
+  // Va en after() y no suelta como promesa: al devolver la respuesta el runtime
+  // puede congelar la invocación antes de que el fetch llegue a salir.
+  after(() => revalidarEquipoEnLanding())
 
   return NextResponse.json({ success: true })
 }
