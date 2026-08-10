@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
+import { ScraperPanel } from './scraper-panel'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
   sin_contactar:    { label: 'Sin contactar',   dot: 'oklch(63% 0.008 240)' },
@@ -72,6 +73,13 @@ export function LeadsInbox({ leads, selectedId }: LeadsInboxProps) {
     )
   })
 
+  // Los rubros que la cartera ya tiene: se le ofrecen al que va a buscar mas,
+  // para que no los escriba de memoria y termine con "barberias" y "barberia"
+  // como si fueran dos rubros distintos.
+  const nichosDisponibles = Array.from(
+    new Set(leads.map(l => l.nicho).filter((n): n is string => Boolean(n))),
+  ).sort((a, b) => a.localeCompare(b, 'es'))
+
   const featuredId = (() => {
     if (filtered.length === 0) return null
     const withScore = filtered.filter(l => l.score != null)
@@ -105,9 +113,12 @@ export function LeadsInbox({ leads, selectedId }: LeadsInboxProps) {
         </label>
       </div>
 
-      {/* Contador */}
-      <div className="feed__chips">
+      {/* Contador + traer leads nuevos */}
+      <div className="feed__chips" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span className="feed__count">{filtered.length} leads</span>
+        <span style={{ marginLeft: 'auto' }}>
+          <ScraperPanel nichos={nichosDisponibles} />
+        </span>
       </div>
 
       {/* Feed List */}
