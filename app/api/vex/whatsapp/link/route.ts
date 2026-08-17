@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient() as SB;
   const { data: lead } = await admin
     .from("fact_leads")
-    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales")
+    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web")
     .eq("id", parsed.data.lead_id)
     .single();
 

@@ -23,6 +23,21 @@ type DraftIA = {
 
 type LeadDraftInput = LeadResumen & { tiene_web?: boolean | null; info_texto?: string | null };
 
+/**
+ * Tres estados, no dos: sí, no, y **no sabemos**.
+ *
+ * Antes esto era `lead.tiene_web ? "Sí" : "No"`, y ahí se colaba la mentira: un
+ * dato ausente se convertía en un "No" afirmativo, y el prompt le pide al
+ * modelo abrir con "sin web = invisible cuando te buscan en Google". A un
+ * negocio que sí tiene web, eso es falso en el primer renglón. El límite que
+ * puso Cristian fue textual: "no información falsa".
+ */
+function estadoWeb(tieneWeb: boolean | null | undefined): string {
+  if (tieneWeb === true) return "Sí"
+  if (tieneWeb === false) return "No"
+  return "no sabemos"
+}
+
 function canalesDisponibles(lead: LeadDraftInput): Canal[] {
   const disponibles: Canal[] = [];
   if (lead.telefono) disponibles.push("whatsapp");
@@ -93,8 +108,9 @@ Datos del lead:
 - Negocio: ${lead.nombre_negocio}
 - Nicho: ${nicho}
 - Ubicación: ${ubicacion}
-- ¿Tiene sitio web?: ${lead.tiene_web ? "Sí" : "No"}
-- Info extra: ${lead.info_texto ?? "N/A"}
+- ¿Tiene sitio web?: ${estadoWeb(lead.tiene_web)}
+- Info extra: ${lead.info_texto?.trim() || "N/A"}
+${lead.tiene_web == null ? "\nNO SABEMOS si este negocio tiene sitio web. No menciones su web, ni que no aparece en Google, ni nada que dependa de ese dato: buscá el gancho en su rubro, su ubicación o la info extra.\n" : ""}
 
 Canales a generar (genera SOLO estos): ${disponibles.join(", ")}.
 ${customPrompt ? `\nInstrucciones adicionales del usuario (priorízalas): ${customPrompt}\n` : ""}
