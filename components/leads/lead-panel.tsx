@@ -441,7 +441,16 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
         )}
         </div>
 
-        {chatAbierto && lead.telefono && <LeadChatWa lead={lead} />}
+        {/* `key` obligatoria: este panel NO se remonta al cambiar de lead (ver
+            la transicion de fade con prevLeadId, mas arriba), solo recibe otro
+            `lead`. Sin key, React reusa el mismo chat y su estado sobrevive al
+            cambio de ficha: el 16-ago-2026 eso mando un mensaje que decia
+            "¿hablo con Peluqueria Para Ella y el?" desde OTRA ficha, porque el
+            texto quedo cargado del lead anterior. Peor todavia, mientras carga
+            el hilo nuevo se alcanzaban a ver los mensajes del cliente anterior
+            dentro de la ficha de otro. Con key, cambiar de lead monta un chat
+            limpio. */}
+        {chatAbierto && lead.telefono && <LeadChatWa key={lead.id} lead={lead} />}
       </div>
     </section>
   )
