@@ -99,7 +99,9 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     const espia = llmEspia()
     await generarDraftLead({ ...lead, tiene_web: false, url_web: null }, undefined, espia.llm)
     expect(espia.prompt()).toMatch(/¿Tiene sitio web\?:\s*No\b/)
-    expect(espia.prompt()).not.toMatch(/no menciones/i)
+    // La advertencia específica de la web, no cualquier "no menciones": el
+    // prompt ahora trae otra para las reseñas cuando faltan.
+    expect(espia.prompt()).not.toMatch(/NO SABEMOS si tiene sitio web/i)
   })
 
   it('con conversación previa, le pide el SIGUIENTE mensaje y no otra presentación', async () => {
@@ -151,6 +153,62 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     ])
     expect(espia.prompt()).toMatch(/El negocio: hola/)
     expect(espia.prompt()).not.toMatch(/El negocio:\s*$/m)
+  })
+
+  it('las estrellas y reseñas llegan explicadas, no crudas', async () => {
+    // El caso real del 17-ago: `info_texto = "4,8\n(256)"` llegaba sin etiqueta
+    // y el modelo escribió "256 personas buscan barberías como la tuya cada
+    // semana". Un dato sin explicar es material para inventar.
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, info_texto: '4,8\n(256)' }, undefined, espia.llm)
+
+    expect(espia.prompt()).toMatch(/Reputación en Google Maps: 4,8 estrellas con 256 reseñas/)
+    // Y no se lo pasa además en bruto, que sería darle las dos versiones.
+    expect(espia.prompt()).not.toMatch(/Otra info del negocio/)
+  })
+
+  it('sin reputación, le prohíbe hablar de estrellas', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, info_texto: null }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/NO menciones estrellas ni reseñas/i)
+  })
+
+  it('la comuna sale de la dirección, no del primer tramo', async () => {
+    // El modelo escribió "En Pto San Francisco", que es un pasaje de la
+    // dirección, no la comuna.
+    const espia = llmEspia()
+    await generarDraftLead(
+      {
+        ...lead,
+        localidad: 'Pto San Francisco, Av. El Peral 3642 con, 8150000 Puente Alto, Región Metropolitana',
+      },
+      undefined,
+      espia.llm,
+    )
+
+    expect(espia.prompt()).toMatch(/Comuna: Puente Alto/)
+    expect(espia.prompt()).not.toMatch(/Comuna: Pto San Francisco/)
+  })
+
+  it('si la comuna no se puede leer, le prohíbe nombrar una', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, localidad: 'Av. Matta 1200' }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/NO nombres ninguna/i)
+  })
+
+  it('le pide las cinco partes, no solo gancho y cierre', async () => {
+    // El defecto que Cristian vio: "ni siquiera saludaron ni explicaron quiénes
+    // somos". El prompt viejo pedía literalmente "gancho+CTA" para WhatsApp,
+    // tirando la presentación y la solución.
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+
+    expect(espia.prompt()).toMatch(/1\. SALUDO/)
+    expect(espia.prompt()).toMatch(/2\. QUIÉN SOS/)
+    expect(espia.prompt()).toMatch(/3\. EL PROBLEMA/)
+    expect(espia.prompt()).toMatch(/4\. CÓMO LO RESOLVEMOS/)
+    expect(espia.prompt()).toMatch(/5\. LA INVITACIÓN/)
+    expect(espia.prompt()).not.toMatch(/gancho\+CTA/)
   })
 
   it('la info del negocio llega al modelo cuando existe', async () => {

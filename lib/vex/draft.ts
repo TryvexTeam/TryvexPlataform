@@ -1,5 +1,6 @@
 import { construirLinkWhatsApp } from "./telefono";
 import { llmJSON } from "./llm";
+import { leerComuna, leerReputacion } from "./negocio";
 import type { LeadResumen } from "./cartera";
 
 export const AGENDA_URL = "https://tryvex.tech";
@@ -121,55 +122,82 @@ export async function generarDraftLead(
   }
 
   const nicho = lead.nicho ? lead.nicho.toLowerCase() : "negocio";
-  const ubicacion = lead.localidad || "su zona";
+  const comuna = leerComuna(lead.localidad);
+  const reputacion = leerReputacion(lead.info_texto);
+
+  // Cada dato se entrega ETIQUETADO y solo si existe. Un valor crudo sin
+  // explicar es material para inventar: "4,8 (256)" se convirtio una vez en
+  // "256 personas buscan barberias como la tuya cada semana".
+  const datos = [
+    `- Nombre del negocio: ${lead.nombre_negocio}`,
+    `- Rubro: ${nicho}`,
+    comuna ? `- Comuna: ${comuna}` : "- Comuna: no la sabemos con certeza (NO nombres ninguna)",
+    `- ¿Tiene sitio web?: ${estadoWeb(lead.tiene_web, lead.url_web)}`,
+    reputacion
+      ? `- Reputación en Google Maps: ${String(reputacion.calificacion).replace(".", ",")} estrellas con ${reputacion.resenas} reseñas`
+      : "- Reputación en Google: no la tenemos (NO menciones estrellas ni reseñas)",
+  ].join("\n");
 
   const prompt = `
-Eres un COPYWRITER de respuesta directa de élite (nivel Ogilvy/Halbert) trabajando para
-Tryvex, una agencia que digitaliza negocios locales: páginas web rápidas, aparecer en Google,
-automatización de reseñas y embudos de venta. Tu único trabajo es escribir mensajes que hagan
-que el dueño QUIERA agendar una llamada. No vendes "una web": vendes MÁS CLIENTES y plata que
-hoy se está yendo a la competencia.
+Escribís mensajes de WhatsApp para Tryvex, un estudio chileno que le hace la página web a
+negocios locales, los deja apareciendo en Google y Maps, y les ordena las reseñas para que
+generen confianza. Le escribís al DUEÑO, que no te conoce y está trabajando.
 
-Escribe un mensaje 1-a-1, hecho a medida para ESTE negocio (nada de plantilla genérica),
-usando el framework PAS:
-1) PROBLEMA (gancho): abre con una frase específica y real sobre SU situación que le pegue
-   en el primer segundo. Usa sus datos (sin web = invisible cuando alguien lo busca en Google).
-   Nada de "Espero que estés bien" ni relleno.
-2) AGITAR: hazle sentir el costo de no hacer nada. Concreto: cada semana hay clientes que lo
-   buscan, no lo encuentran (o no confían) y terminan comprándole al competidor que SÍ está
-   online. Es plata real perdida, no un problema técnico abstracto.
-3) SOLUCIÓN (no la saltes, es clave): explica claramente que NOSOTROS, Tryvex, somos quienes
-   lo resolvemos y CÓMO. Nombra 2-3 cosas concretas que hacemos por él, atadas a su dolor:
-   le creamos/mejoramos su sitio web para que lo encuentren, lo posicionamos en Google y Maps,
-   le ordenamos las reseñas para que generen confianza, y le armamos el camino para que ese
-   visitante termine comprando. Dilo en resultado, no en jerga ("que te encuentren y te elijan",
-   no "stack moderno"). Deja claro que es Tryvex quien lo hace por él, llave en mano, sin que
-   tenga que entender de tecnología. Posiciónate como el experto que ya lo hizo con negocios como el suyo.
-4) CTA: invítalo a una llamada corta y sin compromiso para mostrarle exactamente qué cambiar.
-   Baja la fricción ("15 min", "sin costo", "te muestro 2-3 cosas concretas"). Que dé ganas de
-   agendar AHORA.
+Tu objetivo es una respuesta, no una venta. Que el dueño piense "esto me pasa a mí" y conteste.
 
-Reglas de oro:
-- Específico > genérico. Honesto: no inventes datos ni prometas resultados falsos.
-- Frases cortas, lenguaje simple, confiado, cálido, chileno neutro. Cero sonar a robot o a spam.
-- Habla de ÉL y sus clientes, no de ti. "Tú/tu negocio" mucho más que "nosotros".
-- Sin exagerar, sin signos de exclamación de más, sin clichés de marketing vacíos.
+## La estructura, en este orden y sin saltarte ninguna parte
 
-Datos del lead:
-- Negocio: ${lead.nombre_negocio}
-- Nicho: ${nicho}
-- Ubicación: ${ubicacion}
-- ¿Tiene sitio web?: ${estadoWeb(lead.tiene_web, lead.url_web)}
-- Info extra: ${lead.info_texto?.trim() || "N/A"}
-${sabemosDeSuWeb(lead) ? "" : "\nNO SABEMOS si este negocio tiene sitio web. No menciones su web, ni que no aparece en Google, ni nada que dependa de ese dato: buscá el gancho en su rubro, su ubicación o la info extra.\n"}
+1. SALUDO: saludá y preguntá si hablás con el negocio, por su nombre. Tal cual:
+   "Hola, ¿hablo con <nombre del negocio>?". Es una pregunta, no un anuncio.
+2. QUIÉN SOS: una línea. Que se entienda en el primer segundo quién escribe y a qué.
+   Sin esto, sos un desconocido pidiendo algo — y nadie contesta eso.
+3. EL PROBLEMA, CON SU DATO REAL: usá lo que sabemos de ESTE negocio (abajo) para mostrarle
+   algo suyo que hoy le está costando plata. Concreto y verificable, nunca genérico.
+4. CÓMO LO RESOLVEMOS: nombrá DOS O TRES cosas concretas que hacemos por él, atadas a lo que
+   le dijiste en el punto 3. Del menú real: le hacemos la página, lo dejamos apareciendo
+   cuando lo buscan en Google y en Maps, y le ponemos sus reseñas a la vista para que el que
+   llega confíe. En resultado, no en jerga ("que te encuentren y te elijan", NUNCA "presencia
+   online" ni "presencia digital" ni "soluciones"). Llave en mano: él no tiene que entender
+   nada técnico.
+5. LA INVITACIÓN: una llamada corta y sin compromiso. Baja la fricción: 15 minutos, sin costo,
+   le mostramos un ejemplo de un negocio como el suyo. Cerrá con ${AGENDA_URL}
 
+## Reglas duras
+
+- ⛔ NO INVENTES NADA. Solo podés afirmar lo que está en los datos de abajo. Si un dato no
+  está, ese ángulo no existe: buscá otro. Prohibido inventar cifras, cantidades de búsquedas,
+  clientes perdidos, precios, plazos o nombres de competidores.
+- Las estrellas y reseñas, si están, son de Google Maps: son su reputación ya ganada. Ese es
+  el mejor ángulo que tenés — reputación real que no le está trayendo clientes nuevos porque
+  no aparece cuando lo buscan. Citá el número tal cual, sin redondear ni adornar.
+- Largo: entre 50 y 125 palabras. Menos que eso no alcanza para presentarse; más, no se lee.
+- Chileno neutro, tuteo, cálido y directo. Frases cortas. Como le escribe una persona a otra,
+  no como un aviso publicitario.
+- ⛔ Le hablás AL DUEÑO, de tú: "no apareces", "tus reseñas", "tu barbería". NUNCA en tercera
+  persona sobre su negocio ("no aparecen", "sus reseñas", "su visibilidad") ni de usted: suena
+  a carta de banco, no a alguien que le escribe por WhatsApp.
+- ⛔ Frases prohibidas por acartonadas o vacías: "me dirijo a", "por medio del presente",
+  "presencia en línea", "presencia digital", "posicionamiento", "soluciones digitales",
+  "espero que estés bien", "somos una empresa líder". Si te sale una, reescribí la frase.
+- Si sabés la comuna, usala: le muestra que no es un mensaje masivo. Nombrala en el punto 3,
+  atada a cómo lo buscan ("cuando alguien busca <rubro> en <comuna>...").
+- Sin exclamaciones de más, sin clichés de marketing.
+- Máximo 1 emoji, y solo si cae natural.
+
+## Los datos de ESTE negocio (lo único que podés afirmar)
+
+${datos}
+${lead.info_texto && !reputacion ? `- Otra info del negocio: ${lead.info_texto.trim()}` : ""}
+${sabemosDeSuWeb(lead) ? "" : "\n⚠️ NO SABEMOS si tiene sitio web. No menciones su web, ni Google, ni que no aparece: buscá el gancho en su rubro, su comuna o su reputación."}
 ${bloqueHistorial(historial)}
 
 Canales a generar (genera SOLO estos): ${disponibles.join(", ")}.
-${customPrompt ? `\nInstrucciones adicionales del usuario (priorízalas): ${customPrompt}\n` : ""}
+${customPrompt ? `
+Instrucciones adicionales del usuario (priorízalas): ${customPrompt}
+` : ""}
 Devuelve un objeto JSON con SOLO estas claves (las que correspondan a los canales pedidos):
-- "whatsapp_text": versión corta y directa del mismo gancho+CTA, con el link ${AGENDA_URL}. 1 emoji máx si es natural.
-- "social_text": versión breve para DM de red social, gancho+CTA, con el link ${AGENDA_URL}.
+- "whatsapp_text": el mensaje completo con las 5 partes, listo para enviar por WhatsApp.
+- "social_text": lo mismo, adaptado a un mensaje directo de red social.
 `.trim();
 
   let ia: DraftIA = {};
