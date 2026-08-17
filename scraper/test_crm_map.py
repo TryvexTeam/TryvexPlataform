@@ -51,6 +51,42 @@ def test_un_lead_sin_datos_no_inventa_columnas():
     assert m["instagram"] is None
 
 
+# --- la basura invisible que venia pegada -----------------------------------
+def test_saca_el_glifo_de_icono_del_telefono():
+    """Maps pega el simbolo del telefono, de su fuente propia, al texto.
+
+    Es U+E0B0, del Area de Uso Privado: no es un espacio, asi que ningun
+    `strip` lo sacaba. Quedo en 463 de los 538 telefonos de la cartera.
+    """
+    assert crm_map.limpiar("\n+56 9 7547 7440") == "+56 9 7547 7440"
+
+
+def test_saca_los_saltos_de_linea_del_horario():
+    assert crm_map.limpiar("Cerrado · Apertura: 8 a.m.\n") == "Cerrado · Apertura: 8 a.m."
+
+
+def test_no_toca_un_texto_que_ya_estaba_limpio():
+    assert crm_map.limpiar("+56 2 2697 8872") == "+56 2 2697 8872"
+
+
+def test_un_texto_que_era_solo_basura_queda_en_none():
+    # Mejor vacio que un campo con un caracter invisible adentro.
+    assert crm_map.limpiar("") is None
+    assert crm_map.limpiar("   ") is None
+    assert crm_map.limpiar(None) is None
+
+
+def test_el_telefono_se_guarda_limpio():
+    m = crm_map.a_crm({"nombre": "X", "telefono": "\n+56 9 7547 7440"})
+    assert m["telefono"] == "+56 9 7547 7440"
+
+
+def test_info_texto_conserva_su_salto_a_proposito():
+    """Es el crudo de la ficha y hay codigo que lo lee con ese formato."""
+    m = crm_map.a_crm({"nombre": "X", "info_texto": "4,8\n(72)"})
+    assert m["info_texto"] == "4,8\n(72)"
+
+
 # --- Instagram -------------------------------------------------------------
 def test_saca_el_instagram_y_le_quita_el_seguimiento():
     # Venia duplicado y con `?igshid=...`, que no es parte del perfil.
