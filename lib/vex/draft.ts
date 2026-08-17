@@ -1,5 +1,5 @@
 import { construirLinkWhatsApp } from "./telefono";
-import { llmJSON } from "./llm";
+import { llmJSON, CuotaAgotada } from "./llm";
 import { leerComuna, leerReputacion } from "./negocio";
 import type { LeadResumen } from "./cartera";
 
@@ -249,18 +249,31 @@ ${lead.info_texto && !reputacion ? `- Otra info del negocio: ${lead.info_texto.t
 ${sabemosDeSuWeb(lead) ? "" : "\n⚠️ NO SABEMOS si tiene sitio web. No menciones su web, ni Google, ni que no aparece: busca el gancho en su rubro, su comuna o su reputacion."}
 ${bloqueHistorial(historial)}
 
-Canales a generar (genera SOLO estos): ${disponibles.join(", ")}.
 ${customPrompt ? `\nInstrucciones adicionales del usuario (priorizalas): ${customPrompt}\n` : ""}
-Devuelve un objeto JSON con SOLO estas claves (las que correspondan a los canales pedidos):
-- "whatsapp_text": el mensaje completo con las 5 partes, listo para enviar por WhatsApp.
-- "social_text": lo mismo, adaptado a un mensaje directo de red social.
+Devuelve un objeto JSON con ${disponibles.length === 1 ? "esta unica clave" : "estas claves"}:
+${disponibles.includes("whatsapp") ? '- "whatsapp_text": el mensaje completo con las 5 partes, listo para enviar por WhatsApp.\n' : ""}${disponibles.includes("social") ? '- "social_text": el mensaje completo con las 5 partes, adaptado a un mensaje directo de red social.\n' : ""}
 `.trim();
 
   let ia: DraftIA = {};
+  // Pedir y leer son dos cosas distintas, y antes compartian un solo `catch`:
+  // cualquier fallo de la llamada —incluida la cuota diaria agotada— se
+  // reportaba como "la IA no devolvio un JSON valido". Ese mensaje manda a
+  // buscar el problema al lugar equivocado; el 17-ago costo veinte minutos de
+  // revisar la personalizacion cuando lo unico que pasaba era que se habia
+  // acabado la cuota del dia.
+  let respuesta: string;
   try {
-    ia = JSON.parse(await llm(prompt));
+    respuesta = await llm(prompt);
+  } catch (err) {
+    if (err instanceof CuotaAgotada) return { ...base, aviso: err.message };
+    const detalle = err instanceof Error ? err.message : String(err);
+    return { ...base, aviso: `No se pudo generar el mensaje: ${detalle.slice(0, 160)}` };
+  }
+
+  try {
+    ia = JSON.parse(respuesta);
   } catch {
-    return { ...base, aviso: "La IA no devolvió un JSON válido para este lead." };
+    return { ...base, aviso: "La IA respondió algo que no es JSON válido para este lead." };
   }
 
   const setDisp = new Set<Canal>(disponibles);

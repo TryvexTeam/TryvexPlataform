@@ -89,7 +89,10 @@ async function ejecutarAccion(
       );
       return {
         tipo: a.tipo,
-        datos: { total: borradores.length },
+        // Los filtros viajan con el resultado para poder decir QUE se busco
+        // cuando no aparece nada. Sin eso, un rubro mal entendido se ve igual
+        // que una cartera vacia.
+        datos: { total: borradores.length, nicho: a.nicho, localidad: a.localidad },
         borradores,
       };
     }
@@ -157,9 +160,19 @@ export async function POST(req: Request) {
         const d = r.datos as Record<string, unknown> | null
         if (r.tipo === "preparar_envio") {
           const n = Number(d?.total ?? 0)
-          return n === 0
-            ? "No se encontraron leads que cumplan lo pedido, así que no hay borradores."
-            : `Se prepararon ${n} borrador${n === 1 ? "" : "es"}, uno por negocio. Aparecen abajo, listos para revisar. Si quiere más, tiene que decir cuántos.`
+          if (n > 0) {
+            return `Se prepararon ${n} borrador${n === 1 ? "" : "es"}, uno por negocio. Aparecen abajo, listos para revisar. Si quiere más, tiene que decir cuántos.`
+          }
+          // Decir QUE se busco, no solo que no habia nada. Con "no se
+          // encontraron leads" a secas, un filtro mal entendido (pedir el rubro
+          // "distinto nicho", por ejemplo) se ve igual que una cartera vacia.
+          const filtros = [
+            d?.nicho ? `del rubro "${d.nicho}"` : null,
+            d?.localidad ? `en "${d.localidad}"` : null,
+          ].filter(Boolean).join(" ")
+          return filtros
+            ? `No hay leads sin contactar ${filtros}. Puede ser que el rubro no exista en la cartera: conviene probar sin ese filtro o con otro nombre.`
+            : "No hay leads sin contactar con teléfono disponible, así que no hay borradores."
         }
         return `${r.tipo}: ${JSON.stringify(d)}`
       })
