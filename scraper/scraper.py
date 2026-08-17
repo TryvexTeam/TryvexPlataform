@@ -403,6 +403,81 @@ async def extraer_horario(page: Page) -> Optional[str]:
     return None
 
 
+def id_de_google(url: str) -> Optional[str]:
+    """El identificador unico que Google le da a cada local, sacado de la URL.
+
+    Hoy un negocio se reconoce por nombre + rubro, y por eso hay fichas
+    duplicadas: "Salon Regias" esta dos veces, una como peluqueria y otra como
+    centro de estetica. Es el MISMO local. Este identificador no cambia aunque
+    le cambien el nombre al negocio, asi que sirve para no duplicar nunca mas.
+
+    Vive en el `data=` de la URL de la ficha, con la forma `!1s0x<algo>:0x<algo>`.
+    Se devuelve el par completo porque la primera mitad sola se repite entre
+    locales cercanos: lo que identifica es el par.
+    """
+    if not url:
+        return None
+    m = re.search(r"!1s(0x[0-9a-f]+:0x[0-9a-f]+)", url, re.I)
+    return m.group(1).lower() if m else None
+
+
+# Como Maps dice que un negocio ya no atiende, en los idiomas en que puede
+# aparecer la ficha. Se listan como frases y no como palabras sueltas: "cerrado"
+# a secas es el estado normal de cualquier negocio fuera de horario, y tomarlo
+# por cierre definitivo descartaria media cartera.
+_FRASES_CIERRE = (
+    "permanentemente cerrado",
+    "cerrado permanentemente",
+    "permanently closed",
+)
+
+
+def esta_cerrado_para_siempre(texto: str) -> bool:
+    """¿La ficha dice que el negocio cerro definitivamente?
+
+    Escribirle a un negocio que cerro es la peor carta de presentacion posible,
+    y hoy no teniamos como saberlo.
+
+    ⚠️ "Cerrado temporalmente" NO cuenta: ese vuelve a abrir, y descartarlo
+    seria perder un lead bueno.
+    """
+    if not texto:
+        return False
+    limpio = texto.lower()
+    return any(f in limpio for f in _FRASES_CIERRE)
+
+
+async def extraer_categoria(page: Page) -> Optional[str]:
+    """El rubro que Google le pone al negocio, no el que nosotros buscamos.
+
+    Hoy se guarda "barberias" porque es lo que se puso en la busqueda. Google
+    dice cosas mas precisas: "Barberia", "Peluqueria masculina", "Salon de
+    belleza". Sirve para escribir mas al grano sin inventar nada.
+    """
+    for selector in ['button[jsaction*="category"]', "button.DkEaL", ".YhemCb"]:
+        try:
+            el = await page.query_selector(selector)
+            if el:
+                texto = (await el.inner_text()).strip()
+                if texto and len(texto) < 60:
+                    return texto
+        except Exception:
+            continue
+    return None
+
+
+async def cerro_para_siempre(page: Page) -> bool:
+    """¿La ficha avisa que el negocio cerro definitivamente?"""
+    for selector in ['.fCEvvc', '[aria-label*="ermanentemente"]', ".o0Svhf"]:
+        try:
+            el = await page.query_selector(selector)
+            if el and esta_cerrado_para_siempre((await el.inner_text()) or ""):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 async def extraer_negocio(page: Page) -> Optional[dict]:
     nombre: Optional[str] = None
     for selector in ["h1.DUwDvf", "h1[data-attrid]", "h1"]:
@@ -435,6 +510,12 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
     if tiene_web:
         return None
 
+    # Un negocio que cerro definitivamente no es un lead: escribirle es la peor
+    # carta de presentacion posible. Se descarta antes de gastar tiempo en el.
+    if await cerro_para_siempre(page):
+        log.info(f"  descartado (cerro para siempre): {nombre}")
+        return None
+
     telefono = await extraer_telefono(page)
     info_texto = await extraer_info_texto(page)
     rating = await extraer_rating(page)
@@ -453,6 +534,8 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
 
     return {
         "nombre": nombre,
+        "google_place_id": id_de_google(page.url),
+        "categoria_google": await extraer_categoria(page),
         "telefono": telefono,
         "info_texto": info_texto,
         "redes": redes,
@@ -476,6 +559,7 @@ async def scrape_categoria(
     pais: str = "Chile",
     zoom: int = 13,
     stop_file: str = "",
+    refrescar: bool = False,
 ) -> dict:
     log.info(f"[{categoria}] Iniciando busqueda...")
     stats_cat = {"nuevos": 0, "actualizados": 0, "descartados": 0, "saltados": 0, "top": []}
@@ -515,7 +599,10 @@ async def scrape_categoria(
 
     # Nombres que YA tenemos de este nicho → los salteamos SIN abrirlos, para no
     # perder tiempo re-procesando lo conocido (pedido de Cristian: traer NUEVOS).
-    ya_tengo = await nombres_existentes(supabase, categoria)
+    # En modo refrescar se re-procesan los conocidos a proposito: es la unica
+    # forma de que los leads ya guardados reciban los datos nuevos (identificador
+    # de Google, rubro real) sin borrar la cartera y empezar de cero.
+    ya_tengo = set() if refrescar else await nombres_existentes(supabase, categoria)
 
     for i, (nombre_lista, href) in enumerate(resultados):
         if stop_file and os.path.exists(stop_file):
@@ -620,6 +707,16 @@ async def main() -> None:
     parser.add_argument("--zoom", type=int, default=13)
     parser.add_argument("--cantidad", type=int, default=MAX_POR_CATEGORIA)
     parser.add_argument(
+        "--refrescar",
+        action="store_true",
+        help=(
+            "Re-procesa tambien los negocios que ya estan guardados, en vez de "
+            "saltearlos. Sirve para que los leads viejos reciban los datos que "
+            "el scraper aprendio a sacar despues de haberlos guardado. Es mas "
+            "lento: abre cada ficha."
+        ),
+    )
+    parser.add_argument(
         "--concurrencia", type=int, default=int(os.getenv("SCRAPER_CONCURRENCIA", "3")),
         help="categorías scrapeadas en paralelo. Bajar a 1-2 si comparte VPS con el "
              "bridge de WhatsApp (dos Chromium en la misma máquina).")
@@ -713,7 +810,7 @@ async def main() -> None:
                 )
                 page = await ctx.new_page()
                 try:
-                    stats_cat = await scrape_categoria(page, categoria, supabase, stats_global, args.ciudad, args.comuna, args.region, args.pais, args.zoom, stop_file)
+                    stats_cat = await scrape_categoria(page, categoria, supabase, stats_global, args.ciudad, args.comuna, args.region, args.pais, args.zoom, stop_file, args.refrescar)
                     stats_global["por_categoria"][categoria] = {
                         "nuevos": stats_cat["nuevos"],
                         "actualizados": stats_cat["actualizados"],

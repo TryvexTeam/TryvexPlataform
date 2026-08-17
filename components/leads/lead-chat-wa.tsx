@@ -41,6 +41,11 @@ export function textoSugerido(lead: Lead): string {
   )
 }
 
+/** ¿Este estado de envío significa que el mensaje NO llegó? */
+function fallado(estado: string): boolean {
+  return /no se envió|fallido|error/i.test(estado)
+}
+
 function hora(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
@@ -280,7 +285,14 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
                 {m.texto}
                 <div className="mt-1 text-[10px] text-[var(--tx-ink-muted)]">
                   {quien} · {hora(m.created_at)}
-                  {mio && m.estado_envio ? ` · ${m.estado_envio}` : ''}
+                  {/* Un envío caído se pinta en rojo, no en gris: si se ve igual
+                      que la hora, nadie lo lee, y creer que un cliente recibió
+                      un mensaje que nunca salió es el peor final posible. */}
+                  {mio && m.estado_envio ? (
+                    <span className={fallado(m.estado_envio) ? 'text-red-400 font-medium' : undefined}>
+                      {' · '}{m.estado_envio}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </div>
