@@ -20,6 +20,7 @@ import { toast } from '@/lib/toast'
 import type { Lead, Interaccion } from '@/lib/types/lead'
 import { RAZONES_PERDIDA } from '@/lib/types/lead'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
+import { LeadChatWa } from './lead-chat-wa'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
   sin_contactar:    { label: 'Sin contactar',   dot: 'oklch(63% 0.008 240)' },
@@ -76,6 +77,8 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   const [loading, setLoading] = useState(false)
   const [visible, setVisible] = useState(false)
   const [showRazones, setShowRazones] = useState(false)
+  // El chat de WhatsApp se abre y cierra con el mismo boton, ahi mismo.
+  const [chatAbierto, setChatAbierto] = useState(false)
   const prevLeadId = useRef<string | null>(null)
 
   // Fade transition when lead changes
@@ -419,20 +422,15 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
         </button>
         {lead.telefono && (
           <button
-            onClick={() => {
-              // wa.me exige solo dígitos con código de país
-              const digitos = lead.telefono!.replace(/\D/g, '')
-              const numero = digitos.length <= 9 ? `56${digitos}` : digitos
-              window.open(
-                `https://wa.me/${numero}?text=${encodeURIComponent(`Hola${lead.nombre_negocio ? ` ${lead.nombre_negocio}` : ''}, te escribimos de Tryvex 👋`)}`,
-                '_blank',
-                'noopener,noreferrer'
-              )
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-green-500/15 bg-green-500/5 hover:bg-green-500/15 text-green-400 transition-colors"
+            onClick={() => setChatAbierto((v) => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border transition-colors ${
+              chatAbierto
+                ? 'border-green-500/30 bg-green-500/15 text-green-300'
+                : 'border-green-500/15 bg-green-500/5 hover:bg-green-500/15 text-green-400'
+            }`}
           >
             <MessageCircle size={12} />
-            <span>WhatsApp</span>
+            <span>{chatAbierto ? 'Cerrar chat' : 'WhatsApp'}</span>
           </button>
         )}
 
@@ -442,6 +440,17 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           </div>
         )}
         </div>
+
+        {/* `key` obligatoria: este panel NO se remonta al cambiar de lead (ver
+            la transicion de fade con prevLeadId, mas arriba), solo recibe otro
+            `lead`. Sin key, React reusa el mismo chat y su estado sobrevive al
+            cambio de ficha: el 16-ago-2026 eso mando un mensaje que decia
+            "¿hablo con Peluqueria Para Ella y el?" desde OTRA ficha, porque el
+            texto quedo cargado del lead anterior. Peor todavia, mientras carga
+            el hilo nuevo se alcanzaban a ver los mensajes del cliente anterior
+            dentro de la ficha de otro. Con key, cambiar de lead monta un chat
+            limpio. */}
+        {chatAbierto && lead.telefono && <LeadChatWa key={lead.id} lead={lead} />}
       </div>
     </section>
   )

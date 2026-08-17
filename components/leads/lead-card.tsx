@@ -10,9 +10,11 @@ const origenConfig = {
 interface LeadCardProps {
   lead: Lead
   onClick?: () => void
+  /** Entrantes de WhatsApp sin leer. 0 o ausente = no se muestra nada. */
+  noLeidos?: number
 }
 
-export function LeadCard({ lead, onClick }: LeadCardProps) {
+export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
   return (
     <div
       onClick={onClick}
@@ -37,6 +39,22 @@ export function LeadCard({ lead, onClick }: LeadCardProps) {
         >
           {lead.nombre_negocio}
         </p>
+        {noLeidos > 0 && (
+          // Verde WhatsApp y arriba del score: es lo unico de la tarjeta que
+          // pide una accion HOY — alguien escribio y nadie contesto.
+          <span
+            className="flex items-center gap-1 text-[11px] shrink-0 font-semibold px-1.5 py-0.5 rounded-full"
+            style={{
+              background: 'oklch(72% 0.17 145 / 15%)',
+              color: 'oklch(80% 0.15 145)',
+              border: '1px solid oklch(72% 0.17 145 / 30%)',
+            }}
+            title={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin leer`}
+            aria-label={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin leer`}
+          >
+            💬 {noLeidos}
+          </span>
+        )}
         {lead.score && (
           <span
             className="flex items-center gap-0.5 text-[11px] shrink-0 font-medium"

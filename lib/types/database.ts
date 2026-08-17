@@ -164,6 +164,7 @@ export interface Database {
           id: string
           nombre_negocio: string
           telefono: string | null
+          wa_leido_hasta: string | null
           info_texto: string | null
           redes_sociales: Json | null
           tiene_web: boolean | null
@@ -184,6 +185,7 @@ export interface Database {
           id?: string
           nombre_negocio: string
           telefono?: string | null
+          wa_leido_hasta?: string | null
           info_texto?: string | null
           redes_sociales?: Json | null
           tiene_web?: boolean | null
@@ -204,6 +206,7 @@ export interface Database {
           id?: string
           nombre_negocio?: string
           telefono?: string | null
+          wa_leido_hasta?: string | null
           info_texto?: string | null
           redes_sociales?: Json | null
           tiene_web?: boolean | null

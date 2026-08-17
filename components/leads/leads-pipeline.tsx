@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
+import { useWaNoLeidos } from '@/lib/hooks/use-wa-no-leidos'
 import type { Lead, LeadInsert } from '@/lib/types/lead'
 import { ESTADOS_LEAD } from '@/lib/types/lead'
 import { cn } from '@/lib/utils'
@@ -32,6 +33,8 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
 
   // `fact_leads` tampoco estaba publicada: el canal decía SUBSCRIBED sin recibir nada.
   useDatosVivos(['fact_leads', 'interacciones_lead'])
+  // Quien escribio y todavia no le contestamos. Se pinta en la tarjeta.
+  const { noLeidos } = useWaNoLeidos()
 
   const leadsFiltrados = leads.filter((l) =>
     l.nombre_negocio.toLowerCase().includes(search.toLowerCase())
@@ -109,7 +112,11 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
         <KanbanBoard
           columns={columns}
           renderCard={(lead) => (
-            <LeadCard lead={lead} onClick={() => router.push(`/leads/${lead.id}`)} />
+            <LeadCard
+              lead={lead}
+              noLeidos={noLeidos[lead.id]}
+              onClick={() => router.push(`/leads/${lead.id}`)}
+            />
           )}
           onDragEnd={handleDragEnd}
         />
