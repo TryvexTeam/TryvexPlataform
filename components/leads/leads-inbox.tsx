@@ -6,6 +6,7 @@ import { Search } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { ScraperPanel } from './scraper-panel'
+import { useWaNoLeidos } from '@/lib/hooks/use-wa-no-leidos'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
   sin_contactar:    { label: 'Sin contactar',   dot: 'oklch(63% 0.008 240)' },
@@ -17,28 +18,67 @@ const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
   descartado:       { label: 'Descartado',       dot: 'oklch(55% 0.01 240)' },
 }
 
-function LeadAvatar({ initials, accent, size = 32 }: { initials: string; accent: string; size?: number }) {
+function LeadAvatar({
+  initials,
+  accent,
+  size = 32,
+  noLeidos = 0,
+}: {
+  initials: string
+  accent: string
+  size?: number
+  /** Entrantes de WhatsApp sin responder. 0 = sin globito. */
+  noLeidos?: number
+}) {
   const bg = accent === 'gradient'
     ? 'linear-gradient(135deg, #FF8A5B 0%, #C77BF5 55%, #8B5CF6 100%)'
     : `linear-gradient(135deg, ${accent}, ${accent}cc)`
   return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: bg,
-        display: 'grid',
-        placeItems: 'center',
-        color: '#fff',
-        fontSize: size * 0.36,
-        fontWeight: 600,
-        letterSpacing: '-0.02em',
-        boxShadow: '0 6px 16px rgba(0,0,0,.45)',
-        flexShrink: 0,
-      }}
-    >
-      {initials}
+    <div style={{ position: 'relative', flexShrink: 0, lineHeight: 0 }}>
+      <div
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          background: bg,
+          display: 'grid',
+          placeItems: 'center',
+          color: '#fff',
+          fontSize: size * 0.36,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          boxShadow: '0 6px 16px rgba(0,0,0,.45)',
+        }}
+      >
+        {initials}
+      </div>
+      {noLeidos > 0 && (
+        // Encima del avatar y no al lado del nombre: es el lugar donde la gente
+        // ya mira sin que nadie le explique, por WhatsApp y por todo lo demas.
+        <span
+          title={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin responder`}
+          aria-label={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin responder`}
+          style={{
+            position: 'absolute',
+            top: -3,
+            right: -3,
+            minWidth: 16,
+            height: 16,
+            padding: '0 4px',
+            borderRadius: 999,
+            background: 'oklch(72% 0.17 145)',
+            color: '#04140b',
+            fontSize: 10,
+            fontWeight: 700,
+            display: 'grid',
+            placeItems: 'center',
+            border: '2px solid oklch(10% 0.004 240)',
+            boxShadow: '0 2px 6px rgba(0,0,0,.5)',
+          }}
+        >
+          {noLeidos > 9 ? '9+' : noLeidos}
+        </span>
+      )}
     </div>
   )
 }
@@ -52,6 +92,8 @@ export function LeadsInbox({ leads, selectedId }: LeadsInboxProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // Quien escribio por WhatsApp y sigue sin respuesta.
+  const { noLeidos } = useWaNoLeidos()
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -162,6 +204,7 @@ export function LeadsInbox({ leads, selectedId }: LeadsInboxProps) {
                   initials={initials}
                   accent={isFeatured ? 'gradient' : avatarColor}
                   size={32}
+                  noLeidos={noLeidos[lead.id]}
                 />
                 <div className="flex-1 min-w-0">
                   {/* Fila 1: nombre + timestamp */}
