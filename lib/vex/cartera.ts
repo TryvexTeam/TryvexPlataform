@@ -28,6 +28,12 @@ export type LeadResumen = {
   tiene_web: boolean | null;
   info_texto: string | null;
   url_web: string | null;
+  // Datos del negocio ya interpretados (migracion 047). Antes vivian aplastados
+  // dentro de `notas` como texto suelto, invisibles para el redactor.
+  google_rating: number | null;
+  google_resenas: number | null;
+  horario: string | null;
+  instagram: string | null;
 };
 
 /** Cuenta los leads agrupados por estado (para el reporte de cartera). */
@@ -67,7 +73,7 @@ export async function recomendarLeads(
   // (la base es chica). ilike de Postgres no ignora acentos: "barberias" != "barberías".
   const { data, error } = await sb
     .from("fact_leads")
-    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web")
+    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web,google_rating,google_resenas,horario,instagram")
     .eq("estado", estado)
     .order("score", { ascending: false })
     // TODO: tope de escaneo; revisar si la cartera supera 800 leads

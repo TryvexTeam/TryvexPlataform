@@ -5,7 +5,8 @@ import { generarDraftLead } from './draft'
 // común de la cartera real y el que antes se convertía en un "No" inventado.
 const lead = { id: 'u1', nombre_negocio: 'Panadería San José', nicho: 'panadería',
   localidad: 'Maipú', score: 90, telefono: '987654321', redes_sociales: null,
-  tiene_web: null, info_texto: null, url_web: null }
+  tiene_web: null, info_texto: null, url_web: null,
+  google_rating: null, google_resenas: null, horario: null, instagram: null }
 
 /** Captura el prompt que se le manda al modelo, para poder revisarlo. */
 function llmEspia() {
@@ -228,6 +229,57 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).toMatch(/1 a 2 semanas/i)      // el plazo publicado
     expect(espia.prompt()).toMatch(/90 dias de mantencion/i)
     expect(espia.prompt()).toMatch(/NO menciones precios/i)
+  })
+
+  it('la columna manda sobre el texto crudo', async () => {
+    // Los dos datos existen y no coinciden: gana la columna, que es la que se
+    // corrigió en la migración 047. El número de `notas` estaba mal en las 510
+    // filas (era la calificación por diez).
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, info_texto: '4,3\n(43)', google_rating: 4.3, google_resenas: 7885 },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/4,3 estrellas con 7885 reseñas/)
+    expect(espia.prompt()).not.toMatch(/con 43 reseñas/)
+  })
+
+  it('sin columna, todavía se apoya en el texto crudo', async () => {
+    // Un lead recién traído por el scraper no tiene las columnas llenas.
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, info_texto: '4,9\n(35)' }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/4,9 estrellas con 35 reseñas/)
+  })
+
+  it('el Instagram entra como ángulo cuando existe', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, instagram: 'https://www.instagram.com/casasalvo.cl' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toContain('instagram.com/casasalvo.cl')
+    expect(espia.prompt()).toMatch(/SU INSTAGRAM/)
+  })
+
+  it('sin Instagram, le prohíbe mencionarlo', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/Instagram: no sabemos si tiene \(NO lo menciones\)/)
+  })
+
+  it('el horario va con la advertencia de que pudo cambiar', async () => {
+    // Es una foto del día que se raspó Maps. Decirle "cierras a las 7" a alguien
+    // que cambió el horario es el mismo error de siempre con otro dato.
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, horario: 'Abierto · Cierra a las 7 p. m.' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/PUEDE haber cambiado, no lo afirmes como un hecho/)
+    expect(espia.prompt()).toMatch(/NO afirmes su horario como un hecho/)
   })
 
   it('la info del negocio llega al modelo cuando existe', async () => {

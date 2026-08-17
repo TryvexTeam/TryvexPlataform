@@ -123,7 +123,15 @@ export async function generarDraftLead(
 
   const nicho = lead.nicho ? lead.nicho.toLowerCase() : "negocio";
   const comuna = leerComuna(lead.localidad);
-  const reputacion = leerReputacion(lead.info_texto);
+
+  // La columna manda (migracion 047); si falta, se lee del crudo. Los leads que
+  // entren por el scraper antes de que `crm_map.py` llene las columnas nuevas
+  // solo van a traer `info_texto`, y quedarse sin el mejor angulo por eso seria
+  // una lastima.
+  const reputacion =
+    lead.google_rating != null && lead.google_resenas != null
+      ? { calificacion: Number(lead.google_rating), resenas: lead.google_resenas }
+      : leerReputacion(lead.info_texto);
 
   // Cada dato se entrega ETIQUETADO y solo si existe. Un valor crudo sin
   // explicar es material para inventar: "4,8 (256)" se convirtio una vez en
@@ -136,6 +144,16 @@ export async function generarDraftLead(
     reputacion
       ? `- Reputación en Google Maps: ${String(reputacion.calificacion).replace(".", ",")} estrellas con ${reputacion.resenas} reseñas`
       : "- Reputación en Google: no la tenemos (NO menciones estrellas ni reseñas)",
+    lead.instagram
+      ? `- Instagram del negocio: ${lead.instagram}`
+      : "- Instagram: no sabemos si tiene (NO lo menciones)",
+    // El horario es una FOTO del dia que se raspo Maps, no un calendario. Se
+    // entrega con esa advertencia pegada para que el modelo no lo afirme como
+    // si fuera fijo: decirle "cierras a las 7" a alguien que cambio el horario
+    // es el mismo error de siempre, con otro dato.
+    lead.horario
+      ? `- Horario segun Google el dia que lo miramos (PUEDE haber cambiado, no lo afirmes como un hecho): ${lead.horario.replace(/\s+/g, " ").trim()}`
+      : "- Horario: no lo tenemos (NO menciones horarios)",
   ].join("\n");
 
   const prompt = `
@@ -171,10 +189,22 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
    Sin esto eres un desconocido pidiendo algo, y nadie contesta eso.
 3. EL PROBLEMA, CON SU DATO REAL: usa lo que sabemos de ESTE negocio (abajo) para mostrarle
    algo suyo que hoy le esta costando plata. Concreto y verificable, nunca generico.
-   ⭐ Si abajo aparecen sus estrellas y resenas, TIENES QUE NOMBRARLAS aca, con el numero
-   exacto. Es lo unico del mensaje que solo puede ser para el, y es lo que hace que lo lea:
-   reputacion que ya se gano y que hoy no le trae clientes nuevos porque no aparece cuando
-   lo buscan. Sin ese dato el mensaje se vuelve uno mas.
+   Elige UN angulo, el mas fuerte que tengas. No los amontones: un mensaje que dice tres
+   cosas a la vez no dice ninguna.
+
+   ⭐ SUS ESTRELLAS Y RESENAS (el mejor, uselo siempre que este). Nombralas con el numero
+   exacto. Es lo unico del mensaje que solo puede ser para el: reputacion que ya se gano
+   trabajando y que hoy no le trae clientes nuevos, porque no aparece cuando lo buscan.
+
+   📸 SU INSTAGRAM (fuerte, si lo tiene). El dueno ya hace el esfuerzo de mostrar su trabajo
+   ahi, pero al que le gusta lo que ve no le queda donde reservar ni que precios hay: tiene
+   que escribir un mensaje y esperar. Ese trabajo se le pierde a medias.
+
+   🕐 SU HORARIO (el mas debil, solo si no tienes los otros). Sirve para una idea, no para
+   citar la hora: cuando el local esta cerrado la gente igual lo busca, y a esa hora no hay
+   nadie que conteste, pero una pagina si puede tomar el pedido o la hora.
+   ⛔ NO afirmes su horario como un hecho ("cierras a las 7"): lo miramos un dia y pudo
+   cambiar. Hablalo en general ("cuando cierras", "fuera del horario de atencion").
 4. QUE LE ENTREGAMOS: elige del menu real de mas abajo lo que le sirva a EL. Nombra DOS o
    TRES cosas concretas, en resultado y no en jerga: "que te encuentren en Google", "que
    tus resenas se vean", "que puedan pedir hora sin escribirte". NUNCA "convertir", "captar
