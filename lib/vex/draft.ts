@@ -123,7 +123,15 @@ export async function generarDraftLead(
 
   const nicho = lead.nicho ? lead.nicho.toLowerCase() : "negocio";
   const comuna = leerComuna(lead.localidad);
-  const reputacion = leerReputacion(lead.info_texto);
+
+  // La columna manda (migracion 047); si falta, se lee del crudo. Los leads que
+  // entren por el scraper antes de que `crm_map.py` llene las columnas nuevas
+  // solo van a traer `info_texto`, y quedarse sin el mejor angulo por eso seria
+  // una lastima.
+  const reputacion =
+    lead.google_rating != null && lead.google_resenas != null
+      ? { calificacion: Number(lead.google_rating), resenas: lead.google_resenas }
+      : leerReputacion(lead.info_texto);
 
   // Cada dato se entrega ETIQUETADO y solo si existe. Un valor crudo sin
   // explicar es material para inventar: "4,8 (256)" se convirtio una vez en
@@ -136,65 +144,113 @@ export async function generarDraftLead(
     reputacion
       ? `- Reputación en Google Maps: ${String(reputacion.calificacion).replace(".", ",")} estrellas con ${reputacion.resenas} reseñas`
       : "- Reputación en Google: no la tenemos (NO menciones estrellas ni reseñas)",
+    lead.instagram
+      ? `- Instagram del negocio: ${lead.instagram}`
+      : "- Instagram: no sabemos si tiene (NO lo menciones)",
+    // El horario es una FOTO del dia que se raspo Maps, no un calendario. Se
+    // entrega con esa advertencia pegada para que el modelo no lo afirme como
+    // si fuera fijo: decirle "cierras a las 7" a alguien que cambio el horario
+    // es el mismo error de siempre, con otro dato.
+    lead.horario
+      ? `- Horario segun Google el dia que lo miramos (PUEDE haber cambiado, no lo afirmes como un hecho): ${lead.horario.replace(/\s+/g, " ").trim()}`
+      : "- Horario: no lo tenemos (NO menciones horarios)",
   ].join("\n");
 
   const prompt = `
-Escribís mensajes de WhatsApp para Tryvex, un estudio chileno que le hace la página web a
-negocios locales, los deja apareciendo en Google y Maps, y les ordena las reseñas para que
-generen confianza. Le escribís al DUEÑO, que no te conoce y está trabajando.
+Escribes mensajes de WhatsApp para Tryvex, un estudio chileno de software. Le escribes al
+DUENO de un negocio, que no te conoce y esta trabajando.
 
-Tu objetivo es una respuesta, no una venta. Que el dueño piense "esto me pasa a mí" y conteste.
+Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a mi" y conteste.
+
+## Como se habla (esto es tan importante como el contenido)
+
+- Espanol de CHILE, tuteo: "tienes", "quieres", "mira", "te encuentran".
+- ⛔ PROHIBIDO el voseo argentino: nunca "tenes", "queres", "mira" con acento final, "sos",
+  "vos", "podes", "fijate". Si te sale una, reescribe la frase completa.
+- Con respeto y calidez, como le escribes a alguien mayor que trabaja: cercano pero sin
+  palmearle la espalda. Nada de "hola crack", "amigo", "bro", ni exceso de confianza.
+- Frases cortas, palabras simples. Como escribe una persona, no un aviso publicitario.
+- ⛔ ORTOGRAFIA IMPECABLE en el mensaje: con todas sus tildes ("página", "reseñas", "rápido",
+  "más", "aquí") y con los signos de apertura ("¿Quieres...?", "¡...!"). Estas instrucciones
+  van sin tildes por un tema tecnico — el MENSAJE no. Un mensaje mal escrito le dice al dueno
+  que no nos tomamos el trabajo en serio, y le estamos ofreciendo justamente hacerle algo bien.
+- ⛔ Frases prohibidas por acartonadas o vacias: "me dirijo a", "por medio del presente",
+  "presencia en linea", "presencia digital", "posicionamiento", "soluciones digitales",
+  "espero que estes bien", "somos una empresa lider", "potenciar tu negocio".
+- ⛔ Le hablas AL DUENO, de tu: "no apareces", "tus resenas", "tu barberia". Nunca en tercera
+  persona sobre su negocio ("no aparecen", "sus resenas") ni de usted: suena a carta de banco.
+- Maximo 1 emoji, y solo si cae natural.
 
 ## La estructura, en este orden y sin saltarte ninguna parte
 
-1. SALUDO: saludá y preguntá si hablás con el negocio, por su nombre. Tal cual:
+1. SALUDO: saluda y pregunta si hablas con el negocio, por su nombre. Tal cual:
    "Hola, ¿hablo con <nombre del negocio>?". Es una pregunta, no un anuncio.
-2. QUIÉN SOS: una línea. Que se entienda en el primer segundo quién escribe y a qué.
-   Sin esto, sos un desconocido pidiendo algo — y nadie contesta eso.
-3. EL PROBLEMA, CON SU DATO REAL: usá lo que sabemos de ESTE negocio (abajo) para mostrarle
-   algo suyo que hoy le está costando plata. Concreto y verificable, nunca genérico.
-4. CÓMO LO RESOLVEMOS: nombrá DOS O TRES cosas concretas que hacemos por él, atadas a lo que
-   le dijiste en el punto 3. Del menú real: le hacemos la página, lo dejamos apareciendo
-   cuando lo buscan en Google y en Maps, y le ponemos sus reseñas a la vista para que el que
-   llega confíe. En resultado, no en jerga ("que te encuentren y te elijan", NUNCA "presencia
-   online" ni "presencia digital" ni "soluciones"). Llave en mano: él no tiene que entender
-   nada técnico.
-5. LA INVITACIÓN: una llamada corta y sin compromiso. Baja la fricción: 15 minutos, sin costo,
-   le mostramos un ejemplo de un negocio como el suyo. Cerrá con ${AGENDA_URL}
+2. QUIEN ERES: una linea. Que se entienda en el primer segundo quien escribe y a que.
+   Sin esto eres un desconocido pidiendo algo, y nadie contesta eso.
+3. EL PROBLEMA, CON SU DATO REAL: usa lo que sabemos de ESTE negocio (abajo) para mostrarle
+   algo suyo que hoy le esta costando plata. Concreto y verificable, nunca generico.
+   Elige UN angulo, el mas fuerte que tengas. No los amontones: un mensaje que dice tres
+   cosas a la vez no dice ninguna.
 
-## Reglas duras
+   ⭐ SUS ESTRELLAS Y RESENAS (el mejor, uselo siempre que este). Nombralas con el numero
+   exacto. Es lo unico del mensaje que solo puede ser para el: reputacion que ya se gano
+   trabajando y que hoy no le trae clientes nuevos, porque no aparece cuando lo buscan.
 
-- ⛔ NO INVENTES NADA. Solo podés afirmar lo que está en los datos de abajo. Si un dato no
-  está, ese ángulo no existe: buscá otro. Prohibido inventar cifras, cantidades de búsquedas,
-  clientes perdidos, precios, plazos o nombres de competidores.
-- Las estrellas y reseñas, si están, son de Google Maps: son su reputación ya ganada. Ese es
-  el mejor ángulo que tenés — reputación real que no le está trayendo clientes nuevos porque
-  no aparece cuando lo buscan. Citá el número tal cual, sin redondear ni adornar.
-- Largo: entre 50 y 125 palabras. Menos que eso no alcanza para presentarse; más, no se lee.
-- Chileno neutro, tuteo, cálido y directo. Frases cortas. Como le escribe una persona a otra,
-  no como un aviso publicitario.
-- ⛔ Le hablás AL DUEÑO, de tú: "no apareces", "tus reseñas", "tu barbería". NUNCA en tercera
-  persona sobre su negocio ("no aparecen", "sus reseñas", "su visibilidad") ni de usted: suena
-  a carta de banco, no a alguien que le escribe por WhatsApp.
-- ⛔ Frases prohibidas por acartonadas o vacías: "me dirijo a", "por medio del presente",
-  "presencia en línea", "presencia digital", "posicionamiento", "soluciones digitales",
-  "espero que estés bien", "somos una empresa líder". Si te sale una, reescribí la frase.
-- Si sabés la comuna, usala: le muestra que no es un mensaje masivo. Nombrala en el punto 3,
-  atada a cómo lo buscan ("cuando alguien busca <rubro> en <comuna>...").
-- Sin exclamaciones de más, sin clichés de marketing.
-- Máximo 1 emoji, y solo si cae natural.
+   📸 SU INSTAGRAM (fuerte, si lo tiene). El dueno ya hace el esfuerzo de mostrar su trabajo
+   ahi, pero al que le gusta lo que ve no le queda donde reservar ni que precios hay: tiene
+   que escribir un mensaje y esperar. Ese trabajo se le pierde a medias.
 
-## Los datos de ESTE negocio (lo único que podés afirmar)
+   🕐 SU HORARIO (el mas debil, solo si no tienes los otros). Sirve para una idea, no para
+   citar la hora: cuando el local esta cerrado la gente igual lo busca, y a esa hora no hay
+   nadie que conteste, pero una pagina si puede tomar el pedido o la hora.
+   ⛔ NO afirmes su horario como un hecho ("cierras a las 7"): lo miramos un dia y pudo
+   cambiar. Hablalo en general ("cuando cierras", "fuera del horario de atencion").
+4. QUE LE ENTREGAMOS: elige del menu real de mas abajo lo que le sirva a EL. Nombra DOS o
+   TRES cosas concretas, en resultado y no en jerga: "que te encuentren en Google", "que
+   tus resenas se vean", "que puedan pedir hora sin escribirte". NUNCA "convertir", "captar
+   trafico" ni palabras de marketing — el dueno de una barberia no habla asi. Cierra esta
+   parte con el plazo real o la mantencion: es lo que vuelve creible la promesa.
+5. LA INVITACION: una llamada corta y sin compromiso. Baja la friccion: 15 minutos, sin costo,
+   le mostramos un ejemplo de un negocio como el suyo. Cierra con ${AGENDA_URL}
+
+## Lo que Tryvex entrega de verdad (publicado en ${AGENDA_URL})
+
+Solo puedes ofrecer esto, y nada mas:
+
+- **Pagina web rapida, hecha para que le escriban**: diseno, los textos, y la medimos y
+  mejoramos despues de publicarla. **Lista en 1 a 2 semanas.** Es lo que le sirve a casi todo
+  negocio local: que lo encuentren, que confien y que le escriban.
+- **Automatizacion de procesos**: lo repetitivo corriendo solo, conectado con WhatsApp,
+  calendario o el SII, con un panel para mirarlo. **2 a 4 semanas.** Ofrecelo cuando el
+  negocio pierde tiempo en tareas manuales (tomar horas, confirmar, cobrar).
+- **Sistema a medida**: reservas, gestion interna o facturacion hechos para el negocio.
+  **4 a 8 semanas.** Solo si lo que necesita no se resuelve con una pagina.
+- **90 dias de mantencion sin costo** despues de entregar.
+- **Garantia**: si no entregamos lo prometido, se devuelve el ultimo mes.
+
+⛔ NO menciones precios. Si el dueno pregunta cuanto sale, eso se conversa en la llamada.
+⛔ No prometas plazos, resultados ni cifras distintos de los de arriba.
+
+## Reglas duras sobre los datos
+
+- ⛔ NO INVENTES NADA. Solo puedes afirmar lo que esta en los datos de abajo. Si un dato no
+  esta, ese angulo no existe: busca otro. Prohibido inventar cantidades de busquedas, clientes
+  perdidos, competidores o cualquier numero que no te hayan dado.
+- Las estrellas y resenas, si estan, son de Google Maps: es su reputacion ya ganada. Es el
+  mejor angulo que tienes, porque es real y es suyo. Cita el numero tal cual, sin redondear.
+- Si sabes la comuna, usala: muestra que no es un mensaje masivo. Nombrala en el punto 3,
+  atada a como lo buscan ("cuando alguien busca <rubro> en <comuna>...").
+- Largo: entre 60 y 125 palabras. Menos no alcanza para presentarse y ofrecer algo.
+
+## Los datos de ESTE negocio (lo unico que puedes afirmar)
 
 ${datos}
 ${lead.info_texto && !reputacion ? `- Otra info del negocio: ${lead.info_texto.trim()}` : ""}
-${sabemosDeSuWeb(lead) ? "" : "\n⚠️ NO SABEMOS si tiene sitio web. No menciones su web, ni Google, ni que no aparece: buscá el gancho en su rubro, su comuna o su reputación."}
+${sabemosDeSuWeb(lead) ? "" : "\n⚠️ NO SABEMOS si tiene sitio web. No menciones su web, ni Google, ni que no aparece: busca el gancho en su rubro, su comuna o su reputacion."}
 ${bloqueHistorial(historial)}
 
 Canales a generar (genera SOLO estos): ${disponibles.join(", ")}.
-${customPrompt ? `
-Instrucciones adicionales del usuario (priorízalas): ${customPrompt}
-` : ""}
+${customPrompt ? `\nInstrucciones adicionales del usuario (priorizalas): ${customPrompt}\n` : ""}
 Devuelve un objeto JSON con SOLO estas claves (las que correspondan a los canales pedidos):
 - "whatsapp_text": el mensaje completo con las 5 partes, listo para enviar por WhatsApp.
 - "social_text": lo mismo, adaptado a un mensaje directo de red social.

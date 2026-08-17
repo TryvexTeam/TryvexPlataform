@@ -13,6 +13,7 @@ Es la MISMA lógica que ya validé migrando los 290 leads (scripts/migrar_leads_
 acá se reusa para que el scraper escriba directo bien en el CRM.
 """
 import re
+from typing import Optional
 
 # estado viejo -> estado del CRM (enum fact_leads)
 _MAP_ESTADO = {
@@ -32,6 +33,51 @@ def score_1_10(score_0_100) -> int:
         return max(1, min(10, round(int(score_0_100) / 10)))
     except (TypeError, ValueError):
         return 5
+
+
+# El Area de Uso Privado de Unicode (U+E000 a U+F8FF): ahi viven los iconos
+# de las fuentes propias, como el simbolo del telefono que Maps pega al texto.
+# Se arma con chr() a proposito: escrito con el caracter literal, el patron
+# queda invisible en el editor y nadie entiende que dice.
+_ICONOS_DE_FUENTE = re.compile("[%s-%s]" % (chr(0xE000), chr(0xF8FF)))
+
+
+def limpiar(texto) -> Optional[str]:
+    """Deja el texto en una sola linea, sin basura invisible, o None.
+
+    Dos suciedades distintas venian de Maps y se guardaban tal cual:
+
+    1. **Un glifo de icono.** Maps dibuja el simbolo del telefono con una fuente
+       propia, y ese caracter viaja pegado al texto: los telefonos empiezan con
+       U+E0B0, del Area de Uso Privado de Unicode. No es un espacio, asi que
+       ningun `strip` lo saca, y segun donde se muestre se ve como un cuadrito
+       o como nada.
+    2. **Saltos de linea** adelante y atras.
+
+    Entre las dos, 463 de los 538 telefonos de la cartera quedaron con basura
+    adentro. El envio por WhatsApp funcionaba igual solo porque el puente
+    descarta todo lo que no sea digito antes de usarlos: eso es una red debajo
+    del error, no un arreglo. Cualquier cosa que muestre o compare el texto
+    —una busqueda, un `=`, la ficha en pantalla— se rompe.
+    """
+    if texto is None:
+        return None
+    limpio = _ICONOS_DE_FUENTE.sub("", str(texto))
+    limpio = re.sub(r"\s+", " ", limpio).strip()
+    return limpio or None
+
+
+def instagram_de(redes: str) -> Optional[str]:
+    """La URL del perfil de Instagram, limpia, o None.
+
+    `redes` es texto suelto con una o varias URLs, muchas veces la misma
+    repetida y con parametros de seguimiento pegados (`?igshid=...`). Se toma la
+    primera de Instagram y se corta en el `?`: lo que sigue no es del perfil.
+    """
+    if not redes:
+        return None
+    m = re.search(r"https?://(?:www\.)?instagram\.com/[A-Za-z0-9_.]+", redes)
+    return m.group(0).split("?")[0] if m else None
 
 
 def a_crm(lead: dict) -> dict:
@@ -57,13 +103,24 @@ def a_crm(lead: dict) -> dict:
 
     return {
         "nombre_negocio": nombre,
-        "telefono": (lead.get("telefono") or None),
+        "telefono": limpiar(lead.get("telefono")),
+        # `info_texto` conserva su salto de linea a proposito: es el crudo de la
+        # ficha (la calificacion, salto, y las reseñas entre parentesis) y hay
+        # codigo que lo lee con ese formato.
         "info_texto": (lead.get("info_texto") or None),
         "redes_sociales": redes_json,
         "tiene_web": bool(lead.get("tiene_web")),
         "nicho": lead.get("nicho") or None,
         "localidad": localidad,
         "score": score_1_10(lead.get("score")),
+        # Columnas propias (migracion 047). Antes estos datos solo iban a
+        # `notas`, aplastados en una linea de texto: nadie podia filtrarlos y
+        # el redactor de mensajes no los veia. Se siguen dejando tambien en
+        # `notas` porque ahi es donde el equipo los lee hoy.
+        "google_rating": lead.get("rating"),
+        "google_resenas": lead.get("num_resenas"),
+        "horario": limpiar(lead.get("horario")),
+        "instagram": instagram_de(redes),
         "estado": _MAP_ESTADO.get((lead.get("estado") or "nuevo").strip().lower(), "sin_contactar"),
         "origen": "scraper",
         "notas": " · ".join(ctx) or None,
@@ -78,6 +135,10 @@ def campos_update(lead: dict) -> dict:
         "telefono": m["telefono"],
         "redes_sociales": m["redes_sociales"],
         "info_texto": m["info_texto"],
+        "google_rating": m["google_rating"],
+        "google_resenas": m["google_resenas"],
+        "horario": m["horario"],
+        "instagram": m["instagram"],
         "score": m["score"],
         "localidad": m["localidad"],
     }

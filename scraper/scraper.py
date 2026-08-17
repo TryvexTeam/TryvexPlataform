@@ -12,7 +12,7 @@ import random
 import re
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, Page, BrowserContext
@@ -307,14 +307,60 @@ async def extraer_rating(page: Page) -> Optional[float]:
     return None
 
 
+def _a_entero(texto: str) -> Optional[int]:
+    """'2.532' o '2,532' -> 2532. None si no queda un numero limpio."""
+    solo_digitos = re.sub(r"[.,\s]", "", texto)
+    return int(solo_digitos) if solo_digitos.isdigit() else None
+
+
+def numero_de_resenas(aria_labels: List[str], texto_bloque: str) -> Optional[int]:
+    """Cuantas reseñas tiene el negocio, leidas del bloque de calificacion.
+
+    Esta separada de la pagina para poder probarla sin abrir un navegador, que
+    es justo lo que faltaba cuando esto se rompio.
+
+    EL BUG QUE ARREGLA (17-ago-2026): antes se tomaba el PRIMER
+    `span[aria-label]` de `div.F7nice` y se le sacaba el primer numero. Ese
+    primer span es el de la CALIFICACION: su aria-label dice "4,3 estrellas".
+    Sacarle los digitos daba "43". En las 510 fichas guardadas, el numero de
+    reseñas resulto ser exactamente la calificacion por diez.
+
+    No es un detalle de datos: ese numero iba camino a un mensaje de WhatsApp a
+    un cliente. Galindo tiene 7.885 reseñas y el sistema decia 43.
+
+    Dos caminos, en orden:
+      1. El aria-label que hable de reseñas/opiniones (Maps cambia de idioma).
+      2. El numero entre parentesis del texto del bloque ("4,3\\n(7.885)"), que
+         es de donde sale `info_texto` — el campo que SI quedo bien.
+    """
+    for label in aria_labels:
+        if not label:
+            continue
+        if re.search(r"rese|opini|review|valorac", label, re.I):
+            m = re.search(r"([\d][\d.,]*)", label)
+            if m:
+                n = _a_entero(m.group(1))
+                if n is not None:
+                    return n
+
+    m = re.search(r"\(\s*([\d][\d.,]*)\s*\)", texto_bloque or "")
+    if m:
+        return _a_entero(m.group(1))
+
+    return None
+
+
 async def extraer_num_resenas(page: Page) -> Optional[int]:
     try:
-        el = await page.query_selector("div.F7nice span[aria-label]")
-        if el:
-            label = (await el.get_attribute("aria-label") or "")
-            match = re.search(r"(\d[\d.,]*)", label)
-            if match:
-                return int(match.group(1).replace(".", "").replace(",", ""))
+        elementos = await page.query_selector_all("div.F7nice span[aria-label]")
+        labels = [((await el.get_attribute("aria-label")) or "") for el in elementos]
+
+        texto_bloque = ""
+        bloque = await page.query_selector("div.F7nice")
+        if bloque:
+            texto_bloque = (await bloque.inner_text()) or ""
+
+        return numero_de_resenas(labels, texto_bloque)
     except Exception:
         pass
     return None
