@@ -22,6 +22,12 @@ export type LeadResumen = {
   score: number | null;
   telefono: string | null;
   redes_sociales: Record<string, string> | null;
+  // Lo que de verdad personaliza un mensaje. Estaba declarado como opcional en
+  // draft.ts pero ningun select lo traia, asi que llegaba siempre vacio: el
+  // redactor escribia sobre el negocio sin saber nada del negocio.
+  tiene_web: boolean | null;
+  info_texto: string | null;
+  url_web: string | null;
 };
 
 /** Cuenta los leads agrupados por estado (para el reporte de cartera). */
@@ -61,7 +67,7 @@ export async function recomendarLeads(
   // (la base es chica). ilike de Postgres no ignora acentos: "barberias" != "barberías".
   const { data, error } = await sb
     .from("fact_leads")
-    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales")
+    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web")
     .eq("estado", estado)
     .order("score", { ascending: false })
     // TODO: tope de escaneo; revisar si la cartera supera 800 leads

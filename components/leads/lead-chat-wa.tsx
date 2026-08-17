@@ -54,6 +54,9 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
   const [texto, setTexto] = useState('')
   const [cargando, setCargando] = useState(true)
   const [enviando, setEnviando] = useState(false)
+  const [redactando, setRedactando] = useState(false)
+  /** Para rotular la caja: quien envía tiene que saber que ese texto lo escribió un modelo. */
+  const [loEscribioVex, setLoEscribioVex] = useState(false)
   const finRef = useRef<HTMLDivElement>(null)
   // La sugerencia se pone UNA vez, y solo si la conversacion esta en blanco.
   // Antes se ponia al montar el componente, sin mirar el hilo: al reabrir un
@@ -62,12 +65,82 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
   const sugerenciaResuelta = useRef(false)
   /** Ultimo entrante ya marcado como leido, para no repetir el POST cada 5 s. */
   const ultimoLeido = useRef<string | null>(null)
+  /** ¿La persona ya escribió algo? Entonces Vex no le pisa la caja. */
+  const tecleoHumano = useRef(false)
   // El lead vive en un ref para que `cargar` no dependa del objeto entero: si
   // dependiera, se recrearia en cada render y el refresco se reiniciaria solo.
   const leadRef = useRef(lead)
   useEffect(() => {
     leadRef.current = lead
   }, [lead])
+
+  /**
+   * Le pide a Vex el primer mensaje para este lead y lo deja en la caja.
+   *
+   * Antes acá se plantaba `textoSugerido()`: tres renglones fijos, iguales para
+   * los 538 leads, sin el rubro ni la comuna ni nada del negocio. Ese era el
+   * texto que el equipo veía al abrir un chat, y de ahí venía el "siempre manda
+   * el mismo mensaje" — el camino con IA existía, pero no era el que se usaba.
+   *
+   * No se envía nada: queda escrito para que una persona lo lea, lo edite si
+   * quiere, y decida.
+   */
+  const pedirleAVex = useCallback(async () => {
+    setRedactando(true)
+    try {
+      const r = await fetch('/api/vex/redactar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: lead.id }),
+      })
+      const d = await r.json().catch(() => ({}))
+      // Redactar tarda unos segundos. Si en el intervalo la persona empezó a
+      // escribir, su texto manda: pisárselo sería lo más molesto posible.
+      if (tecleoHumano.current) return
+      if (r.ok && d?.texto) {
+        setTexto(d.texto)
+        setLoEscribioVex(true)
+        return
+      }
+      throw new Error(d?.error ?? `no se pudo redactar (${r.status})`)
+    } catch {
+      if (tecleoHumano.current) return
+      // Si Vex no puede (modelo caído, sin cuota, lead sin datos), se cae al
+      // texto de siempre en vez de dejar la caja vacía: tener algo editable es
+      // mejor que no tener nada. Sin rótulo, porque no lo escribió Vex.
+      setTexto(textoSugerido(leadRef.current))
+    } finally {
+      setRedactando(false)
+    }
+  }, [lead.id])
+
+  const prepararCaja = useCallback(async (conversacionEnBlanco: boolean) => {
+    setRedactando(true)
+    try {
+      // ¿Vex ya dejó uno listo desde su chat? Ese gana siempre, haya o no
+      // conversación previa: es el camino de uso diario — pedirle los mensajes
+      // a Vex y venir a revisarlos acá. Volver a redactar daría un texto
+      // distinto del que la persona ya leyó allá.
+      const guardado = await fetch(`/api/leads/${lead.id}/borrador`)
+        .then((r) => r.json())
+        .catch(() => null)
+
+      if (guardado?.data?.texto) {
+        if (tecleoHumano.current) return
+        setTexto(guardado.data.texto)
+        setLoEscribioVex(true)
+        return
+      }
+
+      // Sin borrador y con conversación empezada: la respuesta la escribe una
+      // persona. Un saludo de apertura en medio de un hilo no tiene sentido.
+      if (!conversacionEnBlanco) return
+
+      await pedirleAVex()
+    } finally {
+      setRedactando(false)
+    }
+  }, [lead.id, pedirleAVex])
 
   const cargar = useCallback(async () => {
     try {
@@ -94,18 +167,24 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
 
       if (!sugerenciaResuelta.current) {
         sugerenciaResuelta.current = true
-        // Conversacion nueva: se ofrece el primer mensaje ya escrito.
-        // Conversacion empezada: la caja queda vacia para responder.
-        if (lista.length === 0) setTexto(textoSugerido(leadRef.current))
+        // Qué se ofrece en la caja, por orden de prioridad:
+        //   1. El borrador que Vex dejó desde su chat — con o sin conversación
+        //      previa. Es el caso de "pedile otro para este mismo cliente".
+        //   2. Si no hay borrador y la conversación está en blanco, se le pide
+        //      a Vex el primer mensaje para ese negocio.
+        //   3. Si ya hay conversación y nadie dejó borrador, caja vacía: la
+        //      respuesta la escribe una persona.
+        prepararCaja(lista.length === 0)
       }
     } catch {
       // Sin conexión no se avisa cada 5 segundos: sería ruido, no información.
     } finally {
       setCargando(false)
     }
-    // Solo el id: con el objeto `lead` entero, esto se recrearia en cada render
-    // del panel y el refresco de 5 s se reiniciaria solo, sin dispararse nunca.
-  }, [lead.id])
+    // Solo el id (y `prepararCaja`, que a su vez solo depende del id): con el
+    // objeto `lead` entero, esto se recrearia en cada render del panel y el
+    // refresco de 5 s se reiniciaria solo, sin dispararse nunca.
+  }, [lead.id, prepararCaja])
 
   // Se refresca solo mientras el chat está abierto, y se corta al cerrarlo:
   // un sondeo que sigue vivo detrás de una pantalla cerrada es gasto puro.
@@ -135,6 +214,10 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d?.error ?? `no se pudo enviar (${r.status})`)
       setTexto('')
+      setLoEscribioVex(false)
+      // El borrador ya cumplio: si queda guardado, reaparece la proxima vez que
+      // se abra el chat, encima de una conversacion que ya siguio.
+      fetch(`/api/leads/${lead.id}/borrador`, { method: 'DELETE' }).catch(() => {})
       toast.success('Mensaje encolado — sale en unos segundos')
       cargar()
     } catch (e) {
@@ -207,10 +290,30 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
       </div>
 
       {/* Escribir: pegado abajo, nunca se va de la pantalla */}
+      {(redactando || loEscribioVex) && (
+        <div className="px-1 pt-2 flex items-center gap-1.5 text-[11px] text-[var(--tx-ink-muted)] shrink-0">
+          {redactando ? (
+            <>
+              <Loader2 size={11} className="animate-spin" />
+              Vex está escribiendo el mensaje para este negocio…
+            </>
+          ) : (
+            // El rótulo no es decorativo: quien aprieta enviar tiene que saber
+            // que ese texto lo escribió un modelo y conviene leerlo antes.
+            <>✨ Lo escribió Vex — léelo antes de enviar</>
+          )}
+        </div>
+      )}
+
       <div className="border-t border-white/[0.06] pt-3 px-1 flex gap-2 items-end shrink-0">
         <textarea
           value={texto}
-          onChange={(e) => setTexto(e.target.value)}
+          onChange={(e) => {
+            setTexto(e.target.value)
+            tecleoHumano.current = true
+            // Editado por una persona: ya no es "lo escribió Vex" tal cual.
+            setLoEscribioVex(false)
+          }}
           onKeyDown={(e) => {
             // Enter manda, Shift+Enter hace un salto de linea: lo que espera
             // cualquiera que haya usado un chat.
