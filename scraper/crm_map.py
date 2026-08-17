@@ -13,6 +13,7 @@ Es la MISMA lógica que ya validé migrando los 290 leads (scripts/migrar_leads_
 acá se reusa para que el scraper escriba directo bien en el CRM.
 """
 import re
+from typing import Optional
 
 # estado viejo -> estado del CRM (enum fact_leads)
 _MAP_ESTADO = {
@@ -32,6 +33,19 @@ def score_1_10(score_0_100) -> int:
         return max(1, min(10, round(int(score_0_100) / 10)))
     except (TypeError, ValueError):
         return 5
+
+
+def instagram_de(redes: str) -> Optional[str]:
+    """La URL del perfil de Instagram, limpia, o None.
+
+    `redes` es texto suelto con una o varias URLs, muchas veces la misma
+    repetida y con parametros de seguimiento pegados (`?igshid=...`). Se toma la
+    primera de Instagram y se corta en el `?`: lo que sigue no es del perfil.
+    """
+    if not redes:
+        return None
+    m = re.search(r"https?://(?:www\.)?instagram\.com/[A-Za-z0-9_.]+", redes)
+    return m.group(0).split("?")[0] if m else None
 
 
 def a_crm(lead: dict) -> dict:
@@ -64,6 +78,14 @@ def a_crm(lead: dict) -> dict:
         "nicho": lead.get("nicho") or None,
         "localidad": localidad,
         "score": score_1_10(lead.get("score")),
+        # Columnas propias (migracion 047). Antes estos datos solo iban a
+        # `notas`, aplastados en una linea de texto: nadie podia filtrarlos y
+        # el redactor de mensajes no los veia. Se siguen dejando tambien en
+        # `notas` porque ahi es donde el equipo los lee hoy.
+        "google_rating": lead.get("rating"),
+        "google_resenas": lead.get("num_resenas"),
+        "horario": (lead.get("horario") or None),
+        "instagram": instagram_de(redes),
         "estado": _MAP_ESTADO.get((lead.get("estado") or "nuevo").strip().lower(), "sin_contactar"),
         "origen": "scraper",
         "notas": " · ".join(ctx) or None,
@@ -78,6 +100,10 @@ def campos_update(lead: dict) -> dict:
         "telefono": m["telefono"],
         "redes_sociales": m["redes_sociales"],
         "info_texto": m["info_texto"],
+        "google_rating": m["google_rating"],
+        "google_resenas": m["google_resenas"],
+        "horario": m["horario"],
+        "instagram": m["instagram"],
         "score": m["score"],
         "localidad": m["localidad"],
     }
