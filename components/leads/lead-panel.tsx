@@ -456,11 +456,29 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             un cliente dentro de la ficha de otro. */}
         {lead.telefono && (
           <Dialog open={chatAbierto} onOpenChange={setChatAbierto}>
-            <DialogContent className="flex flex-col gap-0 p-4 max-w-none w-screen h-[100dvh] rounded-none sm:w-full sm:max-w-lg sm:h-[85vh] sm:rounded-xl">
+            <DialogContent
+              // Sin la X de la libreria: va posicionada en absoluto, y un
+              // absoluto se ubica contra el borde del contenedor ignorando su
+              // padding — asi que ningun margen de seguridad la salvaba del
+              // notch del iPhone. El boton de cerrar vive dentro del chat, en
+              // el flujo normal, donde el padding si lo corre hacia abajo.
+              showCloseButton={false}
+              className="modal-pantalla-movil flex flex-col gap-0 p-4 max-w-none w-screen rounded-none sm:w-full sm:max-w-lg sm:rounded-xl"
+              // El layout declara viewportFit:'cover', o sea la pagina se dibuja
+              // POR DEBAJO de la Dynamic Island y de la barra de gestos. Cada
+              // pantalla completa tiene que devolver ese espacio a mano; si no,
+              // arriba se tapa el encabezado y abajo la caja de texto.
+              style={{
+                paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))',
+                paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+                paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+                paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+              }}
+            >
               <DialogTitle className="sr-only">
                 Chat de WhatsApp con {lead.nombre_negocio ?? 'este lead'}
               </DialogTitle>
-              <LeadChatWa key={lead.id} lead={lead} />
+              <LeadChatWa key={lead.id} lead={lead} onCerrar={() => setChatAbierto(false)} />
             </DialogContent>
           </Dialog>
         )}

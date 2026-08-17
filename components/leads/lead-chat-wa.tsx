@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Send, Loader2 } from 'lucide-react'
+import { Send, Loader2, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Lead } from '@/lib/types/lead'
 
@@ -49,7 +49,7 @@ function hora(iso: string): string {
   }
 }
 
-export function LeadChatWa({ lead }: { lead: Lead }) {
+export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => void }) {
   const [mensajes, setMensajes] = useState<MensajeWa[]>([])
   const [texto, setTexto] = useState('')
   const [cargando, setCargando] = useState(true)
@@ -152,12 +152,24 @@ export function LeadChatWa({ lead }: { lead: Lead }) {
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
       <div className="px-1 pb-2.5 border-b border-white/[0.06] flex items-center gap-2 shrink-0">
         <MessageCircleIcon />
-        <span className="text-[13px] font-medium text-[var(--tx-ink)] truncate">
+        <span className="text-[13px] font-medium text-[var(--tx-ink)] truncate min-w-0">
           {lead.nombre_negocio ?? 'este lead'}
         </span>
-        <span className="ml-auto mr-8 text-[11px] text-[var(--tx-ink-muted)] shrink-0 hidden sm:inline">
+        <span className="ml-auto text-[11px] text-[var(--tx-ink-muted)] shrink-0 hidden sm:inline">
           sale del número de Tryvex
         </span>
+        {onCerrar && (
+          // 44x44 reales: es el minimo que una mano toca sin errarle. El icono
+          // se ve de 18, pero el area que responde es la del cuadrado entero.
+          <button
+            type="button"
+            onClick={onCerrar}
+            aria-label="Cerrar el chat"
+            className="ml-auto sm:ml-2 shrink-0 grid place-items-center w-11 h-11 -my-2 -mr-2 rounded-xl text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink)] hover:bg-white/[0.06] transition-colors"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       {/* El hilo: es lo unico que hace scroll */}
