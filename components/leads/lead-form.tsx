@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Checkbox } from '@/components/ui/checkbox'
 
 interface LeadFormProps {
   open: boolean
@@ -20,7 +19,12 @@ interface LeadFormProps {
 
 const defaults = {
   nombre_negocio: '', telefono: '', nicho: '', localidad: '',
-  url_web: '', notas: '', tiene_web: false,
+  url_web: '', notas: '',
+  // `null` y no `false`: nadie miró todavía si este negocio tiene web.
+  // Con `false` por defecto, un lead cargado a mano sin tocar el control
+  // quedaba afirmando "no tiene web", y Vex lo lee como dato medido y le
+  // escribe "sos invisible en Google". Un dato que nadie miró no es un no.
+  tiene_web: null as boolean | null,
   estado: 'sin_contactar' as const, origen: 'manual' as const,
   score: '' as unknown as number,
 }
@@ -41,7 +45,9 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  function set(field: string, value: string | boolean) {
+  // `null` entra a propósito: es el valor de "no sé" de `tiene_web`, y sin él
+  // el campo no tendría cómo quedar indeterminado.
+  function set(field: string, value: string | boolean | null) {
     setForm((p) => ({ ...p, [field]: value }))
     setErrors((p) => ({ ...p, [field]: '' }))
   }
@@ -71,7 +77,7 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
     try {
       await onSubmit(result.data)
       onOpenChange(false)
-      setForm({ ...defaults, score: '', estado: 'sin_contactar', origen: 'manual', tiene_web: false })
+      setForm({ ...defaults, score: '', estado: 'sin_contactar', origen: 'manual', tiene_web: null })
     } catch {
       toast.error('Error al guardar el lead')
     } finally {
@@ -125,7 +131,8 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
                   <SelectItem value="contactado">Contactado</SelectItem>
                   <SelectItem value="interesado">Interesado</SelectItem>
                   <SelectItem value="reunion_agendada">Reunión agendada</SelectItem>
-                  <SelectItem value="cerrado">Cerrado</SelectItem>
+                  <SelectItem value="ganado">Ganado</SelectItem>
+                  <SelectItem value="perdido">Perdido</SelectItem>
                   <SelectItem value="descartado">Descartado</SelectItem>
                 </SelectContent>
               </Select>
@@ -143,15 +150,22 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              checked={form.tiene_web}
-              onCheckedChange={(v) => set('tiene_web', v as boolean)}
-            />
-            <Label className="cursor-pointer">Tiene web</Label>
+          <div className="space-y-1.5">
+            <Label>¿Tiene web?</Label>
+            <Select
+              value={form.tiene_web === null ? 'no_se' : form.tiene_web ? 'si' : 'no'}
+              onValueChange={(v) => set('tiene_web', v === 'no_se' ? null : v === 'si')}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no_se">No sé</SelectItem>
+                <SelectItem value="si">Sí</SelectItem>
+                <SelectItem value="no">No</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          {form.tiene_web && (
+          {form.tiene_web === true && (
             <div className="space-y-1.5">
               <Label>URL web</Label>
               <Input value={form.url_web ?? ''} onChange={(e) => set('url_web', e.target.value)} placeholder="https://..." />

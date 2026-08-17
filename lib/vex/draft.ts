@@ -21,7 +21,11 @@ type DraftIA = {
   social_text?: string;
 };
 
-type LeadDraftInput = LeadResumen & { tiene_web?: boolean | null; info_texto?: string | null };
+// Sin el `& { tiene_web?, info_texto? }` que tenía antes: esas columnas ahora
+// son parte de LeadResumen y son requeridas. Repetirlas como opcionales no
+// aportaba nada y era lo único que podía aflojar la garantía del compilador si
+// mañana alguien las tocara — que es justo lo que dejó pasar este bug meses.
+type LeadDraftInput = LeadResumen;
 
 /**
  * Tres estados, no dos: sí, no, y **no sabemos**.
@@ -32,10 +36,22 @@ type LeadDraftInput = LeadResumen & { tiene_web?: boolean | null; info_texto?: s
  * negocio que sí tiene web, eso es falso en el primer renglón. El límite que
  * puso Cristian fue textual: "no información falsa".
  */
-function estadoWeb(tieneWeb: boolean | null | undefined): string {
+function estadoWeb(tieneWeb: boolean | null | undefined, urlWeb?: string | null): string {
+  // Un "no tiene web" con una URL cargada al lado es un dato que se contradice
+  // a sí mismo, y hay que tratarlo como desconocido. Pasa de verdad: el
+  // formulario de alta traía `tiene_web: false` por defecto, así que alguien
+  // podía escribir la dirección del negocio y dejar la casilla sin marcar. El
+  // `false` que queda en la base parece medido y no lo es.
+  if (tieneWeb !== true && urlWeb?.trim()) return "no sabemos"
+
   if (tieneWeb === true) return "Sí"
   if (tieneWeb === false) return "No"
   return "no sabemos"
+}
+
+/** ¿Se puede afirmar algo sobre la web de este negocio? */
+function sabemosDeSuWeb(lead: LeadDraftInput): boolean {
+  return estadoWeb(lead.tiene_web, lead.url_web) !== "no sabemos"
 }
 
 function canalesDisponibles(lead: LeadDraftInput): Canal[] {
@@ -108,9 +124,9 @@ Datos del lead:
 - Negocio: ${lead.nombre_negocio}
 - Nicho: ${nicho}
 - Ubicación: ${ubicacion}
-- ¿Tiene sitio web?: ${estadoWeb(lead.tiene_web)}
+- ¿Tiene sitio web?: ${estadoWeb(lead.tiene_web, lead.url_web)}
 - Info extra: ${lead.info_texto?.trim() || "N/A"}
-${lead.tiene_web == null ? "\nNO SABEMOS si este negocio tiene sitio web. No menciones su web, ni que no aparece en Google, ni nada que dependa de ese dato: buscá el gancho en su rubro, su ubicación o la info extra.\n" : ""}
+${sabemosDeSuWeb(lead) ? "" : "\nNO SABEMOS si este negocio tiene sitio web. No menciones su web, ni que no aparece en Google, ni nada que dependa de ese dato: buscá el gancho en su rubro, su ubicación o la info extra.\n"}
 
 Canales a generar (genera SOLO estos): ${disponibles.join(", ")}.
 ${customPrompt ? `\nInstrucciones adicionales del usuario (priorízalas): ${customPrompt}\n` : ""}

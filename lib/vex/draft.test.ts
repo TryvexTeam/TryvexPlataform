@@ -79,6 +79,29 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).toMatch(/¿Tiene sitio web\?:\s*No\b/)
   })
 
+  it('un "no tiene web" con URL cargada se trata como desconocido', async () => {
+    // La puerta real por donde entra el dato falso: el formulario de alta traía
+    // `tiene_web: false` por defecto, así que alguien podía escribir la
+    // dirección del negocio y dejar el control sin tocar. Ese `false` parece
+    // medido y no lo es — y el tercer estado no lo agarra, porque `false` es
+    // un valor legítimo.
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, tiene_web: false, url_web: 'https://barberiadonluis.cl' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/no sabemos/i)
+    expect(espia.prompt()).toMatch(/no menciones|no hables/i)
+  })
+
+  it('un "no tiene web" sin URL sigue siendo un no', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, tiene_web: false, url_web: null }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/¿Tiene sitio web\?:\s*No\b/)
+    expect(espia.prompt()).not.toMatch(/no menciones/i)
+  })
+
   it('la info del negocio llega al modelo cuando existe', async () => {
     const espia = llmEspia()
     await generarDraftLead(
