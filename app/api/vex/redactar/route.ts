@@ -61,7 +61,29 @@ export async function POST(req: Request) {
     );
   }
 
-  const draft = await generarDraftLead(lead as LeadResumen, parsed.data.instrucciones);
+  // Lo ya conversado con este negocio, para que un segundo mensaje retome en
+  // vez de volver a presentarse. Si la consulta falla, se sigue sin historial:
+  // quedarse sin redactar por eso sería peor que redactar un primer contacto.
+  const { data: hilo } = await admin
+    .from("mensajes_wa")
+    .select("direccion, texto, created_at")
+    .eq("lead_id", lead.id)
+    .order("created_at", { ascending: true })
+    .limit(30);
+
+  const historial = (hilo ?? [])
+    .filter((m: { texto?: string | null }) => m.texto?.trim())
+    .map((m: { direccion: "in" | "out"; texto: string }) => ({
+      direccion: m.direccion,
+      texto: m.texto,
+    }));
+
+  const draft = await generarDraftLead(
+    lead as LeadResumen,
+    parsed.data.instrucciones,
+    undefined,
+    historial
+  );
   const texto = draft.whatsapp?.text?.trim() || "";
 
   if (!texto) {

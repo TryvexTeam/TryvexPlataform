@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowLeft,
   Trash2,
@@ -75,11 +75,15 @@ function LeadAvatar({ initials, accent, size = 36 }: { initials: string; accent:
 
 export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPanel, topLeads }: LeadPanelProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(false)
   const [visible, setVisible] = useState(false)
   const [showRazones, setShowRazones] = useState(false)
   // El chat de WhatsApp se abre y cierra con el mismo boton, ahi mismo.
-  const [chatAbierto, setChatAbierto] = useState(false)
+  // Arranca abierto si se llegó con `?chat=1`: es el atajo del botón "Abrir en
+  // el chat" de los borradores de Vex. Aterrizar en la ficha y tener que buscar
+  // el botón de WhatsApp haría que el atajo no sirviera de nada.
+  const [chatAbierto, setChatAbierto] = useState(searchParams.get('chat') === '1')
   const prevLeadId = useRef<string | null>(null)
 
   // Fade transition when lead changes

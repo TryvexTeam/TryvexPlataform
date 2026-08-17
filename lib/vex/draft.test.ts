@@ -102,6 +102,57 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).not.toMatch(/no menciones/i)
   })
 
+  it('con conversación previa, le pide el SIGUIENTE mensaje y no otra presentación', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [
+      { direccion: 'out', texto: 'Hola, somos Tryvex' },
+      { direccion: 'in', texto: '¿cuánto sale?' },
+    ])
+
+    expect(espia.prompt()).toMatch(/YA FUE CONTACTADO/i)
+    expect(espia.prompt()).toMatch(/NO te presentes de nuevo/i)
+    expect(espia.prompt()).toContain('¿cuánto sale?')
+  })
+
+  it('en el seguimiento le prohíbe inventar precios y plazos', async () => {
+    // Es el riesgo propio de retomar: el cliente pregunta "cuánto sale" y el
+    // modelo tiene todos los incentivos para tirar una cifra.
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [
+      { direccion: 'in', texto: '¿cuánto sale?' },
+    ])
+    expect(espia.prompt()).toMatch(/No inventes precios, plazos ni compromisos/i)
+  })
+
+  it('sin conversación previa no aparece el bloque de seguimiento', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [])
+    expect(espia.prompt()).not.toMatch(/YA FUE CONTACTADO/i)
+  })
+
+  it('un hilo largo se recorta: quedan los últimos turnos', async () => {
+    // Un hilo entero empuja los datos del negocio fuera de la vista del modelo.
+    const largo = Array.from({ length: 25 }, (_, i) => ({
+      direccion: 'in' as const,
+      texto: `mensaje numero ${i}`,
+    }))
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, largo)
+
+    expect(espia.prompt()).toContain('mensaje numero 24')
+    expect(espia.prompt()).not.toContain('mensaje numero 0')
+  })
+
+  it('los mensajes vacíos del hilo no ensucian el prompt', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [
+      { direccion: 'in', texto: '   ' },
+      { direccion: 'in', texto: 'hola' },
+    ])
+    expect(espia.prompt()).toMatch(/El negocio: hola/)
+    expect(espia.prompt()).not.toMatch(/El negocio:\s*$/m)
+  })
+
   it('la info del negocio llega al modelo cuando existe', async () => {
     const espia = llmEspia()
     await generarDraftLead(

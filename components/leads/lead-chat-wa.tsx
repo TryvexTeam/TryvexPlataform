@@ -114,6 +114,34 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
     }
   }, [lead.id])
 
+  const prepararCaja = useCallback(async (conversacionEnBlanco: boolean) => {
+    setRedactando(true)
+    try {
+      // ¿Vex ya dejó uno listo desde su chat? Ese gana siempre, haya o no
+      // conversación previa: es el camino de uso diario — pedirle los mensajes
+      // a Vex y venir a revisarlos acá. Volver a redactar daría un texto
+      // distinto del que la persona ya leyó allá.
+      const guardado = await fetch(`/api/leads/${lead.id}/borrador`)
+        .then((r) => r.json())
+        .catch(() => null)
+
+      if (guardado?.data?.texto) {
+        if (tecleoHumano.current) return
+        setTexto(guardado.data.texto)
+        setLoEscribioVex(true)
+        return
+      }
+
+      // Sin borrador y con conversación empezada: la respuesta la escribe una
+      // persona. Un saludo de apertura en medio de un hilo no tiene sentido.
+      if (!conversacionEnBlanco) return
+
+      await pedirleAVex()
+    } finally {
+      setRedactando(false)
+    }
+  }, [lead.id, pedirleAVex])
+
   const cargar = useCallback(async () => {
     try {
       const r = await fetch(`/api/leads/${lead.id}/mensajes`)
@@ -139,20 +167,24 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
 
       if (!sugerenciaResuelta.current) {
         sugerenciaResuelta.current = true
-        // Conversacion nueva: se le pide a Vex el primer mensaje, hecho con los
-        // datos de ESTE negocio. Conversacion empezada: la caja queda vacia
-        // para responder — un saludo de apertura ahi no tiene sentido.
-        if (lista.length === 0) pedirleAVex()
+        // Qué se ofrece en la caja, por orden de prioridad:
+        //   1. El borrador que Vex dejó desde su chat — con o sin conversación
+        //      previa. Es el caso de "pedile otro para este mismo cliente".
+        //   2. Si no hay borrador y la conversación está en blanco, se le pide
+        //      a Vex el primer mensaje para ese negocio.
+        //   3. Si ya hay conversación y nadie dejó borrador, caja vacía: la
+        //      respuesta la escribe una persona.
+        prepararCaja(lista.length === 0)
       }
     } catch {
       // Sin conexión no se avisa cada 5 segundos: sería ruido, no información.
     } finally {
       setCargando(false)
     }
-    // Solo el id (y `pedirleAVex`, que a su vez solo depende del id): con el
+    // Solo el id (y `prepararCaja`, que a su vez solo depende del id): con el
     // objeto `lead` entero, esto se recrearia en cada render del panel y el
     // refresco de 5 s se reiniciaria solo, sin dispararse nunca.
-  }, [lead.id, pedirleAVex])
+  }, [lead.id, prepararCaja])
 
   // Se refresca solo mientras el chat está abierto, y se corta al cerrarlo:
   // un sondeo que sigue vivo detrás de una pantalla cerrada es gasto puro.
@@ -183,6 +215,9 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
       if (!r.ok) throw new Error(d?.error ?? `no se pudo enviar (${r.status})`)
       setTexto('')
       setLoEscribioVex(false)
+      // El borrador ya cumplio: si queda guardado, reaparece la proxima vez que
+      // se abra el chat, encima de una conversacion que ya siguio.
+      fetch(`/api/leads/${lead.id}/borrador`, { method: 'DELETE' }).catch(() => {})
       toast.success('Mensaje encolado — sale en unos segundos')
       cargar()
     } catch (e) {

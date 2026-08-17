@@ -54,6 +54,40 @@ function sabemosDeSuWeb(lead: LeadDraftInput): boolean {
   return estadoWeb(lead.tiene_web, lead.url_web) !== "no sabemos"
 }
 
+/** Un mensaje del hilo de WhatsApp con ese lead. */
+export type TurnoWa = { direccion: "in" | "out"; texto: string };
+
+/**
+ * El pedazo de prompt con lo ya conversado, para que un segundo mensaje no
+ * arranque de cero.
+ *
+ * Pedido de Cristian (17-ago): *"cuando queramos mandarle otro personalizado al
+ * mismo cliente basándose en lo que ya se ha hablado"*.
+ *
+ * Se recortan los últimos turnos y cada uno a 400 caracteres: un hilo largo
+ * empuja los datos del negocio fuera de la vista del modelo, y lo que importa
+ * para retomar es el final de la conversación, no el principio.
+ */
+function bloqueHistorial(historial: TurnoWa[]): string {
+  const turnos = historial.filter((t) => t.texto?.trim()).slice(-10)
+  if (turnos.length === 0) return ""
+
+  const conversacion = turnos
+    .map((t) => `${t.direccion === "out" ? "Nosotros" : "El negocio"}: ${t.texto.trim().slice(0, 400)}`)
+    .join("\n")
+
+  return `
+ESTE NEGOCIO YA FUE CONTACTADO. Lo conversado hasta ahora:
+${conversacion}
+
+No es un primer contacto: NO te presentes de nuevo ni repitas lo que ya se dijo.
+Escribí el SIGUIENTE mensaje, retomando donde quedó. Si el negocio hizo una
+pregunta que no está respondida, esa es la prioridad. Si quedó en silencio,
+retomá con algo nuevo y concreto, sin reclamar la falta de respuesta.
+⛔ No inventes precios, plazos ni compromisos que no aparezcan arriba.
+`.trim()
+}
+
 function canalesDisponibles(lead: LeadDraftInput): Canal[] {
   const disponibles: Canal[] = [];
   if (lead.telefono) disponibles.push("whatsapp");
@@ -69,7 +103,8 @@ function canalesDisponibles(lead: LeadDraftInput): Canal[] {
 export async function generarDraftLead(
   lead: LeadDraftInput,
   customPrompt?: string,
-  llm: (prompt: string) => Promise<string> = llmJSON
+  llm: (prompt: string) => Promise<string> = llmJSON,
+  historial: TurnoWa[] = []
 ): Promise<DraftLead> {
   const disponibles = canalesDisponibles(lead);
 
@@ -127,6 +162,8 @@ Datos del lead:
 - ¿Tiene sitio web?: ${estadoWeb(lead.tiene_web, lead.url_web)}
 - Info extra: ${lead.info_texto?.trim() || "N/A"}
 ${sabemosDeSuWeb(lead) ? "" : "\nNO SABEMOS si este negocio tiene sitio web. No menciones su web, ni que no aparece en Google, ni nada que dependa de ese dato: buscá el gancho en su rubro, su ubicación o la info extra.\n"}
+
+${bloqueHistorial(historial)}
 
 Canales a generar (genera SOLO estos): ${disponibles.join(", ")}.
 ${customPrompt ? `\nInstrucciones adicionales del usuario (priorízalas): ${customPrompt}\n` : ""}
