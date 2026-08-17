@@ -640,8 +640,15 @@ async def scrape_categoria(
                 datos.get("num_resenas"),
             )
 
+            # ⚠️ Este dict se arma copiando campo por campo desde `datos`, asi
+            # que un campo nuevo hay que agregarlo TAMBIEN aca. Si no, se
+            # extrae bien de Maps y se pierde en el camino, sin ningun error:
+            # paso el 17-ago con estos dos, que llegaron vacios a la base
+            # despues de haberlos leido correctamente de la ficha.
             lead = {
                 "nombre": datos["nombre"],
+                "google_place_id": datos.get("google_place_id"),
+                "categoria_google": datos.get("categoria_google"),
                 "telefono": datos["telefono"],
                 "info_texto": datos["info_texto"],
                 "redes": datos["redes"],
