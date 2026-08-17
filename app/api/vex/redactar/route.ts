@@ -2,21 +2,29 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { generarDraftLead } from "@/lib/vex/draft";
-import { construirLinkWhatsApp } from "@/lib/vex/telefono";
 import type { LeadResumen } from "@/lib/vex/cartera";
 import { IntegrantesRepository } from "@/lib/repos/integrantes";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any;
 
-// Botón 1 "Abrir en WhatsApp" (Ariel, tarea 9bb97f97): dado un lead, genera el
-// mensaje personalizado de Vex y devuelve el link wa.me listo para abrir. Envío
-// MANUAL desde el WhatsApp del humano — cero riesgo de ban, no manda nada solo.
-// La vista de Leads (Jarvis) consume esto para pintar el botón.
+/**
+ * POST /api/vex/redactar  { lead_id, instrucciones? }
+ *
+ * Vex redacta el primer mensaje para UN lead, con los datos de ese negocio.
+ * Devuelve solo el texto: **no manda nada y no guarda nada**. Quien envía es
+ * una persona, desde el chat del lead.
+ *
+ * Reemplaza a `/api/vex/whatsapp/link`, que hacía lo mismo pero devolvía además
+ * un `wa.me`. Ese link era del botón viejo que sacaba al equipo de la
+ * plataforma; el PR #80 lo eliminó del panel y el endpoint quedó sin un solo
+ * consumidor. Se reemplaza en vez de conservarse porque un endpoint llamado
+ * "link" que ya no devuelve un link es una trampa para el que venga después.
+ */
 
 const bodySchema = z.object({
   lead_id: z.string().uuid(),
-  instrucciones: z.string().optional(), // afinar el tono si el humano quiere
+  instrucciones: z.string().max(500).optional(), // afinar el tono si el humano quiere
 });
 
 export async function POST(req: Request) {
@@ -26,9 +34,8 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  // Abajo se usa la clave de servicio para leer el lead entero, teléfono
-  // incluido, saltando la RLS. Tener cuenta no basta para eso. El endpoint
-  // hermano (`vex/whatsapp/send`) ya lo comprobaba; este quedó sin la puerta.
+  // Abajo se usa la clave de servicio para leer el lead entero, saltando la
+  // RLS. Tener cuenta no basta para eso.
   const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id);
   if (!perfil) return NextResponse.json({ error: "No eres integrante activo" }, { status: 403 });
 
@@ -54,25 +61,17 @@ export async function POST(req: Request) {
     );
   }
 
-  // Vex redacta el mensaje personalizado (PAS + datos del negocio).
   const draft = await generarDraftLead(lead as LeadResumen, parsed.data.instrucciones);
-
-  // El link ya viene armado en el draft; si por algún motivo no, lo reconstruimos
-  // desde el texto (defensa: normalizarTelefono limpia \n y símbolos del número).
   const texto = draft.whatsapp?.text?.trim() || "";
-  const link = draft.whatsapp?.link || construirLinkWhatsApp(lead.telefono, texto);
 
-  if (!link || !texto) {
+  if (!texto) {
+    // Sin texto no se devuelve un 200 vacío: quien llama tiene que poder
+    // distinguir "Vex no pudo" de "Vex escribió algo".
     return NextResponse.json(
       { error: draft.aviso || "No se pudo generar el mensaje para este lead." },
       { status: 502 }
     );
   }
 
-  return NextResponse.json({
-    lead_id: lead.id,
-    nombre_negocio: lead.nombre_negocio,
-    texto,
-    link, // https://wa.me/<num>?text=<mensaje> — el humano lo abre y envía
-  });
+  return NextResponse.json({ lead_id: lead.id, texto });
 }
