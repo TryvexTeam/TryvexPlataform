@@ -60,6 +60,8 @@ export function LeadChatWa({ lead }: { lead: Lead }) {
   // chat ya empezado volvia a aparecer "Hola 👋 ¿hablo con...?" encima, como si
   // fuera el primer contacto. Es un punto de partida, no un molde que se repite.
   const sugerenciaResuelta = useRef(false)
+  /** Ultimo entrante ya marcado como leido, para no repetir el POST cada 5 s. */
+  const ultimoLeido = useRef<string | null>(null)
   // El lead vive en un ref para que `cargar` no dependa del objeto entero: si
   // dependiera, se recrearia en cada render y el refresco se reiniciaria solo.
   const leadRef = useRef(lead)
@@ -74,6 +76,21 @@ export function LeadChatWa({ lead }: { lead: Lead }) {
       const d = await r.json()
       const lista: MensajeWa[] = d.data ?? []
       setMensajes(lista)
+
+      // Si el chat esta abierto, lo entrante esta siendo leido. Se marca cada
+      // vez que llega algo nuevo (no solo al abrir): si alguien deja la ficha
+      // abierta y el cliente escribe, no tiene sentido que le quede el aviso.
+      const ultimoEntrante = lista.filter((m) => m.direccion === 'in').at(-1)
+      if (ultimoEntrante && ultimoEntrante.id !== ultimoLeido.current) {
+        ultimoLeido.current = ultimoEntrante.id
+        fetch('/api/wa/leido', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_id: lead.id }),
+          // Falla en silencio: no poder marcar leido no puede romperle el chat
+          // a nadie, y el proximo refresco lo reintenta igual.
+        }).catch(() => {})
+      }
 
       if (!sugerenciaResuelta.current) {
         sugerenciaResuelta.current = true
