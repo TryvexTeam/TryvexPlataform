@@ -21,6 +21,7 @@ import type { Lead, Interaccion } from '@/lib/types/lead'
 import { RAZONES_PERDIDA } from '@/lib/types/lead'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { LeadChatWa } from './lead-chat-wa'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
   sin_contactar:    { label: 'Sin contactar',   dot: 'oklch(63% 0.008 240)' },
@@ -441,16 +442,28 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
         )}
         </div>
 
-        {/* `key` obligatoria: este panel NO se remonta al cambiar de lead (ver
+        {/* El chat va en un modal y no desplegado dentro del panel: en el
+            celular el panel vive en un contenedor de altura fija con overflow
+            oculto, asi que el chat crecia hacia abajo y la caja de texto
+            quedaba fuera de la pantalla — se podia leer, no responder.
+            A pantalla completa en el telefono; ventana centrada en el escritorio.
+
+            `key` obligatoria: este panel NO se remonta al cambiar de lead (ver
             la transicion de fade con prevLeadId, mas arriba), solo recibe otro
             `lead`. Sin key, React reusa el mismo chat y su estado sobrevive al
-            cambio de ficha: el 16-ago-2026 eso mando un mensaje que decia
-            "¿hablo con Peluqueria Para Ella y el?" desde OTRA ficha, porque el
-            texto quedo cargado del lead anterior. Peor todavia, mientras carga
-            el hilo nuevo se alcanzaban a ver los mensajes del cliente anterior
-            dentro de la ficha de otro. Con key, cambiar de lead monta un chat
-            limpio. */}
-        {chatAbierto && lead.telefono && <LeadChatWa key={lead.id} lead={lead} />}
+            cambio de ficha: el 16-ago-2026 eso dejo cargado en una ficha el
+            texto escrito para otra, y por un instante mostraba los mensajes de
+            un cliente dentro de la ficha de otro. */}
+        {lead.telefono && (
+          <Dialog open={chatAbierto} onOpenChange={setChatAbierto}>
+            <DialogContent className="flex flex-col gap-0 p-4 max-w-none w-screen h-[100dvh] rounded-none sm:w-full sm:max-w-lg sm:h-[85vh] sm:rounded-xl">
+              <DialogTitle className="sr-only">
+                Chat de WhatsApp con {lead.nombre_negocio ?? 'este lead'}
+              </DialogTitle>
+              <LeadChatWa key={lead.id} lead={lead} />
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </section>
   )
