@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { IntegrantesRepository } from '@/lib/repos/integrantes'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -15,6 +16,14 @@ type SB = any
  *
  * Se usa `outreach_messages` con `estado='borrador'`, que ya existe en el
  * constraint desde la migración 041 y hoy no usa nadie. Sin tabla nueva.
+ *
+ * Leer va con la sesión de quien llama (la RLS ya lo cubre: `outreach_select`
+ * exige ser integrante). **Escribir va con la clave de servicio**, porque esa
+ * tabla NO tiene política de INSERT y eso es deliberado: escribir ahí es lo que
+ * termina mandándole un mensaje a un cliente, y no se hace desde el navegador.
+ * La puerta la pone este endpoint —tener cuenta no basta, hay que ser
+ * integrante activo—, igual que en `vex/whatsapp/send`. Agregarle una policy de
+ * INSERT a la tabla habría sido abrir esa escritura a cualquiera con sesión.
  */
 
 const bodySchema = z.object({ texto: z.string().min(1).max(4000) })
@@ -66,27 +75,37 @@ export async function POST(
     return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
   }
 
+  const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+  if (!perfil) {
+    return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
+  }
+
   const { id } = await params
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
     return NextResponse.json({ success: false, error: 'Falta el texto' }, { status: 400 })
   }
 
+  const admin = createAdminClient() as SB
+
   // Se borran los borradores anteriores de este lead antes de guardar el nuevo.
   // Si no, se acumulan y "el más reciente" depende del reloj: dos borradores
   // del mismo segundo dejarían cuál gana librado al azar.
-  await (supabase as SB)
+  await admin
     .from('outreach_messages')
     .delete()
     .eq('lead_id', id)
     .eq('canal', 'whatsapp')
     .eq('estado', 'borrador')
 
-  const { error } = await (supabase as SB).from('outreach_messages').insert({
+  const { error } = await admin.from('outreach_messages').insert({
     lead_id: id,
     canal: 'whatsapp',
     texto: parsed.data.texto,
     estado: 'borrador',
+    // Queda registrado quién lo dejó listo: el borrador es de una persona, no
+    // de "el sistema".
+    aprobado_por: perfil.id,
   })
 
   if (error) {
@@ -112,9 +131,14 @@ export async function DELETE(
     return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
   }
 
+  const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+  if (!perfil) {
+    return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
+  }
+
   const { id } = await params
 
-  const { error } = await (supabase as SB)
+  const { error } = await (createAdminClient() as SB)
     .from('outreach_messages')
     .delete()
     .eq('lead_id', id)
