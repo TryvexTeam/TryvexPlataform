@@ -103,6 +103,11 @@ def a_crm(lead: dict) -> dict:
 
     return {
         "nombre_negocio": nombre,
+        # El identificador del local en Maps (migracion 049). Es lo que permite
+        # reconocer el MISMO negocio aunque le cambien el nombre, y lo que evita
+        # las fichas duplicadas que hoy tiene la cartera.
+        "google_place_id": lead.get("google_place_id") or None,
+        "categoria_google": limpiar(lead.get("categoria_google")),
         "telefono": limpiar(lead.get("telefono")),
         # `info_texto` conserva su salto de linea a proposito: es el crudo de la
         # ficha (la calificacion, salto, y las reseñas entre parentesis) y hay
@@ -139,6 +144,8 @@ def campos_update(lead: dict) -> dict:
         "google_resenas": m["google_resenas"],
         "horario": m["horario"],
         "instagram": m["instagram"],
+        "google_place_id": m["google_place_id"],
+        "categoria_google": m["categoria_google"],
         "score": m["score"],
         "localidad": m["localidad"],
     }
