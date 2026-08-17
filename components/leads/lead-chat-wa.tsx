@@ -51,22 +51,43 @@ function hora(iso: string): string {
 
 export function LeadChatWa({ lead }: { lead: Lead }) {
   const [mensajes, setMensajes] = useState<MensajeWa[]>([])
-  const [texto, setTexto] = useState(() => textoSugerido(lead))
+  const [texto, setTexto] = useState('')
   const [cargando, setCargando] = useState(true)
   const [enviando, setEnviando] = useState(false)
   const finRef = useRef<HTMLDivElement>(null)
+  // La sugerencia se pone UNA vez, y solo si la conversacion esta en blanco.
+  // Antes se ponia al montar el componente, sin mirar el hilo: al reabrir un
+  // chat ya empezado volvia a aparecer "Hola 👋 ¿hablo con...?" encima, como si
+  // fuera el primer contacto. Es un punto de partida, no un molde que se repite.
+  const sugerenciaResuelta = useRef(false)
+  // El lead vive en un ref para que `cargar` no dependa del objeto entero: si
+  // dependiera, se recrearia en cada render y el refresco se reiniciaria solo.
+  const leadRef = useRef(lead)
+  useEffect(() => {
+    leadRef.current = lead
+  }, [lead])
 
   const cargar = useCallback(async () => {
     try {
       const r = await fetch(`/api/leads/${lead.id}/mensajes`)
       if (!r.ok) return
       const d = await r.json()
-      setMensajes(d.data ?? [])
+      const lista: MensajeWa[] = d.data ?? []
+      setMensajes(lista)
+
+      if (!sugerenciaResuelta.current) {
+        sugerenciaResuelta.current = true
+        // Conversacion nueva: se ofrece el primer mensaje ya escrito.
+        // Conversacion empezada: la caja queda vacia para responder.
+        if (lista.length === 0) setTexto(textoSugerido(leadRef.current))
+      }
     } catch {
       // Sin conexión no se avisa cada 5 segundos: sería ruido, no información.
     } finally {
       setCargando(false)
     }
+    // Solo el id: con el objeto `lead` entero, esto se recrearia en cada render
+    // del panel y el refresco de 5 s se reiniciaria solo, sin dispararse nunca.
   }, [lead.id])
 
   // Se refresca solo mientras el chat está abierto, y se corta al cerrarlo:
