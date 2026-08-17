@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { generarDraftLead } from './draft'
+import { CuotaAgotada } from './llm'
 
 // `tiene_web: null` a propósito en el lead base: "no sabemos" es el caso más
 // común de la cartera real y el que antes se convertía en un "No" inventado.
@@ -280,6 +281,43 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     )
     expect(espia.prompt()).toMatch(/PUEDE haber cambiado, no lo afirmes como un hecho/)
     expect(espia.prompt()).toMatch(/NO afirmes su horario como un hecho/)
+  })
+
+  it('cuando se acaba la cuota, lo dice — no culpa al JSON', async () => {
+    // El 17-ago esto costó veinte minutos de buscar un problema de
+    // personalización que no existía: se había acabado la cuota diaria de Groq
+    // y el aviso decía "la IA no devolvió un JSON válido".
+    const sinCuota = async () => {
+      throw new CuotaAgotada('14m4s')
+    }
+    const d = await generarDraftLead(lead, undefined, sinCuota)
+    expect(d.aviso).toMatch(/cuota diaria/i)
+    expect(d.aviso).toContain('14m4s')
+    expect(d.aviso).not.toMatch(/JSON/i)
+  })
+
+  it('otro fallo de la llamada tampoco se disfraza de JSON inválido', async () => {
+    const caido = async () => {
+      throw new Error('503 service unavailable')
+    }
+    const d = await generarDraftLead(lead, undefined, caido)
+    expect(d.aviso).toMatch(/No se pudo generar el mensaje/i)
+    expect(d.aviso).toContain('503')
+  })
+
+  it('un JSON de verdad roto sí se reporta como tal', async () => {
+    const basura = async () => 'esto no es json'
+    const d = await generarDraftLead(lead, undefined, basura)
+    expect(d.aviso).toMatch(/no es JSON válido/i)
+  })
+
+  it('solo pide el canal que el lead tiene', async () => {
+    // Pedirle siempre las dos versiones gasta tokens de una cuota que hoy
+    // alcanza para ~50 mensajes al día.
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm) // solo teléfono
+    expect(espia.prompt()).toContain('"whatsapp_text"')
+    expect(espia.prompt()).not.toContain('"social_text"')
   })
 
   it('la info del negocio llega al modelo cuando existe', async () => {

@@ -91,6 +91,13 @@ Acciones posibles (campo "tipo"):
   strings con el/los nombres de negocio) y "estado" destino (uno de: ${ESTADOS_LEAD.join(", ")}).
 - preparar_envio: generar borradores de mensajes para enviar. Parámetros opcionales: nicho,
   localidad, cantidad, instrucciones (indicaciones extra de redacción del usuario).
+  ⛔ "nicho" es SOLO un rubro de verdad ("barberías", "gimnasios", "panaderías"). Si el
+  usuario no nombra un rubro concreto, DEJA "nicho" AFUERA — no lo inventes con las palabras
+  que uso. Ejemplos: "arma mensajes para 3 negocios de distinto nicho" → {cantidad:3}, SIN
+  nicho (pedir el rubro "distinto nicho" no encuentra nada y parece que no hay leads);
+  "mensajes para 5 de cualquier rubro" → {cantidad:5}; "3 barberías de Maipú" →
+  {nicho:"barberías", localidad:"Maipú", cantidad:3}.
+  Lo mismo con "localidad": solo una comuna o ciudad real.
 - conversar: saludo, charla general o cualquier cosa que no encaje en las anteriores.
 
 Conversación reciente:
