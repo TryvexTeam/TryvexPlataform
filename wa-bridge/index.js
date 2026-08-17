@@ -18,6 +18,7 @@ import qrcodeTerminal from 'qrcode-terminal'
 import qrcodeImage from 'qrcode'
 import { createClient } from '@supabase/supabase-js'
 import { parsearPermitidos, estaPermitido } from './permitidos.js'
+import { crearFila } from './fila.js'
 import { aJobDeEnvio } from './buzon.js'
 
 const { Client, LocalAuth } = pkg
@@ -220,43 +221,76 @@ waClient.on('disconnected', (reason) => {
 // de arriesgarse a perder un mensaje real de un cliente potencial. Se marca
 // claramente para que el equipo lo triage — no es una decision de producto
 // silenciosa, es la unica forma de no perder el mensaje.
+// Ver fila.js: serializa por numero para no duplicar fichas en una rafaga.
+const enFilaPara = crearFila()
+
 waClient.on('message', async (msg) => {
   if (msg.fromMe) return
   try {
-    const numero = msg.from.replace('@c.us', '')
+    // WhatsApp ya no siempre entrega el telefono: manda un LID (identificador
+    // interno, '...@lid') que NO tiene los digitos del numero. Sin traducirlo,
+    // NINGUN entrante queda identificado: la lista blanca los bota a todos y,
+    // sin lista, se crean fichas cuyo campo telefono guarda un ID falso al que
+    // nadie puede responder (asi se ensuciaron 9 fichas entre jul y ago 2026).
+    // La traduccion la da la propia libreria.
+    let numero = msg.from.replace('@c.us', '')
+    if (msg.from.endsWith('@lid')) {
+      try {
+        const [par] = await waClient.getContactLidAndPhone([msg.from])
+        if (!par?.pn) {
+          console.log('[wa-bridge] entrante IGNORADO: el LID no se pudo traducir a un telefono')
+          return
+        }
+        numero = par.pn.replace('@c.us', '')
+      } catch (err) {
+        // Ante la duda no se guarda nada de nadie: mejor perder un mensaje que
+        // registrar a una persona bajo un identificador que no es su numero.
+        console.log('[wa-bridge] entrante IGNORADO: fallo la traduccion del LID:', err?.message ?? err)
+        return
+      }
+    }
 
     // Modo prueba: si no esta autorizado, no se guarda NADA — ni el texto, ni
     // el numero, ni una ficha. Va antes de resolverLeadPorTelefono a proposito:
     // ese camino crea leads, y crear una ficha ya seria registrar a la persona.
-    if (!estaPermitido(numero, SOLO_NUMEROS)) return
-
-    let lead = await resolverLeadPorTelefono(numero)
-    let leadCreadoAhora = false
-
-    if (!lead) {
-      lead = await crearLeadDesdeNumeroDesconocido(numero)
-      leadCreadoAhora = true
-    }
-
-    const { error } = await supabase.from('mensajes_wa').insert({
-      lead_id: lead.id,
-      cliente_id: null,
-      direccion: 'in',
-      texto: msg.body,
-      wa_message_id: msg.id?._serialized ?? null,
-      chip_id: CHIP_ID,
-      es_bot: false,
-      enviado_por: null,
-    })
-
-    if (error) {
-      console.error('[wa-bridge] error guardando mensaje entrante:', error)
+    if (!estaPermitido(numero, SOLO_NUMEROS)) {
+      // Se descarta, pero dejando rastro: sin esta linea no habia forma de
+      // distinguir "no escribio nadie" de "escribio alguien y lo filtramos", y
+      // eso fue justo lo que escondio el bug del LID durante semanas. Solo los
+      // ultimos 4 digitos: alcanza para diagnosticar sin registrar a la persona.
+      console.log(`[wa-bridge] entrante IGNORADO (numero no autorizado, ...${numero.slice(-4)})`)
       return
     }
 
-    if (leadCreadoAhora) {
-      console.warn(`[wa-bridge] mensaje entrante de ${numero} sin lead previo — se creo lead nuevo ${lead.id} para no perder el mensaje. Revisar/triage manual.`)
-    }
+    await enFilaPara(numero, async () => {
+      let lead = await resolverLeadPorTelefono(numero)
+      let leadCreadoAhora = false
+
+      if (!lead) {
+        lead = await crearLeadDesdeNumeroDesconocido(numero)
+        leadCreadoAhora = true
+      }
+
+      const { error } = await supabase.from('mensajes_wa').insert({
+        lead_id: lead.id,
+        cliente_id: null,
+        direccion: 'in',
+        texto: msg.body,
+        wa_message_id: msg.id?._serialized ?? null,
+        chip_id: CHIP_ID,
+        es_bot: false,
+        enviado_por: null,
+      })
+
+      if (error) {
+        console.error('[wa-bridge] error guardando mensaje entrante:', error)
+        return
+      }
+
+      if (leadCreadoAhora) {
+        console.warn(`[wa-bridge] mensaje entrante de ${numero} sin lead previo — se creo lead nuevo ${lead.id} para no perder el mensaje. Revisar/triage manual.`)
+      }
+    })
   } catch (err) {
     console.error('[wa-bridge] error procesando mensaje entrante:', err)
   }
