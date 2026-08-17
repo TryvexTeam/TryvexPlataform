@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Send, Loader2 } from 'lucide-react'
+import { Send, Loader2, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Lead } from '@/lib/types/lead'
 
@@ -49,7 +49,7 @@ function hora(iso: string): string {
   }
 }
 
-export function LeadChatWa({ lead }: { lead: Lead }) {
+export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => void }) {
   const [mensajes, setMensajes] = useState<MensajeWa[]>([])
   const [texto, setTexto] = useState('')
   const [cargando, setCargando] = useState(true)
@@ -145,19 +145,35 @@ export function LeadChatWa({ lead }: { lead: Lead }) {
   }
 
   return (
-    <div className="mt-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center gap-2">
+    // Columna de altura completa: cabecera fija arriba, hilo elastico al medio,
+    // caja de texto fija abajo. Antes el hilo tenia una altura tope y el
+    // conjunto crecia hacia abajo dentro del panel; en un celular eso dejaba la
+    // caja de texto fuera de la pantalla y el chat quedaba de solo lectura.
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
+      <div className="px-1 pb-2.5 border-b border-white/[0.06] flex items-center gap-2 shrink-0">
         <MessageCircleIcon />
-        <span className="text-[12px] font-medium text-[var(--tx-ink)]">
-          WhatsApp · {lead.nombre_negocio ?? 'este lead'}
+        <span className="text-[13px] font-medium text-[var(--tx-ink)] truncate min-w-0">
+          {lead.nombre_negocio ?? 'este lead'}
         </span>
-        <span className="ml-auto text-[11px] text-[var(--tx-ink-muted)]">
+        <span className="ml-auto text-[11px] text-[var(--tx-ink-muted)] shrink-0 hidden sm:inline">
           sale del número de Tryvex
         </span>
+        {onCerrar && (
+          // 44x44 reales: es el minimo que una mano toca sin errarle. El icono
+          // se ve de 18, pero el area que responde es la del cuadrado entero.
+          <button
+            type="button"
+            onClick={onCerrar}
+            aria-label="Cerrar el chat"
+            className="ml-auto sm:ml-2 shrink-0 grid place-items-center w-11 h-11 -my-2 -mr-2 rounded-xl text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink)] hover:bg-white/[0.06] transition-colors"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
-      {/* El hilo */}
-      <div className="max-h-[280px] overflow-y-auto px-4 py-3 flex flex-col gap-2">
+      {/* El hilo: es lo unico que hace scroll */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-1 py-3 flex flex-col gap-2">
         {cargando && (
           <p className="text-[12px] text-[var(--tx-ink-muted)]">Cargando…</p>
         )}
@@ -190,8 +206,8 @@ export function LeadChatWa({ lead }: { lead: Lead }) {
         <div ref={finRef} />
       </div>
 
-      {/* Escribir */}
-      <div className="border-t border-white/[0.06] p-3 flex gap-2 items-end">
+      {/* Escribir: pegado abajo, nunca se va de la pantalla */}
+      <div className="border-t border-white/[0.06] pt-3 px-1 flex gap-2 items-end shrink-0">
         <textarea
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
