@@ -73,10 +73,16 @@ async function ejecutarAccion(
     }
 
     case "preparar_envio": {
+      // Si no pidieron una cantidad, se generan 3 y no 10. Ignacio pidió
+      // mensajes y le llegó una parrilla: tuvo que aclarar "dame solo para una
+      // persona". Cada borrador hay que leerlo antes de enviarlo, así que un
+      // lote grande sin pedirlo empuja a aprobar a ciegas — que es justo lo que
+      // no queremos con clientes reales. Pedir más es una frase; deshacer un
+      // mensaje enviado, no.
       const leads = await recomendarLeads(sb, {
         nicho: a.nicho,
         localidad: a.localidad,
-        cantidad: Math.min(a.cantidad ?? 10, 10),
+        cantidad: Math.min(a.cantidad ?? 3, 10),
       });
       const borradores = await Promise.all(
         leads.map((lead) => generarDraftLead(lead, a.instrucciones).catch(marcarErrorLLM))
@@ -141,15 +147,35 @@ export async function POST(req: Request) {
       if (r.borradores) borradores = r.borradores;
     }
 
+    // Los resultados se traducen a frases antes de dárselos al modelo. Antes se
+    // le pasaba el JSON crudo (`{"tipo":"preparar_envio","datos":{"total":10}}`)
+    // y tenía que adivinar qué era cada número: con eso escribió "Total de
+    // caracteres permitidos: 10", que no significa nada. Un dato sin etiqueta es
+    // material para inventar, acá igual que en el redactor.
+    const resumen = resultados
+      .map((r) => {
+        const d = r.datos as Record<string, unknown> | null
+        if (r.tipo === "preparar_envio") {
+          const n = Number(d?.total ?? 0)
+          return n === 0
+            ? "No se encontraron leads que cumplan lo pedido, así que no hay borradores."
+            : `Se prepararon ${n} borrador${n === 1 ? "" : "es"}, uno por negocio. Aparecen abajo, listos para revisar. Si quiere más, tiene que decir cuántos.`
+        }
+        return `${r.tipo}: ${JSON.stringify(d)}`
+      })
+      .join("\n")
+
     const promptRespuesta = `
 Eres Vex, el agente de Tryvex: compañero directo, chileno neutro, cero humo; respondes
-corto y concreto.
+corto y concreto. Hablas de tú ("tienes", "quieres"), nunca de vos ("tenés", "querés").
 
 El usuario dijo: "${mensaje}"
-Acciones ejecutadas y sus resultados reales (NO inventes, cubrí TODAS):
-${JSON.stringify(resultados)}
 
-Redactá una respuesta corta y útil basada solo en esos resultados.
+Esto es lo que pasó de verdad (no inventes nada más, y cúbrelo todo):
+${resumen}
+
+Escribe una respuesta corta y útil basada solo en eso. Una o dos frases. No repitas el
+contenido de los borradores: ya se ven abajo.
 `.trim();
 
     const respuesta = (await llmTexto(promptRespuesta).catch(marcarErrorLLM)) || "Listo.";

@@ -204,11 +204,30 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     await generarDraftLead(lead, undefined, espia.llm)
 
     expect(espia.prompt()).toMatch(/1\. SALUDO/)
-    expect(espia.prompt()).toMatch(/2\. QUIÉN SOS/)
+    expect(espia.prompt()).toMatch(/2\. QUIEN ERES/)
     expect(espia.prompt()).toMatch(/3\. EL PROBLEMA/)
-    expect(espia.prompt()).toMatch(/4\. CÓMO LO RESOLVEMOS/)
-    expect(espia.prompt()).toMatch(/5\. LA INVITACIÓN/)
+    expect(espia.prompt()).toMatch(/4\. QUE LE ENTREGAMOS/)
+    expect(espia.prompt()).toMatch(/5\. LA INVITACION/)
     expect(espia.prompt()).not.toMatch(/gancho\+CTA/)
+  })
+
+  it('le prohíbe el voseo argentino', async () => {
+    // Ignacio vio un "querés" en un mensaje y no le gustó, con razón: el prompt
+    // estaba escrito en voseo ("escribís", "usá", "nombrá") y el modelo copiaba
+    // el registro. Se le habla a un chileno de tú.
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/PROHIBIDO el voseo/i)
+    expect(espia.prompt()).toMatch(/Espanol de CHILE, tuteo/i)
+  })
+
+  it('solo puede ofrecer lo que Tryvex entrega de verdad, y sin precios', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+
+    expect(espia.prompt()).toMatch(/1 a 2 semanas/i)      // el plazo publicado
+    expect(espia.prompt()).toMatch(/90 dias de mantencion/i)
+    expect(espia.prompt()).toMatch(/NO menciones precios/i)
   })
 
   it('la info del negocio llega al modelo cuando existe', async () => {
