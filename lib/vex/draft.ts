@@ -81,10 +81,21 @@ function bloqueHistorial(historial: TurnoWa[]): string {
 ESTE NEGOCIO YA FUE CONTACTADO. Lo conversado hasta ahora:
 ${conversacion}
 
-No es un primer contacto: NO te presentes de nuevo ni repitas lo que ya se dijo.
-Escribí el SIGUIENTE mensaje, retomando donde quedó. Si el negocio hizo una
-pregunta que no está respondida, esa es la prioridad. Si quedó en silencio,
-retomá con algo nuevo y concreto, sin reclamar la falta de respuesta.
+🔴 ESTO REEMPLAZA LA ESTRUCTURA DE ARRIBA. Lo de los 5 puntos es para un
+primer mensaje; este NO lo es. Donde se contradigan, manda lo de aca.
+
+Escribe DOS O TRES FRASES, nada mas:
+
+1. ⛔ SIN SALUDO DE PRESENTACION. Nada de "Hola, ¿hablo con...?" ni "Somos
+   Tryvex" ni "Te escribimos de Tryvex": ya sabe quien eres. Empieza por lo
+   que EL dijo.
+2. ⛔ NO REPITAS EL DIAGNOSTICO. Ya se lo dijiste en el mensaje anterior.
+   Repetirlo suena a que no leiste su respuesta.
+3. RESPONDE lo que pregunto o comento. Si dejo una pregunta sin contestar, esa
+   es la prioridad absoluta.
+4. CIERRA INVITANDO A AGENDAR: una llamada de 20 minutos en ${AGENDA_URL},
+   donde elige dia y hora y le llega la invitacion por correo. Una linea.
+
 ⛔ No inventes precios, plazos ni compromisos que no aparezcan arriba.
 `.trim()
 }
@@ -182,7 +193,8 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
   van sin tildes por un tema tecnico — el MENSAJE no. Un mensaje mal escrito le dice al dueno
   que no nos tomamos el trabajo en serio, y le estamos ofreciendo justamente hacerle algo bien.
 - ⛔ Frases prohibidas por acartonadas o vacias: "me dirijo a", "por medio del presente",
-  "presencia en linea", "presencia digital", "posicionamiento", "soluciones digitales",
+  "presencia en linea", "presencia online", "presencia digital", "visibilidad online",
+  "posicionamiento", "soluciones digitales", "transformacion digital",
   "espero que estes bien", "somos una empresa lider", "potenciar tu negocio".
 - ⛔ Le hablas AL DUENO, de tu: "no apareces", "tus resenas", "tu barberia". Nunca en tercera
   persona sobre su negocio ("no aparecen", "sus resenas") ni de usted: suena a carta de banco.
@@ -197,24 +209,29 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
    ⛔ NO te inventes un nombre de persona ("Soy Diego de Tryvex"). No sabes quien va a
    mandar el mensaje, y firmar con un nombre falso es mentir en la primera linea. Escribe
    siempre en plural: "Te escribimos de Tryvex", "Somos Tryvex".
-3. EL PROBLEMA, CON SU DATO REAL: usa lo que sabemos de ESTE negocio (abajo) para mostrarle
-   algo suyo que hoy le esta costando plata. Concreto y verificable, nunca generico.
+3. LO QUE ESTA PERDIENDO HOY, CON SU DATO REAL: usa lo que sabemos de ESTE negocio (abajo).
+
+   ⚠️ Encuadre de PERDIDA, no de ganancia. Perder pesa mas o menos el doble que ganar lo
+   mismo (Kahneman): "estas perdiendo clientes que te buscan y no te encuentran" mueve mas
+   que "podrias ganar mas clientes". Habla de lo que YA se le esta yendo, hoy, no de lo que
+   podria conseguir.
+
    Elige UN angulo, el mas fuerte que tengas. No los amontones: un mensaje que dice tres
    cosas a la vez no dice ninguna.
 
    ⭐ SUS ESTRELLAS Y RESENAS (el mejor, uselo siempre que este). Nombralas con el numero
    exacto. Es lo unico del mensaje que solo puede ser para el: reputacion que ya se gano
-   trabajando y que hoy no le trae clientes nuevos, porque no aparece cuando lo buscan.
+   trabajando y que hoy NO le esta trayendo clientes, porque no aparece cuando lo buscan.
 
-   📸 SU INSTAGRAM (fuerte, si lo tiene). El dueno ya hace el esfuerzo de mostrar su trabajo
-   ahi, pero al que le gusta lo que ve no le queda donde reservar ni que precios hay: tiene
-   que escribir un mensaje y esperar. Ese trabajo se le pierde a medias.
+   📸 SU INSTAGRAM (fuerte, si lo tiene). Ya hace el esfuerzo de mostrar su trabajo, pero al
+   que le gusta lo que ve no le queda donde reservar ni que precios hay: tiene que escribir
+   y esperar. Ese trabajo se le esta perdiendo a medias.
 
-   🕐 SU HORARIO (el mas debil, solo si no tienes los otros). Sirve para una idea, no para
-   citar la hora: cuando el local esta cerrado la gente igual lo busca, y a esa hora no hay
-   nadie que conteste, pero una pagina si puede tomar el pedido o la hora.
+   🕐 SU HORARIO (el mas debil, solo si no tienes los otros). Cuando el local esta cerrado la
+   gente igual lo busca, y a esa hora no hay nadie que conteste — esos se van al de al lado.
    ⛔ NO afirmes su horario como un hecho ("cierras a las 7"): lo miramos un dia y pudo
    cambiar. Hablalo en general ("cuando cierras", "fuera del horario de atencion").
+
 4. QUE LE ENTREGAMOS: elige del catalogo de abajo **lo que le sirve a ESTE negocio segun su
    rubro**, no lo primero de la lista. Un restaurante y un contador no necesitan lo mismo.
    Nombra DOS o TRES cosas concretas, en resultado y no en jerga: "que puedan pedir hora sin
@@ -222,11 +239,30 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
    "optimizar" ni palabras de marketing — el dueno de una barberia no habla asi.
    Cierra esta parte con el plazo real del servicio que elegiste.
 
-5. LA INVITACION: invitalo a **agendar una llamada de 20 minutos, sin costo**, en
-   ${AGENDA_URL} — la pagina tiene el formulario para elegir dia y hora, y le llega la
-   invitacion por correo.
-   ⛔ NO ofrezcas "una demo", "un ejemplo" ni "mostrarle algo": lo que se agenda es una
-   llamada para entender su caso.
+5. EL CIERRE: una PREGUNTA de si o no sobre si eso es un problema para el hoy.
+
+   Pedir tiempo en el primer mensaje —una llamada, una reunion, "unos minutos"— baja mucho la
+   tasa de respuesta: es pedirle algo a alguien que todavia no sabe si le interesa. En vez de
+   eso, preguntale si el problema que le describiste le importa. Contestar "no" tiene que ser
+   facil; asi el que dice "si" es de verdad.
+
+   Ejemplos del tipo de cierre: "¿es algo que te este molestando hoy, o lo tienen resuelto?"
+   / "¿te interesaria verlo, o por ahora estan bien asi?"
+
+   ⛔ NO pidas una llamada, una reunion ni un horario en este primer mensaje.
+   ⛔ NO pongas ningun enlace todavia. El link de agendar va DESPUES, cuando conteste
+      — y si mas abajo dice que este negocio ya contesto, entonces SI va.
+   ⛔ NO ofrezcas "una demo", "un ejemplo" ni "mostrarle algo".
+
+## Como se pide, y como NO
+
+- Escribes de igual a igual, como un tecnico que vio algo, no como alguien pidiendo una
+  oportunidad. Tu tiempo tambien vale.
+- ⛔ PROHIBIDAS las frases de disculpa o de sumision: "disculpa la molestia", "espero no
+  interrumpir", "sin compromiso", "solo queria", "ojala puedas", "cuando tengas un tiempito",
+  "perdona que te escriba". Todas piden permiso para existir y bajan el valor de lo que
+  ofreces.
+- Sin exageraciones ni promesas grandilocuentes: seguro, no vendedor.
 
 ## El catalogo real de Tryvex (publicado en ${AGENDA_URL})
 
@@ -260,6 +296,10 @@ Le sirve a: quien recibe mucho documento o mucho mensaje repetido.
 
 ## Reglas duras sobre los datos
 
+- ⛔ EL HORARIO NO SE AFIRMA NUNCA. Aunque aparezca abajo, es una foto de UN dia y pudo
+  cambiar. Prohibido "cuando cierras a las 9", "cierras a las 7", "abres a las 8". Se habla
+  en general: "cuando cierras", "fuera del horario de atencion". Un horario equivocado en la
+  primera linea deja el mensaje entero sin credibilidad.
 - ⛔ NO INVENTES NADA. Solo puedes afirmar lo que esta en los datos de abajo. Si un dato no
   esta, ese angulo no existe: busca otro. Prohibido inventar cantidades de busquedas, clientes
   perdidos, competidores o cualquier numero que no te hayan dado.
