@@ -208,10 +208,25 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
 
     expect(espia.prompt()).toMatch(/1\. SALUDO/)
     expect(espia.prompt()).toMatch(/2\. QUIEN ERES/)
-    expect(espia.prompt()).toMatch(/3\. EL PROBLEMA/)
+    expect(espia.prompt()).toMatch(/3\. LO QUE ESTA PERDIENDO/)
     expect(espia.prompt()).toMatch(/4\. QUE LE ENTREGAMOS/)
-    expect(espia.prompt()).toMatch(/5\. LA INVITACION/)
+    expect(espia.prompt()).toMatch(/5\. EL CIERRE/)
     expect(espia.prompt()).not.toMatch(/gancho\+CTA/)
+  })
+
+  it('encuadra en lo que PIERDE, no en lo que ganaría', async () => {
+    // Perder pesa cerca del doble que ganar lo mismo (Kahneman). Lo trajo
+    // Ignacio y es la mejora de fondo del mensaje.
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/Encuadre de PERDIDA, no de ganancia/i)
+  })
+
+  it('le prohíbe las frases de disculpa que bajan el valor', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/PROHIBIDAS las frases de disculpa/i)
+    expect(espia.prompt()).toMatch(/sin compromiso/i)   // aparece en la lista negra
   })
 
   it('le prohíbe el voseo argentino', async () => {
@@ -238,15 +253,27 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).toMatch(/NO prometas plazos, garantias, periodos de soporte/i)
   })
 
-  it('invita a agendar una llamada de 20 minutos, no a una demo', async () => {
-    // Lo que reporto el equipo: ofrecia "un ejemplo" cuando lo que hay que
-    // hacer es mandarlo a agendar. Y la llamada es de 20 min, no de 15.
+  it('el primer contacto NO pide tiempo ni pone el enlace', async () => {
+    // Pedir una reunion en frio baja mucho la respuesta (Gong, via Ignacio).
+    // El primer mensaje valida interes; el link va cuando ya contesto.
     const espia = llmEspia()
     await generarDraftLead(lead, undefined, espia.llm)
 
-    expect(espia.prompt()).toMatch(/20 minutos/)
-    expect(espia.prompt()).not.toMatch(/15 minutos/)
+    expect(espia.prompt()).toMatch(/NO pidas una llamada, una reunion ni un horario/i)
+    expect(espia.prompt()).toMatch(/NO pongas ningun enlace todavia/i)
     expect(espia.prompt()).toMatch(/NO ofrezcas "una demo"/)
+    expect(espia.prompt()).not.toMatch(/15 minutos/)
+  })
+
+  it('en el seguimiento SÍ invita a agendar, con el enlace', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [
+      { direccion: 'out', texto: '¿es algo que te moleste hoy?' },
+      { direccion: 'in', texto: 'sí, me interesa' },
+    ])
+
+    expect(espia.prompt()).toMatch(/ACA SI VA LA INVITACION A AGENDAR/i)
+    expect(espia.prompt()).toMatch(/20 minutos/)
     expect(espia.prompt()).toContain('https://tryvex.tech')
   })
 
