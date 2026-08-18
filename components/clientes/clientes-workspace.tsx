@@ -73,10 +73,7 @@ export function ClientesWorkspace({ clientes, proyectos, ventas }: ClientesWorks
         className="flex items-center justify-between mb-5 shrink-0"
       >
         <div>
-          <h1
-            className="text-[22px] font-bold tracking-[-0.025em]"
-            style={{ color: 'var(--tx-ink-primary)' }}
-          >
+          <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">
             Clientes
           </h1>
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--tx-ink-muted)' }}>

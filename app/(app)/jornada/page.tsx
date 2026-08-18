@@ -31,7 +31,7 @@ export default async function JornadaPage() {
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">Jornada</h1>
-        <p className="text-neutral-500 mt-1">No eres integrante activo. Contacta al administrador.</p>
+        <p className="text-[var(--tx-ink-muted)] mt-1">No eres integrante activo. Contacta al administrador.</p>
       </div>
     )
   }
@@ -52,37 +52,70 @@ export default async function JornadaPage() {
   ])
 
   return (
-    <div className="p-6 space-y-8">
+    // pb-10 extra (mas alla de lo que ya reserva pb-nav-movil): sin esto la
+    // ultima fila de la lista quedaba unos px por debajo del alto visible de
+    // `main` incluso en el scroll maximo -- inalcanzable de verdad, no una
+    // sensacion. Reportado por Vicho probando en el celular.
+    <div className="p-6 pb-20 space-y-10">
       <header>
         <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)] mb-1">Jornada</h1>
-        <p className="text-neutral-500">Marca tu entrada y tu salida. Las pausas se descuentan del total.</p>
+        <p className="text-[var(--tx-ink-muted)]">Marca tu entrada y tu salida. Las pausas se descuentan del total.</p>
       </header>
 
-      <section className="rounded-xl border border-neutral-200 p-5">
-        <RelojJornada jornadaInicial={abierta} />
-      </section>
+      <RelojJornada jornadaInicial={abierta} />
 
-      <section>
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-sm font-medium text-neutral-800">Este mes</h2>
-          <span className="text-sm text-neutral-500 tabular-nums">
-            {totalHoras(propias).toFixed(1)} h acumuladas
-          </span>
-        </div>
+      <SeccionJornadas
+        titulo="Este mes"
+        totalHoras={totalHoras(propias)}
+        etiquetaTotal="acumuladas"
+      >
         <TablaJornadas filas={propias} mostrarPersona={false} />
-      </section>
+      </SeccionJornadas>
 
       {veEquipo && (
-        <section>
-          <div className="flex items-baseline justify-between mb-3">
-            <h2 className="text-sm font-medium text-neutral-800">Equipo — este mes</h2>
-            <span className="text-sm text-neutral-500 tabular-nums">
-              {totalHoras(equipo).toFixed(1)} h en total
-            </span>
-          </div>
+        <SeccionJornadas
+          titulo="Equipo"
+          subtitulo="este mes"
+          totalHoras={totalHoras(equipo)}
+          etiquetaTotal="en total"
+        >
           <TablaJornadas filas={equipo} mostrarPersona />
-        </section>
+        </SeccionJornadas>
       )}
     </div>
+  )
+}
+
+function SeccionJornadas({
+  titulo,
+  subtitulo,
+  totalHoras,
+  etiquetaTotal,
+  children,
+}: {
+  titulo: string
+  subtitulo?: string
+  totalHoras: number
+  etiquetaTotal: string
+  children: React.ReactNode
+}) {
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-3">
+        <h2 className="flex items-baseline gap-1.5 text-[15px] font-semibold text-[var(--tx-ink-primary)]">
+          {titulo}
+          {subtitulo && (
+            <span className="text-[13px] font-normal text-[var(--tx-ink-muted)]">{subtitulo}</span>
+          )}
+        </h2>
+        <span
+          className="text-[12px] font-semibold tabular-nums px-2.5 py-1 rounded-full"
+          style={{ background: 'var(--tx-accent-subtle)', color: 'var(--tx-ink-primary)' }}
+        >
+          {totalHoras.toFixed(1)} h {etiquetaTotal}
+        </span>
+      </div>
+      {children}
+    </section>
   )
 }

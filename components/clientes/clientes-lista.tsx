@@ -41,7 +41,7 @@ export function ClientesLista({ initialClientes }: ClientesListaProps) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[22px] font-bold tracking-[-0.02em]" style={{ color: 'var(--tx-ink-primary)' }}>Clientes</h1>
+          <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">Clientes</h1>
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--tx-ink-muted)' }}>{initialClientes.length} clientes</p>
         </div>
         <Button size="sm" onClick={() => setFormOpen(true)}>

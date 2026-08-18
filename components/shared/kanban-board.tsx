@@ -133,7 +133,7 @@ function TrashDropZone({
       {count > 0 && (
         <span
           className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center"
-          style={{ background: 'var(--tx-accent)', color: 'white' }}
+          style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
         >
           {count}
         </span>
