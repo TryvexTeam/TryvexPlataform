@@ -116,11 +116,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
     // alto bien distinto, apiladas se leian como un formulario interminable
     // y dejaban medio ancho de la pantalla sin usar. Ficha publica ocupa las
     // dos columnas porque es la mas cargada (foto, dos textareas, 2 links).
-    // items-start: por defecto el grid estira cada card a la altura de la fila
-    // (la mas alta), y "Color en el calendario" -que es corta- quedaba con un
-    // espacio vacio abajo solo para igualar a "Perfil". Con items-start cada
-    // card usa su alto natural.
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Identidad */}
       <Card>
         <CardHeader>
@@ -161,7 +157,11 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
             Tu color identifica tus tareas, citas y disponibilidad. No se puede repetir entre integrantes.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        {/* flex-1 + justify-center: la card se estira a la altura de "Perfil" (su
+            par en la fila), y esta grilla de circulos es mucho mas corta -- en vez
+            de quedar pegada arriba con un hueco abajo, se centra en el alto
+            disponible para que la card se vea completa e intencional. */}
+        <CardContent className="flex-1 flex flex-col justify-center">
           <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
             {PALETA_CALENDARIO.map((c) => {
               const dueno = coloresOcupados.get(c.hex)
