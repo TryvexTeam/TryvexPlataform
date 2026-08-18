@@ -145,13 +145,36 @@ async def insertar_o_actualizar(supabase: Client, lead: dict) -> str:
     """
     payload = a_crm(lead)  # esquema del CRM
 
-    existing = await _in_thread(
-        lambda: supabase.table("fact_leads")
-        .select("id, estado")
-        .eq("nombre_negocio", payload["nombre_negocio"])
-        .eq("nicho", payload["nicho"])
-        .execute()
-    )
+    # Se busca PRIMERO por el identificador de Google, que es lo unico que
+    # identifica al local de verdad. El emparejamiento por (nombre, nicho) crea
+    # una ficha por cada rubro en que aparezca el mismo negocio: "Salon Regias"
+    # llego a estar dos veces, como peluqueria y como centro de estetica, y al
+    # dueño le habrian llegado dos mensajes de Tryvex.
+    #
+    # Borrar los duplicados a mano no alcanza: el 18-ago se borraron 9 y la
+    # corrida siguiente los recreo, porque el emparejamiento seguia mirando el
+    # nombre. El arreglo tiene que estar aca.
+    existing = None
+    place_id = payload.get("google_place_id")
+    if place_id:
+        existing = await _in_thread(
+            lambda: supabase.table("fact_leads")
+            .select("id, estado")
+            .eq("google_place_id", place_id)
+            .execute()
+        )
+
+    # Sin identificador (o si ese negocio todavia no lo tiene guardado), se cae
+    # al emparejamiento viejo: las fichas anteriores a la migracion 049 lo
+    # tienen en NULL y hay que poder seguir actualizandolas.
+    if not (existing and existing.data):
+        existing = await _in_thread(
+            lambda: supabase.table("fact_leads")
+            .select("id, estado")
+            .eq("nombre_negocio", payload["nombre_negocio"])
+            .eq("nicho", payload["nicho"])
+            .execute()
+        )
 
     if existing.data:
         record_id = existing.data[0]["id"]
