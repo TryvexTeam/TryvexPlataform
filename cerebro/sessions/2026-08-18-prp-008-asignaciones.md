@@ -83,7 +83,8 @@ mismo fracaso con más tablas.
 
 ## Estado del repo
 
-Rama `feat/asignaciones-fase-1`, 4 commits, **nada desplegado todavía**:
+**PR #97 MERGEADO y desplegado** (`f0aa008` en main, deployment Ready).
+Rama `feat/asignaciones-fase-1`, 5 commits:
 - `c1d82f0` migración 051
 - `44a6ec3` permiso de apply_migration
 - `4057a33` fase 2 (autoría + auto-asignación)
@@ -93,7 +94,9 @@ Rama `feat/asignaciones-fase-1`, 4 commits, **nada desplegado todavía**:
 
 ## Pendientes
 
-1. **Abrir el PR** y desplegar — el fix del calendario está sin publicar.
+1. **CONFIRMAR con sesión que el calendario volvió.** El fix está desplegado y no
+   hay 500 en los logs del deployment nuevo, pero al cerrar la sesión todavía no
+   había tráfico autenticado que lo probara. Es lo primero a mirar.
 2. **`/settings` no carga para nadie** (preexistente). Descartado: build, columnas,
    RLS, peso de datos, JSON corrupto, deployment. Vercel loguea **200**. Sin error
    en consola según el señor Ignacio. Probar de nuevo tras desplegar el fix del 500.
