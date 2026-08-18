@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { HeadphonesIcon } from 'lucide-react'
+import { HeadphonesIcon, MessagesSquareIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLlamadas } from '@/components/llamadas/proveedor-llamadas'
 import { toast } from '@/lib/toast'
@@ -325,8 +325,15 @@ export function ChatWorkspace({
             onVolver={() => setActivaId(null)}
           />
         ) : (
-          <div className="h-full grid place-items-center text-sm text-[var(--tx-ink-muted)]">
-            Elige una conversación
+          // Un panel vacio y gris con una frase de instruccion se siente a
+          // error. Un icono apagado del mismo lenguaje visual del chat, sin
+          // caja ni borde, pesa mucho menos en la pantalla.
+          // w-full: la section es flex-row y sin esto el div solo ocupaba el
+          // ancho de su contenido, quedando pegado a la izquierda (al lado
+          // de la lista) en vez de centrarse en toda la caja.
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-[var(--tx-ink-muted)]">
+            <MessagesSquareIcon size={32} strokeWidth={1.5} className="opacity-40" />
+            <p className="text-[13px]">Elige una conversación para empezar</p>
           </div>
         )}
       </section>
