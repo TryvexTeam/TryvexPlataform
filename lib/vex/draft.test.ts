@@ -229,8 +229,37 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     await generarDraftLead(lead, undefined, espia.llm)
 
     expect(espia.prompt()).toMatch(/1 a 2 semanas/i)      // el plazo publicado
-    expect(espia.prompt()).toMatch(/90 dias de mantencion/i)
     expect(espia.prompt()).toMatch(/NO menciones precios/i)
+    // Ni periodos de soporte ni garantias: la pagina dice "30 dias de soporte"
+    // en el plan Sprint, y el prompt llego a decir "90 dias de mantencion".
+    // Prometer el triple de lo publicado es la clase de dato falso que estamos
+    // sacando del sistema, y este es frente a un cliente.
+    expect(espia.prompt()).not.toMatch(/90 d[ií]as/i)
+    expect(espia.prompt()).toMatch(/NO prometas plazos, garantias, periodos de soporte/i)
+  })
+
+  it('invita a agendar una llamada de 20 minutos, no a una demo', async () => {
+    // Lo que reporto el equipo: ofrecia "un ejemplo" cuando lo que hay que
+    // hacer es mandarlo a agendar. Y la llamada es de 20 min, no de 15.
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+
+    expect(espia.prompt()).toMatch(/20 minutos/)
+    expect(espia.prompt()).not.toMatch(/15 minutos/)
+    expect(espia.prompt()).toMatch(/NO ofrezcas "una demo"/)
+    expect(espia.prompt()).toContain('https://tryvex.tech')
+  })
+
+  it('el catálogo completo llega al modelo, no solo la página web', async () => {
+    // "Ofreces una página web cuando en nuestro catálogo tenemos muchos más
+    // servicios" — Cristian, 18-ago.
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+
+    expect(espia.prompt()).toMatch(/Automatizacion/i)
+    expect(espia.prompt()).toMatch(/Sistema a medida/i)
+    expect(espia.prompt()).toMatch(/Inteligencia aplicada/i)
+    expect(espia.prompt()).toMatch(/elige.*lo que le sirve a ESTE negocio segun su/i)
   })
 
   it('la columna manda sobre el texto crudo', async () => {

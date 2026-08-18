@@ -9,8 +9,16 @@ function groq(): Groq {
   return _groq;
 }
 
-/** Modelo del agente Vex en Groq. Free tier amplio y rápido. */
-export const MODELO = process.env.VEX_MODEL || "llama-3.3-70b-versatile";
+/**
+ * Modelo del agente Vex en Groq.
+ *
+ * ⚠️ Groq RETIRA modelos sin avisar. `llama-3.3-70b-versatile` dejo de existir
+ * el 18-ago-2026 y Vex quedo caido en produccion devolviendo 404 en cada
+ * mensaje. Si vuelve a pasar, mirar `GET /openai/v1/models` con la llave y
+ * poner uno de los que sigan vivos — o setear `VEX_MODEL` en el entorno, que
+ * no necesita despliegue.
+ */
+export const MODELO = process.env.VEX_MODEL || "openai/gpt-oss-120b";
 
 /** Se acabó la cuota del día. No se arregla esperando unos segundos. */
 export class CuotaAgotada extends Error {
