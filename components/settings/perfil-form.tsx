@@ -110,7 +110,13 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    // El max-w ya lo pone la pagina (settings/page.tsx), para que WhatsApp,
+    // notificaciones y este formulario compartan el mismo ancho. Grilla de 2
+    // columnas en pantalla grande en vez de una pila unica: son 5 tarjetas de
+    // alto bien distinto, apiladas se leian como un formulario interminable
+    // y dejaban medio ancho de la pantalla sin usar. Ficha publica ocupa las
+    // dos columnas porque es la mas cargada (foto, dos textareas, 2 links).
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Identidad */}
       <Card>
         <CardHeader>
@@ -166,13 +172,16 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                   className={cn(
                     'relative h-9 w-9 rounded-full flex items-center justify-center transition-transform',
                     dueno ? 'opacity-30 cursor-not-allowed' : 'hover:scale-110 cursor-pointer',
-                    seleccionado && 'ring-2 ring-offset-2 ring-neutral-400'
+                    seleccionado && 'ring-2 ring-offset-2 ring-offset-[var(--tx-surface-1)] ring-[var(--tx-ink-primary)]'
                   )}
                   style={{ background: c.hex }}
                 >
                   {seleccionado && <Check size={16} className="text-white drop-shadow" />}
                   {dueno && (
-                    <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-neutral-800 text-white rounded-full h-4 w-4 flex items-center justify-center">
+                    <span
+                      className="absolute -bottom-1 -right-1 text-[8px] font-bold rounded-full h-4 w-4 flex items-center justify-center"
+                      style={{ background: 'var(--tx-ink-primary)', color: 'var(--tx-bg-primary)' }}
+                    >
                       {dueno[0]}
                     </span>
                   )}
@@ -181,7 +190,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
             })}
           </div>
           {color && (
-            <p className="text-xs text-neutral-500 mt-3">
+            <p className="text-xs text-[var(--tx-ink-muted)] mt-3">
               Color elegido: <strong>{PALETA_CALENDARIO.find((c) => c.hex === color)?.nombre}</strong>
             </p>
           )}
@@ -202,7 +211,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
             return (
               <div key={dia} className="flex items-center gap-3 text-sm">
                 <Switch checked={h.activo} onCheckedChange={(v) => setDia(dia, { activo: v })} />
-                <span className="w-9 font-medium text-neutral-700">{DIAS_SEMANA[dia]}</span>
+                <span className="w-9 font-medium text-[var(--tx-ink-secondary)]">{DIAS_SEMANA[dia]}</span>
                 {h.activo ? (
                   <div className="flex items-center gap-1.5">
                     <Input
@@ -211,7 +220,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                       onChange={(e) => setBloque(dia, 0, 'inicio', e.target.value)}
                       className="h-8 w-[104px] text-xs"
                     />
-                    <span className="text-neutral-400">—</span>
+                    <span className="text-[var(--tx-ink-muted)]">—</span>
                     <Input
                       type="time"
                       value={h.bloques[0]?.fin ?? '18:00'}
@@ -220,7 +229,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                     />
                   </div>
                 ) : (
-                  <span className="text-xs text-neutral-400">Offline</span>
+                  <span className="text-xs text-[var(--tx-ink-muted)]">Offline</span>
                 )}
               </div>
             )
@@ -238,8 +247,8 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
           {NOTIFICACIONES_LABELS.map(({ key, label, descripcion }) => (
             <div key={key} className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-neutral-800">{label}</p>
-                <p className="text-xs text-neutral-500">{descripcion}</p>
+                <p className="text-sm font-medium text-[var(--tx-ink-primary)]">{label}</p>
+                <p className="text-xs text-[var(--tx-ink-muted)]">{descripcion}</p>
               </div>
               <Switch
                 checked={notifs[key] ?? true}
@@ -251,7 +260,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
       </Card>
 
       {/* Ficha pública en tryvex.tech */}
-      <Card>
+      <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base"><Globe size={16} /> Ficha pública</CardTitle>
           <CardDescription>
@@ -295,7 +304,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
+      <div className="lg:col-span-2 flex justify-end">
         <Button onClick={handleSave} disabled={saving || !nombre.trim()}>
           {saving ? 'Guardando...' : 'Guardar cambios'}
         </Button>

@@ -93,10 +93,10 @@ export function WhatsappVinculacion({ inicial }: WhatsappVinculacionProps) {
             )}
             aria-hidden
           />
-          <p className="text-sm text-neutral-600">
+          <p className="text-sm text-[var(--tx-ink-secondary)]">
             {conectado ? 'Sesión conectada' : 'Sesión sin vincular'}
             {typeof bridge?.colaPendiente === 'number' && bridge.colaPendiente > 0 && (
-              <span className="text-neutral-400">
+              <span className="text-[var(--tx-ink-muted)]">
                 {' '}
                 · {bridge.colaPendiente} en cola
               </span>
@@ -119,16 +119,17 @@ export function WhatsappVinculacion({ inicial }: WhatsappVinculacionProps) {
               width={260}
               height={260}
               unoptimized
-              className="rounded-lg border border-neutral-200"
+              className="rounded-lg"
+              style={{ border: '1px solid var(--tx-border)' }}
             />
-            <p className="text-xs text-neutral-500 text-center max-w-sm">
+            <p className="text-xs text-[var(--tx-ink-muted)] text-center max-w-sm">
               En el teléfono del número de Tryvex: <strong>WhatsApp → Dispositivos vinculados →
               Vincular un dispositivo</strong>. El código se renueva solo cada 20 segundos.
             </p>
           </div>
         ) : estado === 'esperando_qr' ? (
           <Mensaje
-            icono={<Loader2 size={18} className="animate-spin text-neutral-400" />}
+            icono={<Loader2 size={18} className="animate-spin text-[var(--tx-ink-muted)]" />}
             titulo="Generando el código"
             detalle="El puente está arrancando. El QR aparece en unos segundos."
           />
@@ -152,7 +153,7 @@ export function WhatsappVinculacion({ inicial }: WhatsappVinculacionProps) {
           />
         ) : (
           <Mensaje
-            icono={<Loader2 size={18} className="animate-spin text-neutral-400" />}
+            icono={<Loader2 size={18} className="animate-spin text-[var(--tx-ink-muted)]" />}
             titulo="Consultando el puente"
             detalle="Un momento."
           />
@@ -175,11 +176,14 @@ interface MensajeProps {
 
 function Mensaje({ icono, titulo, detalle }: MensajeProps) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+    <div
+      className="flex items-start gap-3 rounded-lg p-4"
+      style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-2)' }}
+    >
       <div className="mt-0.5 shrink-0">{icono}</div>
       <div>
-        <p className="text-sm font-medium text-neutral-800">{titulo}</p>
-        <p className="text-xs text-neutral-500 mt-0.5">{detalle}</p>
+        <p className="text-sm font-medium text-[var(--tx-ink-primary)]">{titulo}</p>
+        <p className="text-xs text-[var(--tx-ink-muted)] mt-0.5">{detalle}</p>
       </div>
     </div>
   )

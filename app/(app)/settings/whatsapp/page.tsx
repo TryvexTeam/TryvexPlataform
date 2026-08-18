@@ -23,7 +23,7 @@ export default async function WhatsappSettingsPage() {
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">WhatsApp</h1>
-        <p className="text-neutral-500 mt-1">
+        <p className="text-[var(--tx-ink-muted)] mt-1">
           No eres integrante activo. Contacta al administrador.
         </p>
       </div>
@@ -32,15 +32,15 @@ export default async function WhatsappSettingsPage() {
 
   return (
     // pb-24 en móvil: mismo problema que en Configuración, el nav inferior fijo tapa el final.
-    <div className="p-6 pb-24 md:pb-6 max-w-2xl">
+    <div className="p-6 pb-24 md:pb-6 max-w-2xl mx-auto">
       <Link
         href="/settings"
-        className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 mb-4"
+        className="inline-flex items-center gap-1.5 text-sm text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] mb-4 transition-colors"
       >
         <ArrowLeft size={14} /> Configuración
       </Link>
       <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)] mb-1">WhatsApp</h1>
-      <p className="text-neutral-500 mb-6">
+      <p className="text-[var(--tx-ink-muted)] mb-6">
         Estado del puente y vinculación del número que usa el CRM
       </p>
       <WhatsappVinculacion inicial={await obtenerEstadoQr()} />
