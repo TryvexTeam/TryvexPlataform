@@ -151,6 +151,8 @@ export function DashFeed({ items, selectedId, onSelect, title = 'Feed' }: DashFe
 
   return (
     <section className="glass flex flex-col" style={{ padding: '14px', overflow: 'hidden', minWidth: 0 }}>
+      <h2 className="text-[15px] font-semibold text-[var(--tx-ink-primary)] px-1 mb-3">{title}</h2>
+
       {/* Search bar */}
       <div className="feed__top">
         <label className="search">

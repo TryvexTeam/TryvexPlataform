@@ -15,10 +15,7 @@ export default async function ReunionesPage() {
   return (
     <div className="max-w-[1100px] mx-auto px-5 py-8 flex flex-col gap-5">
       <header>
-        <h1
-          className="text-[22px] font-extrabold"
-          style={{ color: 'var(--tx-ink-primary)' }}
-        >
+        <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">
           Calendario del equipo
         </h1>
         <p className="text-[13px] mt-1" style={{ color: 'var(--tx-ink-muted)' }}>

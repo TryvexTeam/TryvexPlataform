@@ -29,18 +29,28 @@ const routeLabels: Record<string, string> = {
   '/admin/invitaciones':  'Invitaciones',
 }
 
+// Paginas de nivel raiz cuyo propio h1 ya dice el mismo nombre que este
+// breadcrumb — "Leads" chico arriba y "Leads" grande justo abajo, apilados y
+// sin razon. En una sub-ruta (ej. /cerebro/un-articulo) el breadcrumb sigue
+// sirviendo para orientarse, asi que ahi se deja.
+const RAIZ_CON_TITULO_PROPIO = new Set([
+  '/clientes', '/proyectos', '/tareas', '/cerebro', '/settings',
+])
+
 function Breadcrumb() {
   const pathname = usePathname()
   const segments = pathname.split('/').filter(Boolean)
   if (!segments.length) return null
 
   const rootPath = '/' + segments[0]
+  if (segments.length === 1 && RAIZ_CON_TITULO_PROPIO.has(rootPath)) return null
+
   const rootLabel = routeLabels[rootPath]
   if (!rootLabel) return null
 
   return (
     <nav aria-label="Breadcrumb" className="hidden md:flex items-center gap-1.5">
-      <span className="text-[13px] font-semibold" style={{ color: 'var(--tx-ink-primary)' }}>{rootLabel}</span>
+      <span className="text-[16px] font-bold tracking-tight" style={{ color: 'var(--tx-ink-primary)' }}>{rootLabel}</span>
       {segments.length > 1 && (
         <>
           <span className="text-[13px]" style={{ color: 'var(--tx-ink-muted)' }}>/</span>
@@ -115,7 +125,7 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
           navegaciones para lo mismo obligan a adivinar cuál usar, y en una
           pantalla chica ese botón le comía espacio a la única cosa que la barra
           superior tiene que decir, que es dónde estoy parado. */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 pl-2">
         <Breadcrumb />
       </div>
 
