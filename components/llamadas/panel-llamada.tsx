@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { MusicIcon } from 'lucide-react'
 import { AvatarChat } from '@/components/chat/avatar-chat'
+import { BotonEnLlamada } from './boton-en-llamada'
 import { ChatLlamada } from './chat-llamada'
 import { ReproductorMusica, type TamanoMusica } from './reproductor-musica'
 import { useGrillaVideo } from './use-grilla-video'
@@ -420,19 +421,11 @@ export function PanelLlamada({
   // significa no poder usar el CRM, que es justo lo contrario de lo que se busca.
   } else if (minimizado) {
     vista = (
-      <button
-          onClick={() => setMinimizado(false)}
-          className="fixed bottom-24 md:bottom-6 right-3 md:right-6 z-[80] flex items-center gap-2 rounded-full px-4 py-2.5 shadow-lg"
-          style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
-        >
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
-            <span className="relative inline-flex size-2 rounded-full bg-current" />
-          </span>
-        <span className="text-[13px] font-semibold">
-          {ensordecido ? 'Ensordecido' : 'En llamada'} · {participantes.length + 1}
-        </span>
-      </button>
+      <BotonEnLlamada
+        onRestaurar={() => setMinimizado(false)}
+        ensordecido={ensordecido}
+        participantesCount={participantes.length + 1}
+      />
     )
   } else {
     vista = (
