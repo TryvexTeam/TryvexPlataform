@@ -214,7 +214,9 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
       const r = await fetch('/api/wa/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lead_id: lead.id, texto: limpio, enviado_por: 'Equipo' }),
+        // Sin `enviado_por`: el servidor resuelve el autor desde la sesión.
+        // Antes iba 'Equipo' fijo y por eso no constaba quién había escrito.
+        body: JSON.stringify({ lead_id: lead.id, texto: limpio }),
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d?.error ?? `no se pudo enviar (${r.status})`)
@@ -240,7 +242,7 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
       <div className="px-1 pb-2.5 border-b border-white/[0.06] flex items-center gap-2 shrink-0">
         <MessageCircleIcon />
-        <span className="text-[13px] font-medium text-[var(--tx-ink)] truncate min-w-0">
+        <span className="text-[13px] font-medium text-[var(--tx-ink-primary)] truncate min-w-0">
           {lead.nombre_negocio ?? 'este lead'}
         </span>
         <span className="ml-auto text-[11px] text-[var(--tx-ink-muted)] shrink-0 hidden sm:inline">
@@ -253,7 +255,7 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
             type="button"
             onClick={onCerrar}
             aria-label="Cerrar el chat"
-            className="ml-auto sm:ml-2 shrink-0 grid place-items-center w-11 h-11 -my-2 -mr-2 rounded-xl text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink)] hover:bg-white/[0.06] transition-colors"
+            className="ml-auto sm:ml-2 shrink-0 grid place-items-center w-11 h-11 -my-2 -mr-2 rounded-xl text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] hover:bg-white/[0.06] transition-colors"
           >
             <X size={18} />
           </button>
@@ -278,8 +280,8 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
               <div
                 className={`max-w-[78%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words ${
                   mio
-                    ? 'bg-green-500/15 border border-green-500/20 text-[var(--tx-ink)]'
-                    : 'bg-white/[0.05] border border-white/[0.06] text-[var(--tx-ink)]'
+                    ? 'bg-green-500/15 border border-green-500/20 text-[var(--tx-ink-primary)]'
+                    : 'bg-white/[0.05] border border-white/[0.06] text-[var(--tx-ink-primary)]'
                 }`}
               >
                 {m.texto}
@@ -336,7 +338,7 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
           }}
           rows={3}
           placeholder="Escribí el mensaje…"
-          className="flex-1 resize-none rounded-xl bg-white/[0.03] border border-white/[0.06] px-3 py-2 text-[13px] text-[var(--tx-ink)] outline-none focus:border-green-500/30 placeholder:text-[var(--tx-ink-muted)]"
+          className="flex-1 resize-none rounded-xl bg-white/[0.03] border border-white/[0.06] px-3 py-2 text-[13px] text-[var(--tx-ink-primary)] outline-none focus:border-green-500/30 placeholder:text-[var(--tx-ink-muted)]"
         />
         <button
           onClick={enviar}

@@ -36,7 +36,14 @@ export class EventosRepository {
     const [{ data, error }, miId] = await Promise.all([
       this.sb
         .from('eventos')
-        .select('*, eventos_asistentes ( integrante_id, dim_integrantes ( nombre ) )')
+        // El embed va desambiguado por el NOMBRE de la foreign key. Desde la
+        // migración 051, `eventos_asistentes` tiene DOS FKs a `dim_integrantes`
+        // (`integrante_id` y `asignado_por`), y sin nombrar cuál, PostgREST no
+        // puede resolver la relación y responde 500. Aquí interesa el asistente,
+        // no quién lo asignó.
+        .select(
+          '*, eventos_asistentes ( integrante_id, dim_integrantes!eventos_asistentes_integrante_id_fkey ( nombre ) )'
+        )
         .gte('inicio', desde)
         .lt('inicio', hasta)
         .order('inicio'),

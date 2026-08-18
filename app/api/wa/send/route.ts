@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { normalizarTelefono } from '@/lib/vex/telefono'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
+import { AsignacionesRepository } from '@/lib/repos/asignaciones'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -17,7 +18,10 @@ const bodySchema = z.object({
   cliente_id: z.string().uuid().nullable().optional(),
   telefono: z.string().optional(),
   texto: z.string().min(1),
-  enviado_por: z.string().min(1),
+  // Se acepta por compatibilidad con el contrato viejo, pero YA NO SE USA como
+  // autor: el navegador mandaba "Equipo" fijo y así era imposible saber quién
+  // había hablado. La autoría sale de la sesión autenticada (ver más abajo).
+  enviado_por: z.string().min(1).optional(),
   es_bot: z.boolean().optional(),
 })
 
@@ -40,7 +44,12 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
   }
-  const { lead_id, texto, enviado_por } = parsed.data
+  const { lead_id, texto } = parsed.data
+
+  // La autoría la decide el servidor, no el cliente. `perfil` viene de la
+  // sesión autenticada, así que el nombre que queda registrado es siempre el
+  // de un integrante real y no se puede falsear desde el navegador.
+  const autorNombre = perfil.nombre
 
   // outreach_messages.lead_id es NOT NULL: el buzon sirve para leads. Mandarle
   // a un cliente sigue siendo posible por el camino viejo hasta que se decida
@@ -82,7 +91,8 @@ export async function POST(req: Request) {
       canal: 'whatsapp',
       texto,
       estado: 'encolado',
-      enviado_por: enviado_por.trim(),
+      enviado_por: autorNombre,
+      integrante_id: perfil.id,
       aprobado_por: perfil.id,
     })
     .select('id')
@@ -93,6 +103,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'No se pudo encolar el mensaje.' }, { status: 500 })
   }
 
+  // Contactar es asignarse (PRP-008): el primero que le escribe a un lead queda
+  // como owner, los siguientes como colaboradores. Va DESPUÉS de encolar y en
+  // try/catch a propósito — si la asignación falla, el mensaje igual se manda.
+  // Perder una asignación es recuperable; perder un WhatsApp al cliente, no.
+  let rolAsignado: string | null = null
+  try {
+    const asignaciones = new AsignacionesRepository(supabase)
+    rolAsignado = await asignaciones.autoAsignarPorContacto(lead_id, perfil.id)
+
+    await admin.from('interacciones_lead').insert({
+      lead_id,
+      integrante_id: perfil.id,
+      tipo: 'whatsapp',
+      contenido: texto,
+    })
+  } catch (e) {
+    console.error('[api/wa/send] mensaje encolado pero fallo la asignacion/interaccion:', e)
+  }
+
   // 202 y no 200: el mensaje esta aceptado, todavia no entregado.
-  return NextResponse.json({ ok: true, encolado: true, id: encolado.id }, { status: 202 })
+  return NextResponse.json(
+    { ok: true, encolado: true, id: encolado.id, asignado_como: rolAsignado },
+    { status: 202 }
+  )
 }

@@ -9,14 +9,22 @@ import { LeadTaskPanel } from './lead-task-panel'
 import { LeadsCategories } from './leads-categories'
 import { LeadForm } from './lead-form'
 import type { Lead, Interaccion, LeadInsert } from '@/lib/types/lead'
+import type { AsignacionConIntegrante } from '@/lib/types/asignacion'
 
 interface LeadsWorkspaceProps {
   leads: Lead[]
   selectedId: string | null
   interacciones: Interaccion[]
+  /** Asignados por `lead_id`, consultados en lote por la página. */
+  asignaciones?: Record<string, AsignacionConIntegrante[]>
 }
 
-export function LeadsWorkspace({ leads, selectedId, interacciones }: LeadsWorkspaceProps) {
+export function LeadsWorkspace({
+  leads,
+  selectedId,
+  interacciones,
+  asignaciones = {},
+}: LeadsWorkspaceProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false)
@@ -68,7 +76,7 @@ export function LeadsWorkspace({ leads, selectedId, interacciones }: LeadsWorksp
         onSelect={setActiveEstado}
       />
 
-      <LeadsInbox leads={filteredLeads} selectedId={selectedId} />
+      <LeadsInbox leads={filteredLeads} selectedId={selectedId} asignaciones={asignaciones} />
 
       <LeadPanel
         lead={selectedLead}

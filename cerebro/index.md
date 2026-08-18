@@ -5,12 +5,42 @@
 
 **Proyecto**: Tryvex App (CRM: Leads → Clientes → Proyectos → Tareas)
 **Stack**: Next.js 16 + React 19 + Supabase + shadcn/ui + dnd-kit + Anthropic SDK
-**Last updated**: 2026-08-09
-**Total nodes**: 1 session
+**Last updated**: 2026-08-18
+**Total nodes**: 3 sessions + protocolo
 
 ---
 
 ## Sessions
+
+### [2026-08-18-prp-008-asignaciones](sessions/2026-08-18-prp-008-asignaciones.md) — PRP-008: asignación automática + fases 1-3 aplicadas (2026-08-18)
+
+**La regla que manda**: contactar a un lead ES asignárselo. El primero que le
+escribe queda `owner`, los siguientes `colaborador`; el bot no asigna. Nació de
+un dato demoledor: **541 leads, 0 con `responsable_id`** — la asignación manual
+ya existía y nunca se usó.
+
+Migraciones **051** (tabla puente + RLS finas para auto-asignarse a citas) y
+**052** (autoría real de mensajes con FK al integrante) **aplicadas a producción**
+y verificadas en transacción revertida. Fase 3: stack de avatares en
+`leads-inbox.tsx`. Ronda Avengers: 6/6 tareas aceptadas por $1.46.
+
+**Error propio caro**: agregar una FK dejó `eventos_asistentes` con dos FKs a
+`dim_integrantes` → embed ambiguo → **500 en el calendario de producción**.
+Corregido nombrando la FK. Regla nueva en `log.md`.
+
+Pendiente: abrir el PR (el fix está sin desplegar), `/settings` que no carga
+para nadie, y las fases 4-6.
+
+### [2026-08-17-avengers-dashboard](sessions/2026-08-17-avengers-dashboard.md) — insumos del dashboard + metodología Avengers (2026-08-17/18)
+
+**Dónde quedamos.** T-001 (inventario de KPIs) ACEPTADA: 28 tablas, 38 KPIs con
+fórmula real, 11 gaps; el dashboard actual solo consulta 4 contadores. T-002
+(propuesta de asignación de leads/citas a integrantes) SIN ENTREGABLE — decisión
+pendiente entre GLM-5.2 gratis, Codex, o redactarla Jarvis.
+
+Hallazgo que cambia el enfoque: `fact_leads.responsable_id`, `tarea_responsables` y
+`eventos_asistentes` **ya existen** → es reconciliación, no creación. Pendientes del
+señor Ignacio: activar modelos chinos y re-loguear OpenCode Go + Copilot.
 
 ### [2026-08-09-equipo-publico-landing](sessions/2026-08-09-equipo-publico-landing.md) — equipo del CRM conectado a /team de tryvex.tech (2026-08-09)
 
@@ -23,6 +53,24 @@ Vercel de `Tryvex-Landing`.
 ---
 
 ## Decisiones de Arquitectura
+
+### [protocolo-avengers](protocolo-avengers.md) — cómo se despacha trabajo a escala (2026-08-17)
+
+Metodología bautizada por el señor Ignacio: Jarvis orquesta modelos que no son
+suyos (Opus 4.6 dentro del CLI de Google vía AGY, Opus 5 vía OpenCode/Zen) y esos
+workers **crean sus propios subagentes** — 2 despachados, 7 cabezas leyendo en el
+pico. Lo que evita el caos no es el heroísmo del modelo sino el contrato: spec
+numerada auditable por grep, un dueño por archivo, veredicto objetivo y prohibido
+inventar (`NO VERIFICADO` obligatorio).
+
+Incluye la secuencia para lanzarlos **dentro de Orca** (con `wt` quedan invisibles
+al IDE), por qué no se usa `worker-start --inject` (degrada los modelos), y el
+auto-blindaje de 6 errores reales: despachar sin `git pull`, `Test-Path` sobre
+entregables rancios, `.next` sucio rompiendo `tsc`, el `Write aborted` de OpenCode
+(era permiso sin TTY, no tamaño), y `input_accepted` que no prueba que el worker
+trabaje. Incluye el control de TUI por `terminal send`: **cualquier CLI es
+orquestable aunque Orca no lo tenga en su catálogo**, y AGY ya no paga relecturas
+para continuar una tarea.
 
 ### [estado-plataforma](estado-plataforma.md) — qué hay construido (2026-08-05)
 
