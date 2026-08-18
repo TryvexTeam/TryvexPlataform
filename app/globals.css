@@ -1232,7 +1232,16 @@
 /* 5.5rem = 88px: los 56px reales de la barra (ranuras min-h-14, más su pb-safe)
    más ~32px de aire. Con los 64px anteriores el contenido quedaba a 8px del nav,
    es decir pegado o directamente tapado por el botón de acción de cada vista. */
-.pb-nav-movil {
+/* `@utility` (no CSS plano ni @layer utilities, que es sintaxis de Tailwind
+   v3): esta clase se usa siempre en pareja con `md:pb-0` para cancelarla en
+   desktop. Como CSS plano definido despues del `@import "tailwindcss"`,
+   empataba en especificidad con `md:pb-0` y ganaba por orden de aparicion en
+   la hoja de estilos SIN IMPORTAR el viewport -- el padding de 88px para el
+   nav movil quedaba aplicado tambien en desktop. La pagina de Chat era la
+   que mas lo sufria: perdia esos 88px de alto real sin que nada en el
+   markup lo explicara. `@utility` la registra como una utilidad de verdad,
+   participa del mismo orden que Tailwind usa para sus propias variantes. */
+@utility pb-nav-movil {
   padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 }
 

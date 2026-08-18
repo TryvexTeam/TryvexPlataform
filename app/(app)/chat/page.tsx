@@ -42,10 +42,13 @@ export default async function ChatPage({
   return (
     <div className="p-3 sm:p-6 h-full flex flex-col min-h-0">
       {/* En un teléfono el encabezado se comía la pantalla del chat: el subtítulo
-          explica algo que ya se ve, así que ahí sobra. */}
-      <header className="mb-2 sm:mb-4 shrink-0">
-        <h1 className="text-xl sm:text-2xl font-bold text-[var(--tx-ink-primary)] sm:mb-1">Chat</h1>
-        <p className="hidden sm:block text-neutral-500">
+          explica algo que ya se ve, así que ahí sobra. En desktop iba en su
+          propia línea debajo del título -- eso le robaba una línea entera de
+          alto al panel del chat, que ya es lo mas chico verticalmente de toda
+          la app. Va al lado del título en vez de abajo. */}
+      <header className="mb-2 sm:mb-3 shrink-0 flex items-baseline gap-2">
+        <h1 className="text-xl sm:text-2xl font-bold text-[var(--tx-ink-primary)]">Chat</h1>
+        <p className="hidden sm:block text-sm text-[var(--tx-ink-muted)]">
           Conversaciones del equipo: grupos y mensajes directos.
         </p>
       </header>

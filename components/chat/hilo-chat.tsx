@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeftIcon, PaperclipIcon, PhoneIcon, PinIcon, SendIcon, VideoIcon, XIcon } from 'lucide-react'
+import { ChevronLeftIcon, Loader2Icon, PaperclipIcon, PhoneIcon, PinIcon, SendIcon, VideoIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
@@ -144,8 +144,14 @@ export function HiloChat({
     }
   }, [conversacion.id])
 
+  // Saltar instantaneo la primera vez (abrir el hilo no deberia verse como si
+  // barriera la pantalla de arriba a abajo animando todo el historial), y
+  // recien de ahi en mas usar scroll suave para los mensajes nuevos en vivo.
+  const primerScrollRef = useRef(true)
   useEffect(() => {
-    finRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (mensajes.length === 0) return
+    finRef.current?.scrollIntoView({ behavior: primerScrollRef.current ? 'auto' : 'smooth' })
+    primerScrollRef.current = false
   }, [mensajes.length])
 
   /**
@@ -395,6 +401,20 @@ export function HiloChat({
             </BotonLlamar>
           </div>
         )}
+
+        {/* En desktop la bandeja ya esta al lado, pero antes no habia forma
+            de "soltar" la conversacion activa: una vez abierta, quedaba
+            atrapado viendo siempre alguna. El mobile ya tiene la flecha de
+            volver; esto es lo mismo para desktop. */}
+        {onVolver && (
+          <button
+            onClick={onVolver}
+            aria-label="Cerrar conversación"
+            className="hidden md:flex shrink-0 p-1.5 rounded-lg text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] hover:bg-[var(--tx-surface-2)]"
+          >
+            <XIcon className="size-4" />
+          </button>
+        )}
       </header>
 
       {/* Fijados: lo que hay que tener a mano sin buscarlo. Se muestra el más
@@ -440,9 +460,22 @@ export function HiloChat({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 sm:px-5 py-4 space-y-2">
+      {/* El justify-end que anclaba los mensajes cortos al fondo iba antes
+          en ESTE div, el que scrollea -- y `overflow-y-auto` + `justify-end`
+          en el mismo elemento es un problema conocido de flexbox: el
+          navegador no deja scrollear bien hacia arriba, la barra no
+          refleja el rango real. Ahora este div vuelve a ser un bloque
+          normal (scroll de toda la vida) y el `justify-end` se movio al
+          wrapper de ADENTRO, que no es el que scrollea. */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 sm:px-5 pt-4 pb-2">
+      <div className="min-h-full flex flex-col justify-end space-y-2">
         {cargando ? (
-          <p className="text-sm text-[var(--tx-ink-muted)]">Cargando…</p>
+          // Centrado en su propio alto completo: el padre esta en justify-end
+          // por lo del hueco de abajo, y un texto suelto ahi se hubiera ido
+          // pegado al fondo en vez de quedar en el medio de la pantalla.
+          <div className="h-full flex items-center justify-center">
+            <Loader2Icon size={20} className="animate-spin text-[var(--tx-ink-muted)]" />
+          </div>
         ) : mensajes.length === 0 ? (
           <p className="text-sm text-[var(--tx-ink-muted)]">
             Todavía no hay mensajes. Escribe el primero.
@@ -590,6 +623,7 @@ export function HiloChat({
           })
         )}
         <div ref={finRef} />
+      </div>
       </div>
 
       <div className="shrink-0 border-t border-[var(--border)] p-3">
