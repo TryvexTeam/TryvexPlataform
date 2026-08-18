@@ -34,6 +34,9 @@ export type LeadResumen = {
   google_resenas: number | null;
   horario: string | null;
   instagram: string | null;
+  // Como clasifica Google al negocio ("Restaurante italiano"), que es mas
+  // preciso que `nicho` — ese guarda lo que buscamos NOSOTROS ("pizzerias").
+  categoria_google: string | null;
 };
 
 /** Cuenta los leads agrupados por estado (para el reporte de cartera). */
@@ -73,7 +76,7 @@ export async function recomendarLeads(
   // (la base es chica). ilike de Postgres no ignora acentos: "barberias" != "barberías".
   const { data, error } = await sb
     .from("fact_leads")
-    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web,google_rating,google_resenas,horario,instagram")
+    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web,google_rating,google_resenas,horario,instagram,categoria_google")
     .eq("estado", estado)
     .order("score", { ascending: false })
     // TODO: tope de escaneo; revisar si la cartera supera 800 leads

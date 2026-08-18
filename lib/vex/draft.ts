@@ -121,7 +121,12 @@ export async function generarDraftLead(
     return { ...base, aviso: "Sin canal de contacto (sin teléfono ni redes)." };
   }
 
-  const nicho = lead.nicho ? lead.nicho.toLowerCase() : "negocio";
+  // El rubro que Google le pone al negocio gana sobre el nuestro: `nicho`
+  // guarda el termino con el que lo BUSCAMOS ("pizzerias"), y Google dice lo
+  // que el negocio ES ("Restaurante italiano"). Escribirle por lo que es da un
+  // mensaje mas al grano, sin inventar nada.
+  const rubroGoogle = lead.categoria_google?.trim() || null;
+  const nicho = rubroGoogle || (lead.nicho ? lead.nicho.toLowerCase() : "negocio");
   const comuna = leerComuna(lead.localidad);
 
   // La columna manda (migracion 047); si falta, se lee del crudo. Los leads que
@@ -138,7 +143,9 @@ export async function generarDraftLead(
   // "256 personas buscan barberias como la tuya cada semana".
   const datos = [
     `- Nombre del negocio: ${lead.nombre_negocio}`,
-    `- Rubro: ${nicho}`,
+    rubroGoogle
+      ? `- Rubro (asi lo clasifica Google): ${rubroGoogle}`
+      : `- Rubro: ${nicho}`,
     comuna ? `- Comuna: ${comuna}` : "- Comuna: no la sabemos con certeza (NO nombres ninguna)",
     `- ¿Tiene sitio web?: ${estadoWeb(lead.tiene_web, lead.url_web)}`,
     reputacion
