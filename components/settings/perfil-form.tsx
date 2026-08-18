@@ -116,7 +116,11 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
     // alto bien distinto, apiladas se leian como un formulario interminable
     // y dejaban medio ancho de la pantalla sin usar. Ficha publica ocupa las
     // dos columnas porque es la mas cargada (foto, dos textareas, 2 links).
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    // items-start: por defecto el grid estira cada card a la altura de la fila
+    // (la mas alta), y "Color en el calendario" -que es corta- quedaba con un
+    // espacio vacio abajo solo para igualar a "Perfil". Con items-start cada
+    // card usa su alto natural.
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
       {/* Identidad */}
       <Card>
         <CardHeader>
