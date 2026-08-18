@@ -115,7 +115,8 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     ])
 
     expect(espia.prompt()).toMatch(/YA FUE CONTACTADO/i)
-    expect(espia.prompt()).toMatch(/NO te presentes de nuevo/i)
+    expect(espia.prompt()).toMatch(/SIN SALUDO DE PRESENTACION/i)
+    expect(espia.prompt()).toMatch(/ESTO REEMPLAZA LA ESTRUCTURA DE ARRIBA/i)
     expect(espia.prompt()).toContain('¿cuánto sale?')
   })
 
@@ -272,9 +273,12 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
       { direccion: 'in', texto: 'sí, me interesa' },
     ])
 
-    expect(espia.prompt()).toMatch(/ACA SI VA LA INVITACION A AGENDAR/i)
+    expect(espia.prompt()).toMatch(/CIERRA INVITANDO A AGENDAR/i)
     expect(espia.prompt()).toMatch(/20 minutos/)
     expect(espia.prompt()).toContain('https://tryvex.tech')
+    // Y que la instruccion del seguimiento MANDE sobre la del primer contacto:
+    // mientras convivieron sin jerarquia, el modelo obedecia la equivocada.
+    expect(espia.prompt()).toMatch(/NO REPITAS EL DIAGNOSTICO/i)
   })
 
   it('el catálogo completo llega al modelo, no solo la página web', async () => {
