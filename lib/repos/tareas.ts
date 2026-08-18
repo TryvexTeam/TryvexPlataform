@@ -16,6 +16,7 @@ type SupabaseTarea = {
   created_at: string
   updated_at: string
   completed_at: string | null
+  eliminado_at: string | null
   tarea_responsables: {
     integrante_id: string
     dim_integrantes: { nombre: string; avatar_url: string | null } | null
@@ -77,6 +78,7 @@ export class TareasRepository {
     }))
   }
 
+  /** Tareas activas del kanban. La papelera vive aparte (ver `listPapelera`). */
   async list(filters?: {
     estado?: string
     prioridad?: string
@@ -87,6 +89,7 @@ export class TareasRepository {
     let query = (this.supabase as any)
       .from('tareas')
       .select(`*, tarea_responsables ( integrante_id, dim_integrantes ( nombre, avatar_url ) )`)
+      .is('eliminado_at', null)
       .order('created_at', { ascending: false })
 
     if (filters?.estado) query = query.eq('estado', filters.estado)
@@ -96,6 +99,40 @@ export class TareasRepository {
     const { data, error } = await query
     if (error) throw new Error(error.message)
     return ((data ?? []) as SupabaseTarea[]).map(mapTarea)
+  }
+
+  /** Tareas en la papelera, mas recientes primero. Conservan estado, fecha
+   *  limite, responsables y subtareas tal cual estaban al momento de borrarlas. */
+  async listPapelera(): Promise<TareaConResponsables[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (this.supabase as any)
+      .from('tareas')
+      .select(`*, tarea_responsables ( integrante_id, dim_integrantes ( nombre, avatar_url ) )`)
+      .not('eliminado_at', 'is', null)
+      .order('eliminado_at', { ascending: false })
+
+    if (error) throw new Error(error.message)
+    return ((data ?? []) as SupabaseTarea[]).map(mapTarea)
+  }
+
+  /** Mueve la tarea a la papelera sin tocar su estado ni nada mas: es reversible. */
+  async moverAPapelera(id: string): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (this.supabase as any)
+      .from('tareas')
+      .update({ eliminado_at: new Date().toISOString() })
+      .eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  /** Saca la tarea de la papelera. Si viene de arrastrarla a una columna del
+   *  kanban, `estado` fija donde queda; si no, conserva el estado que tenia. */
+  async restaurar(id: string, estado?: 'sin_empezar' | 'en_curso' | 'listo'): Promise<void> {
+    const update: Record<string, string | null> = { eliminado_at: null }
+    if (estado) update.estado = estado
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (this.supabase as any).from('tareas').update(update).eq('id', id)
+    if (error) throw new Error(error.message)
   }
 
   async getById(id: string): Promise<TareaConResponsables | null> {
@@ -155,6 +192,7 @@ export class TareasRepository {
     if (error) throw new Error(error.message)
   }
 
+  /** Borrado real e irreversible. Solo se llama desde la papelera. */
   async delete(id: string): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (this.supabase as any).from('tareas').delete().eq('id', id)
