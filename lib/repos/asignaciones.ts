@@ -100,7 +100,12 @@ export class AsignacionesRepository {
   async asignacionesDeLead(leadId: string): Promise<AsignacionConIntegrante[]> {
     const { data, error } = await this.sb
       .from('lead_asignaciones')
-      .select('integrante_id, rol, dim_integrantes ( nombre, avatar_url, color )')
+      .select(
+        // Desambiguado por nombre de FK: `lead_asignaciones` tiene DOS FKs a
+        // `dim_integrantes` (`integrante_id` y `asignado_por`). Sin nombrar cuál,
+        // PostgREST no resuelve la relación y responde 500.
+        'integrante_id, rol, dim_integrantes!lead_asignaciones_integrante_id_fkey ( nombre, avatar_url, color )'
+      )
       .eq('lead_id', leadId)
       .order('rol', { ascending: true })
 
@@ -121,7 +126,9 @@ export class AsignacionesRepository {
 
     const { data, error } = await this.sb
       .from('lead_asignaciones')
-      .select('lead_id, integrante_id, rol, dim_integrantes ( nombre, avatar_url, color )')
+      .select(
+        'lead_id, integrante_id, rol, dim_integrantes!lead_asignaciones_integrante_id_fkey ( nombre, avatar_url, color )'
+      )
       .in('lead_id', leadIds)
 
     if (error) throw new Error(error.message)

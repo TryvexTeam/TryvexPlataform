@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
+import type { AsignacionConIntegrante } from '@/lib/types/asignacion'
+import { AvatarStack } from '@/components/shared/avatar-stack'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { ScraperPanel } from './scraper-panel'
 import { useWaNoLeidos } from '@/lib/hooks/use-wa-no-leidos'
@@ -86,9 +88,12 @@ function LeadAvatar({
 interface LeadsInboxProps {
   leads: Lead[]
   selectedId: string | null
+  /** Asignados por `lead_id`, en UN lote (`AsignacionesRepository.asignacionesDeLeads`).
+   *  La página los consulta de una vez: pedirlos por fila sería el N+1 con 541 leads. */
+  asignaciones?: Record<string, AsignacionConIntegrante[]>
 }
 
-export function LeadsInbox({ leads, selectedId }: LeadsInboxProps) {
+export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -232,6 +237,14 @@ export function LeadsInbox({ leads, selectedId }: LeadsInboxProps) {
                       {cfg.label}
                     </span>
                   </div>
+                  {/* Fila 3: quién tiene este lead. Abajo a la derecha, como en
+                      las tarjetas de tareas. Si no hay asignados no se pinta
+                      nada — el propio AvatarStack devuelve null. */}
+                  {(asignaciones[lead.id]?.length ?? 0) > 0 && (
+                    <div className="flex justify-end mt-1">
+                      <AvatarStack asignados={asignaciones[lead.id]} />
+                    </div>
+                  )}
                 </div>
               </div>
             </button>
