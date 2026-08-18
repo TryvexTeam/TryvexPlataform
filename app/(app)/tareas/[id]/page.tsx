@@ -18,7 +18,7 @@ export default async function TareaPage({ params }: { params: Promise<{ id: stri
   if (!tarea) notFound()
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-4 md:p-6 max-w-3xl mx-auto">
       <TareaDetalle tarea={tarea} initialSubtareas={subtareas} />
     </div>
   )

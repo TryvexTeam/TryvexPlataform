@@ -15,6 +15,7 @@ export const TareaSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   completed_at: z.string().nullable(),
+  eliminado_at: z.string().nullable(),
 })
 
 export const TareaInsertSchema = z.object({

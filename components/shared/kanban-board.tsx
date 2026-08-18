@@ -3,7 +3,8 @@
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -27,6 +28,9 @@ interface KanbanBoardProps<T extends { id: string }> {
   columns: KanbanColumn<T>[]
   renderCard: (item: T, isDragging?: boolean) => React.ReactNode
   onDragEnd: (itemId: string, fromColumn: string, toColumn: string) => void
+  /** Da acceso al div con scroll horizontal, para que quien use el tablero
+   *  pueda sincronizar controles propios (p.ej. pestañas moviles) con el scroll. */
+  scrollContainerRef?: (el: HTMLDivElement | null) => void
 }
 
 const cardEntrance = {
@@ -129,11 +133,19 @@ export function KanbanBoard<T extends { id: string }>({
   columns,
   renderCard,
   onDragEnd,
+  scrollContainerRef,
 }: KanbanBoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null)
 
+  // Sensores separados a proposito: con un solo PointerSensor, en el celular
+  // cualquier intento de hacer scroll horizontal por las columnas arrancaba un
+  // drag a los 8px (el umbral de mouse) y la tarjeta "se pegaba" al dedo en vez
+  // de dejar scrollear — la vista de tareas quedaba inutilizable al tacto.
+  // TouchSensor con delay distingue un swipe (scroll) de un toque sostenido
+  // (drag): hay que mantener 200ms sin moverse mas de 8px para que arranque.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
   )
 
   function findColumn(itemId: string) {
@@ -172,9 +184,17 @@ export function KanbanBoard<T extends { id: string }>({
 
   return (
     <DndContext id="kanban-dnd" sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div
+        ref={scrollContainerRef}
+        className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none"
+        style={{ scrollPaddingLeft: '1rem' }}
+      >
         {columns.map((col) => (
-          <div key={col.id} className="flex flex-col min-w-[272px] w-[272px] shrink-0">
+          <div
+            key={col.id}
+            data-kanban-col={col.id}
+            className="flex flex-col w-[85vw] max-w-[272px] md:w-[272px] shrink-0 snap-start"
+          >
             {/* Column header */}
             <div className="flex items-center justify-between mb-2.5 px-1">
               <div className="flex items-center gap-2">

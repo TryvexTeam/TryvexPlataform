@@ -1,6 +1,6 @@
-import { format } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { CalendarDays, AlertCircle } from 'lucide-react'
+import { CalendarDays, AlertCircle, Trash2 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 
@@ -22,10 +22,13 @@ const esfuerzoConfig = { pequeno: 'S', medio: 'M', grande: 'L' }
 interface TareaCardProps {
   tarea: TareaConResponsables
   onClick?: () => void
+  /** En la papelera: la tarjeta se ve apagada y muestra hace cuanto cayo ahi. */
+  enPapelera?: boolean
 }
 
-export function TareaCard({ tarea, onClick }: TareaCardProps) {
+export function TareaCard({ tarea, onClick, enPapelera }: TareaCardProps) {
   const isVencida =
+    !enPapelera &&
     tarea.fecha_limite &&
     tarea.estado !== 'listo' &&
     new Date(tarea.fecha_limite) < new Date()
@@ -37,6 +40,7 @@ export function TareaCard({ tarea, onClick }: TareaCardProps) {
       style={{
         background: isVencida ? 'oklch(63% 0.21 22 / 6%)' : 'oklch(10% 0.004 240)',
         border: isVencida ? '1px solid oklch(63% 0.21 22 / 25%)' : '1px solid var(--tx-border)',
+        opacity: enPapelera ? 0.55 : 1,
       }}
       onMouseEnter={e => {
         (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'
@@ -70,6 +74,13 @@ export function TareaCard({ tarea, onClick }: TareaCardProps) {
       >
         {tarea.titulo}
       </p>
+
+      {enPapelera && tarea.eliminado_at && (
+        <div className="flex items-center gap-1 text-[10px] mb-2" style={{ color: 'var(--tx-ink-muted)' }}>
+          <Trash2 size={10} />
+          En la papelera · hace {formatDistanceToNow(new Date(tarea.eliminado_at), { locale: es })}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between">

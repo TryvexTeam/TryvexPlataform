@@ -9,7 +9,9 @@ export default async function TareasPage() {
   if (!user) redirect('/login')
 
   const repo = new TareasRepository(supabase)
-  const tareas = await repo.list()
+  // La papelera se carga junto al resto: el kanban filtra por eliminado_at en
+  // el cliente, asi arrastrar de vuelta no depende de un segundo fetch.
+  const [tareas, papelera] = await Promise.all([repo.list(), repo.listPapelera()])
 
   const { data: integrante } = await supabase
     .from('dim_integrantes')
@@ -18,9 +20,9 @@ export default async function TareasPage() {
     .single() as { data: { id: string; nombre: string } | null; error: unknown }
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <TareasKanban
-        initialTareas={tareas}
+        initialTareas={[...tareas, ...papelera]}
         currentUserId={user.id}
         currentIntegranteId={integrante?.id ?? null}
       />

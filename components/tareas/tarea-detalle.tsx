@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ArrowLeft, Trash2, Pencil, Plus, Check } from 'lucide-react'
+import { ArrowLeft, Trash2, Pencil, Plus, Check, RotateCcw } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,10 +41,30 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
     router.refresh()
   }
 
-  async function handleDelete() {
-    if (!confirm('¿Eliminar esta tarea?')) return
+  async function handleMoverAPapelera() {
+    await fetch(`/api/tareas/${tarea.id}/papelera`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'mover' }),
+    })
+    toast.success('Tarea movida a la papelera')
+    router.push('/tareas')
+  }
+
+  async function handleRestaurar() {
+    await fetch(`/api/tareas/${tarea.id}/papelera`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'restaurar' }),
+    })
+    toast.success('Tarea restaurada')
+    router.refresh()
+  }
+
+  async function handleDeleteDefinitivo() {
+    if (!confirm('¿Eliminar esta tarea para siempre? No se puede deshacer.')) return
     await fetch(`/api/tareas/${tarea.id}`, { method: 'DELETE' })
-    toast.success('Tarea eliminada')
+    toast.success('Tarea eliminada para siempre')
     router.push('/tareas')
   }
 
@@ -98,15 +118,40 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
       <div className="flex items-start justify-between gap-4 mb-6">
         <h1 className="text-xl font-bold text-[var(--tx-ink-primary)] leading-snug">{tarea.titulo}</h1>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-            <Pencil size={13} className="mr-1.5" />
-            Editar
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleDelete} className="text-red-600 hover:text-red-700">
-            <Trash2 size={13} />
-          </Button>
+          {tarea.eliminado_at ? (
+            <>
+              <Button variant="outline" size="sm" onClick={handleRestaurar}>
+                <RotateCcw size={13} className="mr-1.5" />
+                Restaurar
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDeleteDefinitivo} className="text-red-600 hover:text-red-700">
+                <Trash2 size={13} className="mr-1.5" />
+                Eliminar para siempre
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil size={13} className="mr-1.5" />
+                Editar
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleMoverAPapelera} className="text-red-600 hover:text-red-700">
+                <Trash2 size={13} />
+              </Button>
+            </>
+          )}
         </div>
       </div>
+
+      {tarea.eliminado_at && (
+        <div
+          className="flex items-center gap-2 text-sm rounded-lg px-3 py-2 mb-6"
+          style={{ background: 'oklch(63% 0.21 22 / 8%)', color: 'oklch(72% 0.17 22)', border: '1px solid oklch(63% 0.21 22 / 25%)' }}
+        >
+          <Trash2 size={14} />
+          Esta tarea esta en la papelera desde el {format(new Date(tarea.eliminado_at), "d 'de' MMMM, HH:mm", { locale: es })}.
+        </div>
+      )}
 
       {/* Meta */}
       <div className="flex flex-wrap gap-2 mb-6">
