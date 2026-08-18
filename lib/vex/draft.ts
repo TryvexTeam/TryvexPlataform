@@ -81,15 +81,20 @@ function bloqueHistorial(historial: TurnoWa[]): string {
 ESTE NEGOCIO YA FUE CONTACTADO. Lo conversado hasta ahora:
 ${conversacion}
 
-No es un primer contacto: NO te presentes de nuevo ni repitas lo que ya se dijo.
-Escribe el SIGUIENTE mensaje, retomando donde quedo. Si el negocio hizo una
-pregunta que no esta respondida, esa es la prioridad. Si quedo en silencio,
-retoma con algo nuevo y concreto, sin reclamar la falta de respuesta.
+🔴 ESTO REEMPLAZA LA ESTRUCTURA DE ARRIBA. Lo de los 5 puntos es para un
+primer mensaje; este NO lo es. Donde se contradigan, manda lo de aca.
 
-✅ ACA SI VA LA INVITACION A AGENDAR, si el negocio mostro algun interes: una
-llamada de 20 minutos en ${AGENDA_URL}, donde elige dia y hora y le llega la
-invitacion por correo. En el primer mensaje no se pide tiempo; una vez que
-contesto, pedirlo es lo natural — ya dijo que le interesa.
+Escribe DOS O TRES FRASES, nada mas:
+
+1. ⛔ SIN SALUDO DE PRESENTACION. Nada de "Hola, ¿hablo con...?" ni "Somos
+   Tryvex" ni "Te escribimos de Tryvex": ya sabe quien eres. Empieza por lo
+   que EL dijo.
+2. ⛔ NO REPITAS EL DIAGNOSTICO. Ya se lo dijiste en el mensaje anterior.
+   Repetirlo suena a que no leiste su respuesta.
+3. RESPONDE lo que pregunto o comento. Si dejo una pregunta sin contestar, esa
+   es la prioridad absoluta.
+4. CIERRA INVITANDO A AGENDAR: una llamada de 20 minutos en ${AGENDA_URL},
+   donde elige dia y hora y le llega la invitacion por correo. Una linea.
 
 ⛔ No inventes precios, plazos ni compromisos que no aparezcan arriba.
 `.trim()
@@ -188,7 +193,8 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
   van sin tildes por un tema tecnico — el MENSAJE no. Un mensaje mal escrito le dice al dueno
   que no nos tomamos el trabajo en serio, y le estamos ofreciendo justamente hacerle algo bien.
 - ⛔ Frases prohibidas por acartonadas o vacias: "me dirijo a", "por medio del presente",
-  "presencia en linea", "presencia digital", "posicionamiento", "soluciones digitales",
+  "presencia en linea", "presencia online", "presencia digital", "visibilidad online",
+  "posicionamiento", "soluciones digitales", "transformacion digital",
   "espero que estes bien", "somos una empresa lider", "potenciar tu negocio".
 - ⛔ Le hablas AL DUENO, de tu: "no apareces", "tus resenas", "tu barberia". Nunca en tercera
   persona sobre su negocio ("no aparecen", "sus resenas") ni de usted: suena a carta de banco.
@@ -244,7 +250,8 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
    / "¿te interesaria verlo, o por ahora estan bien asi?"
 
    ⛔ NO pidas una llamada, una reunion ni un horario en este primer mensaje.
-   ⛔ NO pongas ningun enlace todavia. El link de agendar va DESPUES, cuando conteste.
+   ⛔ NO pongas ningun enlace todavia. El link de agendar va DESPUES, cuando conteste
+      — y si mas abajo dice que este negocio ya contesto, entonces SI va.
    ⛔ NO ofrezcas "una demo", "un ejemplo" ni "mostrarle algo".
 
 ## Como se pide, y como NO
@@ -289,6 +296,10 @@ Le sirve a: quien recibe mucho documento o mucho mensaje repetido.
 
 ## Reglas duras sobre los datos
 
+- ⛔ EL HORARIO NO SE AFIRMA NUNCA. Aunque aparezca abajo, es una foto de UN dia y pudo
+  cambiar. Prohibido "cuando cierras a las 9", "cierras a las 7", "abres a las 8". Se habla
+  en general: "cuando cierras", "fuera del horario de atencion". Un horario equivocado en la
+  primera linea deja el mensaje entero sin credibilidad.
 - ⛔ NO INVENTES NADA. Solo puedes afirmar lo que esta en los datos de abajo. Si un dato no
   esta, ese angulo no existe: busca otro. Prohibido inventar cantidades de busquedas, clientes
   perdidos, competidores o cualquier numero que no te hayan dado.
