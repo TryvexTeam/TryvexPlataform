@@ -15,6 +15,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface KanbanColumn<T> {
@@ -31,6 +32,42 @@ interface KanbanBoardProps<T extends { id: string }> {
   /** Da acceso al div con scroll horizontal, para que quien use el tablero
    *  pueda sincronizar controles propios (p.ej. pestañas moviles) con el scroll. */
   scrollContainerRef?: (el: HTMLDivElement | null) => void
+  /** Icono de papelera flotante, NO una columna mas: soltar una tarjeta ahi la
+   *  manda a la papelera sin que el tablero acumule una fila que solo crece. */
+  trashZone?: { id: string; count: number; onOpen: () => void }
+}
+
+/** Zona de drop del icono de papelera. Aparte del resto de columnas para que
+ *  nunca se vea como "una fila mas": es un blanco fijo, chico, con su propio
+ *  feedback (crece y cambia de color al pasarle una tarjeta por encima). */
+function TrashDropZone({ id, count, onOpen }: { id: string; count: number; onOpen: () => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id })
+
+  return (
+    <motion.button
+      ref={setNodeRef}
+      type="button"
+      onClick={onOpen}
+      animate={isOver ? { scale: 1.15 } : { scale: 1 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      className="fixed bottom-24 right-5 md:bottom-8 md:right-8 z-40 flex items-center justify-center h-12 w-12 rounded-full shadow-lg"
+      style={{
+        background: isOver ? 'oklch(63% 0.21 22 / 90%)' : 'var(--tx-surface-2)',
+        border: isOver ? '1.5px solid oklch(63% 0.21 22)' : '1px solid var(--tx-border)',
+      }}
+      aria-label="Papelera de tareas"
+    >
+      <Trash2 size={18} color={isOver ? 'white' : 'var(--tx-ink-secondary)'} />
+      {count > 0 && (
+        <span
+          className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center"
+          style={{ background: 'var(--tx-accent)', color: 'white' }}
+        >
+          {count}
+        </span>
+      )}
+    </motion.button>
+  )
 }
 
 const cardEntrance = {
@@ -134,6 +171,7 @@ export function KanbanBoard<T extends { id: string }>({
   renderCard,
   onDragEnd,
   scrollContainerRef,
+  trashZone,
 }: KanbanBoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null)
 
@@ -171,10 +209,17 @@ export function KanbanBoard<T extends { id: string }>({
     if (!over) return
 
     const fromCol = findColumn(active.id as string)
-    const toCol =
-      columns.find((c) => c.id === over.id) ?? findColumn(over.id as string)
+    if (!fromCol) return
 
-    if (!fromCol || !toCol) return
+    // La papelera no es una columna: no tiene items propios, asi que no
+    // aparece en `columns` y hay que reconocerla aparte por su id.
+    if (trashZone && over.id === trashZone.id) {
+      onDragEnd(active.id as string, fromCol.id, trashZone.id)
+      return
+    }
+
+    const toCol = columns.find((c) => c.id === over.id) ?? findColumn(over.id as string)
+    if (!toCol) return
     if (fromCol.id === toCol.id && active.id === over.id) return
 
     onDragEnd(active.id as string, fromCol.id, toCol.id)
@@ -217,6 +262,8 @@ export function KanbanBoard<T extends { id: string }>({
           </div>
         ))}
       </div>
+
+      {trashZone && <TrashDropZone id={trashZone.id} count={trashZone.count} onOpen={trashZone.onOpen} />}
 
       <DragOverlay dropAnimation={null}>
         {activeItem ? (

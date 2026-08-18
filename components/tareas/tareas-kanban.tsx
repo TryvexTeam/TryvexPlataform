@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Filter } from 'lucide-react'
+import { Plus, Filter, RotateCcw, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { KanbanBoard } from '@/components/shared/kanban-board'
 import { TareaCard } from './tarea-card'
 import { TareaForm } from './tarea-form'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 import type { TareaConResponsables, TareaInsert } from '@/lib/types/tarea'
 
@@ -18,7 +19,7 @@ const COLUMNS = [
   { id: 'listo', title: 'Listo', color: '#22c55e' },
 ]
 
-const COLUMNA_PAPELERA = { id: 'papelera', title: 'Papelera', color: '#71717a' }
+const PAPELERA_ID = 'papelera'
 type EstadoTarea = 'sin_empezar' | 'en_curso' | 'listo'
 
 interface TareasKanbanProps {
@@ -33,6 +34,7 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
   const [formOpen, setFormOpen] = useState(false)
   const [soloMias, setSoloMias] = useState(false)
   const [colActiva, setColActiva] = useState('sin_empezar')
+  const [papeleraOpen, setPapeleraOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   // Realtime + red de seguridad al volver a la pestaña. Antes solo escuchaba
@@ -81,72 +83,73 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
     ? tareasVisibles.filter((t) => t.responsables.some((r) => r.integrante_id === currentIntegranteId))
     : tareasVisibles
 
-  const columns = [
-    ...COLUMNS.map((col) => ({
-      ...col,
-      items: tareasFiltradas.filter((t) => t.estado === col.id),
-    })),
-    { ...COLUMNA_PAPELERA, items: enPapelera },
-  ]
+  const columns = COLUMNS.map((col) => ({
+    ...col,
+    items: tareasFiltradas.filter((t) => t.estado === col.id),
+  }))
 
-  // Arrastrar a "Papelera" no borra nada: solo marca eliminado_at (ver
-  // migracion 050). Sacarla de ahi a una columna real la restaura con ese
-  // estado. Todo lo demas (fecha, responsables, subtareas) queda intacto.
-  async function handleDragEnd(itemId: string, fromCol: string, toCol: string) {
-    if (toCol === 'papelera') {
-      setTareas((prev) =>
-        prev.map((t) => (t.id === itemId ? { ...t, eliminado_at: new Date().toISOString() } : t))
-      )
-      const res = await fetch(`/api/tareas/${itemId}/papelera`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accion: 'mover' }),
-      })
-      if (!res.ok) {
-        toast.error('Error al mover la tarea a la papelera')
-        setTareas(initialTareas)
-        return
-      }
-      toast.success('Tarea movida a la papelera')
-      return
-    }
-
-    if (fromCol === 'papelera') {
+  // Soltar una tarjeta sobre el icono de papelera no borra nada: solo marca
+  // eliminado_at (ver migracion 050) y la saca del tablero. Restaurar y
+  // borrar definitivo viven en el panel de la papelera, no en el drag.
+  async function handleDragEnd(itemId: string, _fromCol: string, toCol: string) {
+    if (toCol !== PAPELERA_ID) {
       const estado = toCol as EstadoTarea
-      setTareas((prev) =>
-        prev.map((t) => (t.id === itemId ? { ...t, eliminado_at: null, estado } : t))
-      )
-      const res = await fetch(`/api/tareas/${itemId}/papelera`, {
+      setTareas((prev) => prev.map((t) => (t.id === itemId ? { ...t, estado } : t)))
+      const res = await fetch(`/api/tareas/${itemId}/estado`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accion: 'restaurar', estado }),
+        body: JSON.stringify({ estado }),
       })
       if (!res.ok) {
-        toast.error('Error al restaurar la tarea')
+        toast.error('Error al mover la tarea')
         setTareas(initialTareas)
-        return
       }
-      toast.success('Tarea restaurada')
       return
     }
 
-    const estado = toCol as EstadoTarea
-
-    // Optimistic update
     setTareas((prev) =>
-      prev.map((t) => (t.id === itemId ? { ...t, estado } : t))
+      prev.map((t) => (t.id === itemId ? { ...t, eliminado_at: new Date().toISOString() } : t))
     )
-
-    const res = await fetch(`/api/tareas/${itemId}/estado`, {
+    const res = await fetch(`/api/tareas/${itemId}/papelera`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado }),
+      body: JSON.stringify({ accion: 'mover' }),
     })
-
     if (!res.ok) {
-      toast.error('Error al mover la tarea')
+      toast.error('Error al mover la tarea a la papelera')
       setTareas(initialTareas)
+      return
     }
+    toast.success('Tarea movida a la papelera')
+  }
+
+  async function handleRestaurar(id: string, estado?: EstadoTarea) {
+    setTareas((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, eliminado_at: null, ...(estado ? { estado } : {}) } : t))
+    )
+    const res = await fetch(`/api/tareas/${id}/papelera`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'restaurar', estado }),
+    })
+    if (!res.ok) {
+      toast.error('Error al restaurar la tarea')
+      setTareas(initialTareas)
+      return
+    }
+    toast.success('Tarea restaurada')
+  }
+
+  async function handleEliminarDefinitivo(id: string) {
+    if (!confirm('¿Eliminar esta tarea para siempre? No se puede deshacer.')) return
+    setTareas((prev) => prev.filter((t) => t.id !== id))
+    const res = await fetch(`/api/tareas/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      toast.error('Error al eliminar la tarea')
+      setTareas(initialTareas)
+      return
+    }
+    toast.success('Tarea eliminada para siempre')
   }
 
   async function handleCreate(data: TareaInsert) {
@@ -216,11 +219,11 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
         renderCard={(tarea) => (
           <TareaCard
             tarea={tarea}
-            enPapelera={!!tarea.eliminado_at}
             onClick={() => router.push(`/tareas/${tarea.id}`)}
           />
         )}
         onDragEnd={handleDragEnd}
+        trashZone={{ id: PAPELERA_ID, count: enPapelera.length, onOpen: () => setPapeleraOpen(true) }}
       />
 
       <TareaForm
@@ -228,6 +231,63 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
         onOpenChange={setFormOpen}
         onSubmit={handleCreate}
       />
+
+      {/* Panel de la papelera: se abre con el icono flotante, no vive en el
+          tablero. Arrastrar tareas ahi es rapido; verlas y recuperarlas es
+          una lista aparte, para que el kanban nunca acumule una fila mas. */}
+      <Dialog open={papeleraOpen} onOpenChange={setPapeleraOpen}>
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 size={16} />
+              Papelera
+            </DialogTitle>
+          </DialogHeader>
+
+          {enPapelera.length === 0 ? (
+            <p className="text-sm text-[var(--tx-ink-muted)] text-center py-8">
+              La papelera está vacía
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {enPapelera.map((tarea) => (
+                <div key={tarea.id} className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <TareaCard
+                      tarea={tarea}
+                      enPapelera
+                      onClick={() => {
+                        setPapeleraOpen(false)
+                        router.push(`/tareas/${tarea.id}`)
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7"
+                      title="Restaurar"
+                      onClick={() => handleRestaurar(tarea.id)}
+                    >
+                      <RotateCcw size={13} />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7 text-red-600 hover:text-red-700"
+                      title="Eliminar para siempre"
+                      onClick={() => handleEliminarDefinitivo(tarea.id)}
+                    >
+                      <X size={13} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
