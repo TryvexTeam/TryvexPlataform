@@ -8,6 +8,9 @@ import {
   useSensor,
   useSensors,
   useDroppable,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
@@ -119,7 +122,7 @@ function TrashDropZone({
       type="button"
       onClick={onOpen}
       animate={canControls}
-      className="fixed bottom-28 right-4 md:bottom-8 md:right-8 z-40 flex items-center justify-center h-12 w-12 rounded-full shadow-lg"
+      className="fixed bottom-20 right-4 md:bottom-8 md:right-8 z-40 flex items-center justify-center h-12 w-12 rounded-full shadow-lg"
       style={{
         background: isOver ? 'oklch(63% 0.21 22 / 90%)' : 'var(--tx-surface-2)',
         border: isOver ? '1.5px solid oklch(63% 0.21 22)' : '1px solid var(--tx-border)',
@@ -257,6 +260,23 @@ export function KanbanBoard<T extends { id: string }>({
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
   )
 
+  // Por defecto dnd-kit compara el RECTANGULO de la tarjeta arrastrada contra
+  // cada zona — y esa tarjeta es grande (llena casi todo el ancho en
+  // celular). Eso hacia que bajarla hacia una seccion de mas abajo la mandara
+  // a la papelera con solo rozar su esquina, mucho antes de "apuntarle" al
+  // icono de verdad. Para la papelera puntualmente comparamos la posicion
+  // exacta del dedo/cursor en vez del rectangulo completo: solo cuenta si el
+  // toque cae adentro del icono. Las columnas siguen usando la deteccion
+  // normal (por rectangulo), que ahi si tiene sentido.
+  const collisionDetection: CollisionDetection = (args) => {
+    if (trashZone) {
+      const pointerHits = pointerWithin(args)
+      const sobreTacho = pointerHits.find((hit) => hit.id === trashZone.id)
+      if (sobreTacho) return [sobreTacho]
+    }
+    return rectIntersection(args)
+  }
+
   function findColumn(itemId: string) {
     return columns.find((col) => col.items.some((i) => i.id === itemId))
   }
@@ -310,6 +330,7 @@ export function KanbanBoard<T extends { id: string }>({
     <DndContext
       id="kanban-dnd"
       sensors={sensors}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
@@ -318,7 +339,11 @@ export function KanbanBoard<T extends { id: string }>({
         ref={scrollContainerRef}
         className={
           orientation === 'vertical'
-            ? 'flex flex-col gap-5 pb-24 pr-16'
+            // Sin colchon a la derecha: el tacho ahora solo "atrapa" con el
+            // puntero exacto (ver collisionDetection), asi que ya no hace
+            // falta robarle ancho a las tarjetas para evitar toques
+            // accidentales — se superpone igual que en desktop.
+            ? 'flex flex-col gap-5 pb-24'
             : 'flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none'
         }
         style={orientation === 'horizontal' ? { scrollPaddingLeft: '1rem' } : undefined}
@@ -330,7 +355,13 @@ export function KanbanBoard<T extends { id: string }>({
             className={
               orientation === 'vertical'
                 ? 'flex flex-col w-full'
-                : 'flex flex-col w-[85vw] max-w-[272px] md:w-[272px] shrink-0 snap-start'
+                // En celular las columnas quedan a ancho fijo (85vw, con
+                // scroll+snap entre ellas). De md para arriba, en vez de eso
+                // dejarlas pegadas a la izquierda con un hueco vacio al lado,
+                // que crezcan para repartirse el espacio disponible — con un
+                // tope (360px) para que las tarjetas no queden gigantes en
+                // pantallas muy anchas.
+                : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink'
             }
           >
             {/* Column header */}
