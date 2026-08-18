@@ -7,7 +7,8 @@ import { CuotaAgotada } from './llm'
 const lead = { id: 'u1', nombre_negocio: 'Panadería San José', nicho: 'panadería',
   localidad: 'Maipú', score: 90, telefono: '987654321', redes_sociales: null,
   tiene_web: null, info_texto: null, url_web: null,
-  google_rating: null, google_resenas: null, horario: null, instagram: null }
+  google_rating: null, google_resenas: null, horario: null, instagram: null,
+  categoria_google: null }
 
 /** Captura el prompt que se le manda al modelo, para poder revisarlo. */
 function llmEspia() {
@@ -318,6 +319,41 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     await generarDraftLead(lead, undefined, espia.llm) // solo teléfono
     expect(espia.prompt()).toContain('"whatsapp_text"')
     expect(espia.prompt()).not.toContain('"social_text"')
+  })
+
+  it('el rubro de Google gana sobre el nuestro', async () => {
+    // `nicho` guarda el término con el que BUSCAMOS ("pizzerías"); Google dice
+    // lo que el negocio ES ("Restaurante italiano"). Escribirle por lo que es
+    // da un mensaje más al grano, y el dato ya lo teníamos guardado sin usar.
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nicho: 'pizzerías', categoria_google: 'Restaurante italiano' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/Rubro \(asi lo clasifica Google\): Restaurante italiano/)
+    expect(espia.prompt()).not.toMatch(/- Rubro: pizzerías/)
+  })
+
+  it('sin el rubro de Google, usa el nuestro', async () => {
+    // Los 45 leads de rubros que el scraper no recorre nunca lo van a tener.
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nicho: 'Panadería', categoria_google: null },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/- Rubro: panadería/)
+  })
+
+  it('un rubro de Google en blanco no deja al lead sin rubro', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nicho: 'panadería', categoria_google: '   ' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/- Rubro: panadería/)
   })
 
   it('la info del negocio llega al modelo cuando existe', async () => {
