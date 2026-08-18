@@ -34,8 +34,12 @@ export function DashWorkspace({ items, stats }: DashWorkspaceProps) {
           title="Leads & Contactos"
         />
 
-        {/* Col 2 — Reader (en móvil solo cuando hay selección) */}
-        <div className={`min-w-0 ${selected ? '' : 'hidden md:block'}`}>
+        {/* Col 2 — Reader (en móvil solo cuando hay selección). h-full + min-h-0 +
+            overflow-hidden: sin esto, el grid item crece con su contenido (el
+            min-height:auto por defecto de los grid items) y el overflow-y:auto
+            de adentro nunca tiene una altura acotada contra la cual scrollear —
+            mismo patrón que ya usa la columna del feed, que sí scrollea. */}
+        <div className={`min-w-0 h-full min-h-0 overflow-hidden ${selected ? '' : 'hidden md:block'}`}>
           <DashReader item={selected} stats={stats} />
         </div>
       </div>
