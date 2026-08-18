@@ -78,6 +78,11 @@ export function RelojJornada({ jornadaInicial, variante = 'completo' }: RelojJor
           className="tabular-nums font-semibold text-[13px]"
           style={{ color: pausada ? 'var(--tx-ink-muted)' : 'var(--tx-ink-primary)' }}
           title={pausada ? 'En pausa' : 'Jornada en curso'}
+          // El servidor y el cliente calculan "ahora" en momentos distintos
+          // (aunque sea por 1-2 segundos) -- es un reloj en vivo, ese
+          // desfase es esperable y no un bug real. Sin esto React lo
+          // marcaba como error de hidratacion en cada carga.
+          suppressHydrationWarning
         >
           {formatearDuracion(segundos)}
         </span>
@@ -127,6 +132,9 @@ export function RelojJornada({ jornadaInicial, variante = 'completo' }: RelojJor
         <span
           className="tabular-nums font-bold text-5xl sm:text-6xl leading-none"
           style={{ color: pausada ? 'var(--tx-ink-secondary)' : 'var(--tx-ink-primary)', letterSpacing: '-0.02em' }}
+          // Ver comentario en la variante compacta: desfase esperable de un
+          // reloj en vivo, no un bug de hidratacion real.
+          suppressHydrationWarning
         >
           {jornada ? formatearDuracion(segundos) : '0h 00m'}
         </span>
