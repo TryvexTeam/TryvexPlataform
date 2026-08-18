@@ -46,8 +46,12 @@ export default function Error({
         )}
         <button
           onClick={reset}
-          className="mt-1 flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-[10px] text-white transition-opacity hover:opacity-90"
-          style={{ background: 'var(--tx-accent)', boxShadow: '0 8px 22px var(--tx-accent-glow)' }}
+          className="mt-1 flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-[10px] transition-opacity hover:opacity-90"
+          style={{
+            background: 'var(--tx-accent)',
+            color: 'var(--tx-accent-fg)',
+            boxShadow: '0 8px 22px var(--tx-accent-glow)',
+          }}
         >
           <RotateCw size={13} />
           Reintentar

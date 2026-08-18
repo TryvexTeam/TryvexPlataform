@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronLeftIcon, Loader2Icon, PaperclipIcon, PhoneIcon, PinIcon, SendIcon, VideoIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { textoPlano } from '@/lib/markdown/mini'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
 import { avatarConversacion, pesoLegible, tituloConversacion } from '@/lib/types/chat'
@@ -143,6 +144,31 @@ export function HiloChat({
       supabase.removeChannel(canal)
     }
   }, [conversacion.id])
+
+  // Qué mensajes deben animar de entrada: el historial completo no anima al
+  // abrir el hilo (se vería como si el chat entero se desplegara mensaje por
+  // mensaje). Solo lo que llega después de esa foto inicial —enviado o
+  // recibido en vivo— desliza. Se resuelve en un efecto, no durante el
+  // render, porque leer/escribir un ref ahí rompe las garantías de React.
+  const [animarIds, setAnimarIds] = useState<Set<string>>(new Set())
+  const vistosRef = useRef<Set<string>>(new Set())
+  const historialListoRef = useRef(false)
+  useEffect(() => {
+    if (!cargando && !historialListoRef.current) {
+      mensajes.forEach((m) => vistosRef.current.add(m.id))
+      historialListoRef.current = true
+      return
+    }
+    if (!historialListoRef.current) return
+    const nuevos = mensajes.filter((m) => !vistosRef.current.has(m.id))
+    if (nuevos.length === 0) return
+    nuevos.forEach((m) => vistosRef.current.add(m.id))
+    setAnimarIds((previos) => {
+      const siguiente = new Set(previos)
+      nuevos.forEach((m) => siguiente.add(m.id))
+      return siguiente
+    })
+  }, [cargando, mensajes])
 
   // Saltar instantaneo la primera vez (abrir el hilo no deberia verse como si
   // barriera la pantalla de arriba a abajo animando todo el historial), y
@@ -494,6 +520,13 @@ export function HiloChat({
             const encadenado =
               i > 0 && previo.autor_id === m.autor_id && previo.agente_id === m.agente_id
 
+            const esNuevo = animarIds.has(m.id)
+            const claseEntrada = esNuevo
+              ? mio
+                ? 'animate-in slide-in-from-right-6 fade-in duration-300'
+                : 'animate-in slide-in-from-left-6 fade-in duration-300'
+              : ''
+
             return (
               <GestosMensaje
                 key={m.id}
@@ -505,7 +538,7 @@ export function HiloChat({
                 onReaccionar={(emoji) => alternarReaccion(m, emoji)}
                 onFijar={() => alternarFijado(m)}
               >
-              <div className={`flex gap-2 min-w-0 ${mio ? 'justify-end' : 'justify-start'}`}>
+              <div className={`flex gap-2 min-w-0 ${mio ? 'justify-end' : 'justify-start'} ${claseEntrada}`}>
                 {/* La foto va en todos los hilos, no solo en grupos: es la cara de
                     quien habla y en un DM también se quiere ver. El hueco de 28px
                     mantiene alineadas las burbujas encadenadas. */}
@@ -588,7 +621,11 @@ export function HiloChat({
                     onAlternar={(emoji) => alternarReaccion(m, emoji)}
                   />
 
-                  <div className="flex items-center gap-1.5 mt-0.5">
+                  {/* Propio: hora pegada al borde derecho (junto a la burbuja), acciones
+                      hacia la izquierda. Ajeno: al revés — hora a la izquierda, acciones
+                      a la derecha. Mismo orden de DOM en los dos casos; se invierte solo
+                      la dirección del flex. */}
+                  <div className={`flex items-center gap-1.5 mt-0.5 ${mio ? 'flex-row-reverse' : ''}`}>
                     <span className="text-[10px] text-[var(--tx-ink-muted)] px-1">
                       {HORA.format(new Date(m.created_at))}
                     </span>
@@ -613,6 +650,14 @@ export function HiloChat({
                         onBorrar={() => borrar(m)}
                         onReaccionar={(emoji) => alternarReaccion(m, emoji)}
                         onFijar={() => alternarFijado(m)}
+                        onCopiar={
+                          m.contenido
+                            ? () => {
+                                navigator.clipboard.writeText(textoPlano(m.contenido!))
+                                toast.success('Mensaje copiado')
+                              }
+                            : undefined
+                        }
                       />
                     </span>
                   </div>
@@ -636,6 +681,7 @@ export function HiloChat({
               <CitaMensaje
                 citado={citando}
                 autor={citando.autor_id ? porId.get(citando.autor_id) : undefined}
+                recortar={false}
               />
             </div>
             <button
