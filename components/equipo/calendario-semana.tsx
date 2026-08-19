@@ -199,6 +199,7 @@ export function CalendarioSemana() {
   // Detail popover
   const [detailEvento, setDetailEvento] = useState<Evento | null>(null)
   const [detailPos, setDetailPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [asignando, setAsignando] = useState(false)
 
   // Drag state
   const dragRef = useRef<{
@@ -387,6 +388,10 @@ export function CalendarioSemana() {
 
   // ─── Availability map ────────────────────────────────────────────
   const totalMembers = disp?.length ?? 0
+
+  // El integrante del usuario actual (para el botón Asignarme/Quitarme)
+  const miIntegrante = disp?.find((m) => m.es_propio) ?? null
+  const miIntegranteId = miIntegrante?.integrante_id ?? null
 
   // Color por integrante: el elegido en su perfil; paleta por índice como fallback
   const memberColorMap = useMemo(() => {
@@ -627,6 +632,37 @@ export function CalendarioSemana() {
       fetchEventos()
     } catch {
       toast.error('Error al eliminar evento')
+    }
+  }
+
+  // ─── Auto-asignación a una cita (PRP-008 F4) ──────────────────────
+  const handleToggleAsignacion = async () => {
+    if (!detailEvento || !miIntegranteId || asignando) return
+    const estaba = detailEvento.asistentes.some((a) => a.integrante_id === miIntegranteId)
+    setAsignando(true)
+    try {
+      const res = await fetch(`/api/eventos/${detailEvento.id}/asignaciones`, {
+        method: estaba ? 'DELETE' : 'POST',
+      })
+      const j = await res.json().catch(() => ({})) as { error?: string }
+      if (!res.ok) throw new Error(j.error ?? 'Error al actualizar asistencia')
+      toast.success(estaba ? 'Te quitaste del evento' : 'Te asignaste al evento')
+      // Refresco local del popover + recarga de la semana (mismo mecanismo que crear/borrar)
+      setDetailEvento((prev) => {
+        if (!prev) return prev
+        if (estaba) {
+          return { ...prev, asistentes: prev.asistentes.filter((a) => a.integrante_id !== miIntegranteId) }
+        }
+        return {
+          ...prev,
+          asistentes: [...prev.asistentes, { integrante_id: miIntegranteId, nombre: miIntegrante?.nombre ?? 'Tú' }],
+        }
+      })
+      fetchEventos()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al actualizar asistencia')
+    } finally {
+      setAsignando(false)
     }
   }
 
@@ -1270,18 +1306,70 @@ export function CalendarioSemana() {
                         >
                           {item.ev.titulo}
                         </span>
-                        <span
-                          style={{
-                            fontSize: '10.5px',
-                            color: 'var(--tx-ink-muted)',
-                            lineHeight: '1.2',
-                          }}
-                        >
-                          {hhmm(new Date(item.ev.inicio))}–{hhmm(new Date(item.ev.fin))}
-                        </span>
-                      </div>
-                    )
-                  })}
+                         <span
+                           style={{
+                             fontSize: '10.5px',
+                             color: 'var(--tx-ink-muted)',
+                             lineHeight: '1.2',
+                           }}
+                         >
+                           {hhmm(new Date(item.ev.inicio))}–{hhmm(new Date(item.ev.fin))}
+                         </span>
+                         {/* Avatares de asistentes internos: máx. 3 + overflow.
+                             En bloques bajos se omiten para no pisar el título. */}
+                         {item.ev.asistentes.length > 0 && item.height >= 48 && (
+                           <div
+                             style={{
+                               display: 'flex',
+                               alignItems: 'center',
+                               gap: '2px',
+                               marginTop: '1px',
+                               flexShrink: 0,
+                             }}
+                           >
+                             {item.ev.asistentes.slice(0, 3).map((a) => {
+                               const c = memberColor(a.integrante_id, a.nombre)
+                               return (
+                                 <span
+                                   key={a.integrante_id}
+                                   title={a.nombre}
+                                   style={{
+                                     width: '14px',
+                                     height: '14px',
+                                     borderRadius: '50%',
+                                     background: `color-mix(in srgb, ${c} 35%, transparent)`,
+                                     border: `1px solid ${c}`,
+                                     color: `color-mix(in oklab, ${c} 60%, white)`,
+                                     fontSize: '8px',
+                                     fontWeight: 700,
+                                     lineHeight: 1,
+                                     display: 'inline-flex',
+                                     alignItems: 'center',
+                                     justifyContent: 'center',
+                                     flexShrink: 0,
+                                   }}
+                                 >
+                                   {getInitials(a.nombre)}
+                                 </span>
+                               )
+                             })}
+                             {item.ev.asistentes.length > 3 && (
+                               <span
+                                 style={{
+                                   fontSize: '9px',
+                                   fontWeight: 600,
+                                   color: 'var(--tx-ink-muted)',
+                                   lineHeight: 1,
+                                 }}
+                               >
+                                 +{item.ev.asistentes.length - 3}
+                               </span>
+                             )}
+                           </div>
+                         )}
+                       </div>
+                     )
+                   })}
 
                   {/* Drag ghost with live time label */}
                   {dragGhost && dragGhost.dayIdx === dayIdx && (
@@ -1572,6 +1660,37 @@ export function CalendarioSemana() {
                   </span>
                 ))}
               </div>
+            )}
+            {miIntegranteId && (
+              <button
+                type="button"
+                onClick={handleToggleAsignacion}
+                disabled={asignando}
+                style={{
+                  marginTop: '6px',
+                  minHeight: '44px',
+                  background: detailEvento.asistentes.some((a) => a.integrante_id === miIntegranteId)
+                    ? 'var(--tx-accent-subtle)'
+                    : 'var(--tx-accent)',
+                  color: detailEvento.asistentes.some((a) => a.integrante_id === miIntegranteId)
+                    ? 'var(--tx-accent)'
+                    : 'var(--tx-accent-fg)',
+                  border: '1px solid var(--tx-accent)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: asignando ? 'wait' : 'pointer',
+                  opacity: asignando ? 0.6 : 1,
+                  transition: 'opacity 0.15s',
+                }}
+              >
+                {asignando
+                  ? 'Guardando…'
+                  : detailEvento.asistentes.some((a) => a.integrante_id === miIntegranteId)
+                    ? 'Quitarme'
+                    : 'Asignarme'}
+              </button>
             )}
             {detailEvento.es_mio && (
               <button
