@@ -68,6 +68,11 @@ export class LeadsRepository {
       .eq('id', id)
 
     if (error) throw new Error(error.message)
+
+    // También aquí, y no solo en `cambiarEstado`: el tablero mueve la tarjeta
+    // por una ruta y el botón "Ganado" de la ficha por otra. Cubrir una sola
+    // dejaba la mitad de los leads ganados sin ficha de cliente.
+    if (data.estado === 'ganado') await this.convertirEnCliente(id)
   }
 
   async cambiarEstado(id: string, estado: Lead['estado']): Promise<void> {
@@ -77,6 +82,80 @@ export class LeadsRepository {
       .eq('id', id)
 
     if (error) throw new Error(error.message)
+
+    if (estado === 'ganado') await this.convertirEnCliente(id)
+  }
+
+  /**
+   * Da de alta al lead como cliente. Devuelve el id del cliente, sea el recién
+   * creado o el que ya existía.
+   *
+   * Ganar un lead ES convertirlo en cliente: obligar a rellenar otra ficha a
+   * mano con los mismos datos que ya están en el lead solo servía para que
+   * algunos clientes no llegaran a existir.
+   *
+   * Es idempotente por el índice único sobre `lead_id`: volver a marcar el lead
+   * como ganado —o arrastrarlo dos veces en el tablero— no duplica nada.
+   */
+  async convertirEnCliente(leadId: string): Promise<string | null> {
+    const { data: yaExiste } = await this.sb
+      .from('dim_clientes')
+      .select('id')
+      .eq('lead_id', leadId)
+      .maybeSingle()
+    if (yaExiste) return (yaExiste as { id: string }).id
+
+    const { data: lead, error: errorLead } = await this.sb
+      .from('fact_leads')
+      .select('nombre_negocio, nombre_contacto, telefono, email, nicho, localidad, redes_sociales')
+      .eq('id', leadId)
+      .single()
+    if (errorLead || !lead) return null
+
+    const fuente = lead as {
+      nombre_negocio: string | null
+      nombre_contacto: string | null
+      telefono: string | null
+      email: string | null
+      nicho: string | null
+      localidad: string | null
+      redes_sociales: Record<string, string> | null
+    }
+
+    const { data: creado, error } = await this.sb
+      .from('dim_clientes')
+      .insert({
+        lead_id: leadId,
+        nombre_negocio: fuente.nombre_negocio,
+        // El scraper trae leads sin persona de contacto. El nombre del negocio
+        // es un relleno honesto: deja la ficha usable y se corrige al hablar
+        // con ellos.
+        nombre_contacto: fuente.nombre_contacto ?? fuente.nombre_negocio,
+        telefono: fuente.telefono,
+        email: fuente.email,
+        nicho: fuente.nicho,
+        localidad: fuente.localidad,
+        redes_sociales: fuente.redes_sociales,
+        // La fecha de cierre es hoy porque hoy se ganó.
+        fecha_cierre: new Date().toISOString().slice(0, 10),
+        estado: 'activo',
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      // Carrera contra otra conversión del mismo lead: el índice único hizo su
+      // trabajo, así que se devuelve el cliente que ganó en vez de fallar.
+      const { data: deLaCarrera } = await this.sb
+        .from('dim_clientes')
+        .select('id')
+        .eq('lead_id', leadId)
+        .maybeSingle()
+      if (deLaCarrera) return (deLaCarrera as { id: string }).id
+      throw new Error(error.message)
+    }
+
+    return (creado as { id: string }).id
   }
 
   async delete(id: string): Promise<void> {
