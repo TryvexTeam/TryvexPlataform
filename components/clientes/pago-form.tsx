@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { SelectorFecha } from '@/components/ui/selector-fecha'
 
 interface PagoFormProps {
   open: boolean
@@ -235,18 +236,18 @@ export function PagoForm({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Fecha emisión</Label>
-              <Input type="date" value={form.fecha_emision} onChange={(e) => set('fecha_emision', e.target.value)} />
+              <SelectorFecha value={form.fecha_emision} onChange={(v) => set('fecha_emision', v)} />
             </div>
             <div className="space-y-1.5">
               <Label>Fecha de cobro</Label>
-              <Input type="date" value={form.fecha_vencimiento} onChange={(e) => set('fecha_vencimiento', e.target.value)} />
+              <SelectorFecha value={form.fecha_vencimiento} onChange={(v) => set('fecha_vencimiento', v)} />
             </div>
           </div>
 
           {form.estado_pago === 'pagado' && (
             <div className="space-y-1.5">
               <Label>Fecha de pago</Label>
-              <Input type="date" value={form.fecha_pago} onChange={(e) => set('fecha_pago', e.target.value)} />
+              <SelectorFecha value={form.fecha_pago} onChange={(v) => set('fecha_pago', v)} />
             </div>
           )}
 

@@ -1,68 +1,110 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, UserPlus, FolderKanban, CalendarClock, DollarSign, ListChecks, CalendarCheck } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { BellIcon, CheckCheckIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { toast } from '@/lib/toast'
+import { CampanaNotificaciones } from '@/components/layout/campana-notificaciones'
+import { PilaNotificaciones } from '@/components/layout/pila-notificaciones'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import type { Notificacion } from '@/lib/repos/notificaciones'
 
 // Nombre único por montaje: supabase-js cachea los canales por nombre y
 // removeChannel es asíncrono, así que un remonte reusaba uno ya suscrito y
 // agregarle callbacks lanzaba un error que tumbaba la página.
 let contadorCanales = 0
 
-interface Notif {
-  id: string
+/**
+ * Centro de notificaciones del topbar.
+ *
+ * La bandeja se agrupa por tipo y cada grupo se apila, al modo del centro de
+ * notificaciones de iOS: ocho avisos de "tarea asignada" no pueden enterrar el
+ * único de "cobro próximo". Cada pila se abre al tocarla y cada tarjeta se
+ * descarta deslizándola.
+ *
+ * Los grupos se ordenan por lo más reciente que contengan, no por tipo fijo:
+ * lo que acaba de pasar sube, que es lo que uno viene a mirar.
+ *
+ * Marcar leídas ocurre al abrir el panel — verlas ES leerlas. Descartar es
+ * otra cosa y siempre es explícito.
+ */
+
+/** Ventana que separa "hoy" del resto, en horas. */
+const HORAS_HOY = 24
+
+interface Grupo {
+  clave: string
   tipo: string
-  titulo: string
-  cuerpo: string | null
-  link: string | null
-  leida: boolean
-  created_at: string
+  items: Notificacion[]
+  masReciente: number
 }
 
-const ICONOS: Record<string, React.ElementType> = {
-  nuevo_cliente: UserPlus,
-  proyecto_asignado: FolderKanban,
-  entrega_proxima: CalendarClock,
-  cobro_proximo: DollarSign,
-  tarea_asignada: ListChecks,
-  cita_invitado: CalendarCheck,
-}
+/** Agrupa por tipo y ordena por lo más reciente de cada grupo. */
+function agrupar(items: Notificacion[]): Grupo[] {
+  const porTipo = new Map<string, Notificacion[]>()
+  for (const n of items) {
+    const lista = porTipo.get(n.tipo)
+    if (lista) lista.push(n)
+    else porTipo.set(n.tipo, [n])
+  }
 
-function tiempoRelativo(iso: string): string {
-  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
-  if (min < 1) return 'ahora'
-  if (min < 60) return `hace ${min} min`
-  const h = Math.floor(min / 60)
-  if (h < 24) return `hace ${h} h`
-  return `hace ${Math.floor(h / 24)} d`
+  return [...porTipo.entries()]
+    .map(([tipo, lista]) => ({
+      clave: tipo,
+      tipo,
+      items: lista,
+      masReciente: Math.max(...lista.map((n) => new Date(n.created_at).getTime())),
+    }))
+    .sort((a, b) => b.masReciente - a.masReciente)
 }
 
 export function NotificacionesBell() {
   const router = useRouter()
-  const [items, setItems] = useState<Notif[]>([])
+  const [items, setItems] = useState<Notificacion[]>([])
   const [integranteId, setIntegranteId] = useState<string | null>(null)
+  const [abierto, setAbierto] = useState(false)
+  /**
+   * Instante que separa "últimas 24 horas" de "anteriores". Se congela al
+   * abrir el panel: leerlo del reloj en cada render es impuro, y además haría
+   * que un aviso saltara de sección mientras el usuario lo está mirando.
+   */
+  const [corte, setCorte] = useState(0)
+  const sinMovimiento = useReducedMotion()
+
   const noLeidas = items.filter((n) => !n.leida).length
 
-  const cargar = useCallback(async () => {
-    try {
-      const res = await fetch('/api/notificaciones')
-      const json = await res.json()
-      if (json.success) {
-        setItems(json.data.items)
-        setIntegranteId(json.data.integrante_id)
+  // Carga inicial. La función async vive DENTRO del efecto y no fuera: así el
+  // estado solo se toca cuando responde el fetch, nunca en el cuerpo del
+  // efecto. El AbortController corta la petición si el topbar se desmonta
+  // antes de que llegue — sin él, la respuesta tardía escribiría en un
+  // componente que ya no existe.
+  useEffect(() => {
+    const corte = new AbortController()
+
+    async function cargar() {
+      try {
+        const res = await fetch('/api/notificaciones', { signal: corte.signal })
+        const json = await res.json()
+        if (json.success) {
+          setItems(json.data.items)
+          setIntegranteId(json.data.integrante_id)
+        }
+      } catch {
+        /* red caída o petición cancelada: la campana no rompe el topbar */
       }
-    } catch { /* red caída: la campanita no rompe el topbar */ }
+    }
+
+    void cargar()
+    return () => corte.abort()
   }, [])
 
-  useEffect(() => { void cargar() }, [cargar])
-
-  // Realtime: nuevas notificaciones aparecen sin recargar
+  // Realtime: las nuevas aparecen sin recargar.
   useEffect(() => {
     if (!integranteId) return
     const supabase = createClient()
@@ -70,80 +112,191 @@ export function NotificacionesBell() {
       .channel(`notificaciones-bell-${++contadorCanales}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notificaciones', filter: `integrante_id=eq.${integranteId}` },
-        (payload) => setItems((prev) => [payload.new as Notif, ...prev].slice(0, 30))
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notificaciones',
+          filter: `integrante_id=eq.${integranteId}`,
+        },
+        (payload) => setItems((prev) => [payload.new as Notificacion, ...prev].slice(0, 30)),
       )
       .subscribe()
-    return () => { void supabase.removeChannel(channel) }
+    return () => {
+      void supabase.removeChannel(channel)
+    }
   }, [integranteId])
 
-  async function marcarTodasLeidas() {
+  const marcarTodasLeidas = useCallback(async () => {
     if (noLeidas === 0) return
     setItems((prev) => prev.map((n) => ({ ...n, leida: true })))
-    await fetch('/api/notificaciones', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    await fetch('/api/notificaciones', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).catch(() => {
+      /* si falla, la próxima carga devuelve el estado real */
+    })
+  }, [noLeidas])
+
+  /**
+   * Descarta con actualización optimista: la tarjeta se va con el dedo y no
+   * después de que responda el servidor — esperar rompería la sensación del
+   * gesto. Si el servidor rechaza, vuelven a su sitio y se avisa: perder algo
+   * en silencio sería peor que el parpadeo.
+   */
+  const descartar = useCallback(async (ids: string[]) => {
+    const respaldo = items
+    setItems((prev) => prev.filter((n) => !ids.includes(n.id)))
+
+    try {
+      const res = await fetch('/api/notificaciones', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const json = await res.json().catch(() => ({ success: false }))
+      if (!json.success) throw new Error(json.error ?? 'No se pudo descartar')
+    } catch (error: unknown) {
+      setItems(respaldo)
+      toast.error('No se pudo descartar', {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    }
+  }, [items])
+
+  function abrirNotificacion(n: Notificacion) {
+    if (n.link) {
+      setAbierto(false)
+      router.push(n.link)
+    }
   }
 
-  function abrir(n: Notif) {
-    if (n.link) router.push(n.link)
-  }
+  const { hoy, anteriores } = useMemo(() => {
+    const recientes: Notificacion[] = []
+    const viejas: Notificacion[] = []
+    for (const n of items) {
+      if (new Date(n.created_at).getTime() >= corte) recientes.push(n)
+      else viejas.push(n)
+    }
+    return { hoy: agrupar(recientes), anteriores: agrupar(viejas) }
+  }, [items, corte])
 
   return (
-    <DropdownMenu onOpenChange={(open) => { if (open) void marcarTodasLeidas() }}>
+    <DropdownMenu
+      open={abierto}
+      onOpenChange={(open) => {
+        setAbierto(open)
+        if (open) {
+          setCorte(Date.now() - HORAS_HOY * 3_600_000)
+          // Abrir el panel ES verlas: marcarlas leídas aquí evita que el
+          // usuario tenga que confirmar que vio lo que acaba de mirar.
+          void marcarTodasLeidas()
+        }
+      }}
+    >
       <DropdownMenuTrigger
-        className="relative inline-flex items-center justify-center h-7 w-7 rounded-md transition-colors hover:bg-[var(--tx-surface-1)] focus:outline-none"
-        style={{ color: 'var(--tx-ink-muted)' }}
+        className="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors
+          hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2
+          focus-visible:outline-[var(--tx-accent-2)]"
+        style={{ color: abierto ? 'var(--tx-ink-primary)' : 'var(--tx-ink-muted)' }}
         aria-label={`Notificaciones${noLeidas > 0 ? ` (${noLeidas} sin leer)` : ''}`}
       >
-        <Bell size={15} />
-        {noLeidas > 0 && (
-          <span
-            className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-0.5 rounded-full flex items-center justify-center text-[9px] font-bold"
-            style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
-          >
-            {noLeidas > 9 ? '9+' : noLeidas}
-          </span>
-        )}
+        <CampanaNotificaciones noLeidas={noLeidas} abierto={abierto} />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-80 p-0 max-h-[420px] overflow-y-auto">
-        <div className="px-3 py-2.5 sticky top-0 z-10" style={{ borderBottom: '1px solid var(--tx-border)', background: 'inherit' }}>
-          <p className="text-[13px] font-semibold" style={{ color: 'var(--tx-ink-primary)' }}>Notificaciones</p>
-        </div>
-        {items.length === 0 ? (
-          <p className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--tx-ink-muted)' }}>
-            Sin notificaciones aún
+      <DropdownMenuContent
+        align="end"
+        sideOffset={10}
+        className="w-[380px] max-w-[calc(100vw-24px)] overflow-hidden rounded-[26px] border-white/[0.08] p-0"
+        style={{ background: 'rgba(17,16,21,.92)', backdropFilter: 'blur(28px) saturate(150%)' }}
+      >
+        <div className="flex items-center gap-3 px-5 pb-3 pt-4">
+          <p className="text-[15px] font-medium tracking-[-0.01em] text-[var(--tx-ink-primary)]">
+            Notificaciones
           </p>
-        ) : (
-          items.map((n) => {
-            const Icon = ICONOS[n.tipo] ?? Bell
-            return (
-              <button
-                key={n.id}
-                onClick={() => abrir(n)}
-                className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-[var(--tx-surface-1)]"
-                style={{ borderBottom: '1px solid var(--tx-border)', opacity: n.leida ? 0.65 : 1 }}
-              >
-                <span
-                  className="mt-0.5 h-6 w-6 rounded-md flex items-center justify-center shrink-0"
-                  style={{ background: 'var(--tx-surface-2)', color: 'var(--tx-accent)' }}
-                >
-                  <Icon size={12} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[12px] font-medium leading-snug" style={{ color: 'var(--tx-ink-primary)' }}>
-                    {n.titulo}
-                  </span>
-                  {n.cuerpo && (
-                    <span className="block text-[11px] truncate" style={{ color: 'var(--tx-ink-secondary)' }}>{n.cuerpo}</span>
-                  )}
-                  <span className="block text-[10px] mt-0.5" style={{ color: 'var(--tx-ink-muted)' }}>
-                    {tiempoRelativo(n.created_at)}
-                  </span>
-                </span>
-              </button>
-            )
-          })
-        )}
+          <div className="flex-1" />
+          {items.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void descartar(items.map((n) => n.id))}
+              className="inline-flex items-center gap-1.5 text-[12px] text-[var(--tx-ink-muted)]
+                transition-colors hover:text-[var(--tx-ink-primary)]"
+            >
+              <CheckCheckIcon size={13} aria-hidden="true" />
+              Borrar todas
+            </button>
+          )}
+        </div>
+
+        <div className="max-h-[min(560px,70vh)] overflow-y-auto px-3.5 pb-4">
+          {items.length === 0 ? (
+            <div className="flex flex-col items-center gap-2.5 px-4 py-12 text-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/[0.08]">
+                <BellIcon size={17} className="text-[var(--tx-ink-muted)]" aria-hidden="true" />
+              </span>
+              <p className="text-[13px] font-medium text-[var(--tx-ink-primary)]">Todo al día</p>
+              <p className="text-[12px] text-[var(--tx-ink-secondary)]">
+                Aquí llegan las tareas que te asignen, las citas y los cobros que venzan.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {hoy.length > 0 && (
+                <section className="flex flex-col gap-2">
+                  <p className="px-1 text-[11px] font-medium uppercase tracking-[0.09em] text-[var(--tx-ink-muted)]">
+                    Últimas 24 horas
+                  </p>
+                  <AnimatePresence initial={false}>
+                    {hoy.map((grupo) => (
+                      <motion.div
+                        key={grupo.clave}
+                        layout={!sinMovimiento}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+                      >
+                        <PilaNotificaciones
+                          tipo={grupo.tipo}
+                          items={grupo.items}
+                          onAbrir={abrirNotificacion}
+                          onDescartar={(ids) => void descartar(ids)}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </section>
+              )}
+
+              {anteriores.length > 0 && (
+                <section className="flex flex-col gap-2">
+                  <p className="px-1 text-[11px] font-medium uppercase tracking-[0.09em] text-[var(--tx-ink-muted)]">
+                    Anteriores
+                  </p>
+                  <AnimatePresence initial={false}>
+                    {anteriores.map((grupo) => (
+                      <motion.div
+                        key={grupo.clave}
+                        layout={!sinMovimiento}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+                      >
+                        <PilaNotificaciones
+                          tipo={grupo.tipo}
+                          items={grupo.items}
+                          onAbrir={abrirNotificacion}
+                          onDescartar={(ids) => void descartar(ids)}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </section>
+              )}
+
+              <p className="px-1 pt-1 text-[11px] text-[var(--tx-ink-muted)]">
+                Desliza una tarjeta hacia la izquierda para descartarla.
+              </p>
+            </div>
+          )}
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )

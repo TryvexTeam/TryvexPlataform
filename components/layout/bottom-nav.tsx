@@ -17,7 +17,6 @@ import {
   MessageSquare,
   MoreHorizontal,
   Settings,
-  Sun,
   Users,
   Wallet,
   X,
@@ -32,7 +31,10 @@ import { cn } from '@/lib/utils'
  * era inalcanzable. El quinto lugar pasa a ser la puerta a todo lo demás.
  */
 const ATAJOS = [
-  { href: '/hoy', label: 'Hoy', icon: Sun },
+  // El Panel hereda la ranura que tenía "Hoy": esa página se fusionó con él y
+  // sus tres secciones viven ahora ahí, así que el acceso rápido del teléfono
+  // sigue llevando al mismo sitio en espíritu.
+  { href: '/dashboard', label: 'Panel', icon: LayoutDashboard },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/tareas', label: 'Tareas', icon: CheckSquare },
   { href: '/leads', label: 'Leads', icon: Users },
@@ -40,7 +42,6 @@ const ATAJOS = [
 
 const TODAS = [
   { grupo: 'Gestión', items: [
-    { href: '/hoy', label: 'Hoy', icon: Sun },
     { href: '/chat', label: 'Chat', icon: MessageSquare },
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/leads', label: 'Leads', icon: Users },

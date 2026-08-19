@@ -1,15 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
-import type { TareaInsert, TareaUpdate, TareaConResponsables, Subtarea } from '@/lib/types/tarea'
+import type { TareaInsert, TareaUpdate, TareaConResponsables, Subtarea, EstadoTarea } from '@/lib/types/tarea'
 
 type SupabaseTarea = {
   id: string
   titulo: string
   descripcion: string | null
   tipo: 'error' | 'feature' | 'pulir' | 'general'
-  estado: 'sin_empezar' | 'en_curso' | 'listo'
+  estado: EstadoTarea
   prioridad: 'alta' | 'media' | 'baja'
   esfuerzo: 'pequeno' | 'medio' | 'grande'
   fecha_limite: string | null
+  hora_limite: string | null
   proyecto_id: string | null
   cliente_id: string | null
   created_by: string | null
@@ -49,12 +50,14 @@ export class TareasRepository {
     estado: string
     prioridad: string
     fecha_limite: string
+    /** 'HH:MM:SS' de Santiago; null = vence ese día sin hora fija. */
+    hora_limite: string | null
     responsables: { integrante_id: string; nombre: string; color: string | null }[]
   }[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (this.supabase as any)
       .from('tareas')
-      .select(`id, titulo, estado, prioridad, fecha_limite, tarea_responsables ( integrante_id, dim_integrantes ( nombre, color ) )`)
+      .select(`id, titulo, estado, prioridad, fecha_limite, hora_limite, tarea_responsables ( integrante_id, dim_integrantes ( nombre, color ) )`)
       .gte('fecha_limite', desde)
       .lt('fecha_limite', hasta)
       .neq('estado', 'listo')
@@ -62,6 +65,7 @@ export class TareasRepository {
     if (error) throw new Error(error.message)
     type Row = {
       id: string; titulo: string; estado: string; prioridad: string; fecha_limite: string
+      hora_limite: string | null
       tarea_responsables: { integrante_id: string; dim_integrantes: { nombre: string; color: string | null } | null }[] | null
     }
     return ((data ?? []) as Row[]).map((t) => ({
@@ -70,12 +74,112 @@ export class TareasRepository {
       estado: t.estado,
       prioridad: t.prioridad,
       fecha_limite: t.fecha_limite,
+      hora_limite: t.hora_limite,
       responsables: (t.tarea_responsables ?? []).map((r) => ({
         integrante_id: r.integrante_id,
         nombre: r.dim_integrantes?.nombre ?? '',
         color: r.dim_integrantes?.color ?? null,
       })),
     }))
+  }
+
+  /**
+   * Cuantas tareas estan vencidas (fecha limite pasada y sin cerrar).
+   *
+   * Se agrego para el Panel de Mando (PRP-008 fase 5.1): antes el dashboard traia
+   * todas las tareas y filtraba en JS. `integranteId` acota a las mias via la
+   * tabla puente `tarea_responsables`, que es la unica relacion real de responsables.
+   */
+  async contarVencidas(hoyISO: string, integranteId?: string): Promise<number> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (this.supabase as any)
+      .from('tareas')
+      .select(
+        integranteId ? 'id, tarea_responsables!inner ( integrante_id )' : 'id',
+        { count: 'exact', head: true },
+      )
+      .is('eliminado_at', null)
+      .neq('estado', 'listo')
+      .not('fecha_limite', 'is', null)
+      .lt('fecha_limite', hoyISO)
+
+    if (integranteId) query = query.eq('tarea_responsables.integrante_id', integranteId)
+
+    const { count, error } = await query
+    if (error) throw new Error(error.message)
+    return (count ?? 0) as number
+  }
+
+  /**
+   * Tareas activas (sin cerrar ni eliminar) agrupadas por prioridad.
+   *
+   * Se agrego para el Panel de Mando (PRP-008 fase 5.2): el KPI "carga de
+   * trabajo" (T-003 §5 #21) es un conteo por prioridad, y traerlo con
+   * `list()` implicaria cargar tareas completas + responsables para
+   * filtrarlas en JS. Se piden solo `prioridad` y se agrupa aca mismo.
+   * `integranteId` acota a las mias via `tarea_responsables!inner`,
+   * exactamente como `contarVencidas`.
+   */
+  async contarActivasPorPrioridad(
+    integranteId?: string,
+  ): Promise<{ alta: number; media: number; baja: number }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (this.supabase as any)
+      .from('tareas')
+      .select(
+        integranteId ? 'prioridad, tarea_responsables!inner ( integrante_id )' : 'prioridad',
+      )
+      .is('eliminado_at', null)
+      .neq('estado', 'listo')
+
+    if (integranteId) query = query.eq('tarea_responsables.integrante_id', integranteId)
+
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+
+    const conteo = { alta: 0, media: 0, baja: 0 }
+    for (const fila of (data ?? []) as { prioridad: 'alta' | 'media' | 'baja' }[]) {
+      if (fila.prioridad in conteo) conteo[fila.prioridad] += 1
+    }
+    return conteo
+  }
+
+  /**
+   * Tareas activas que hay que mirar hoy, mas urgente primero.
+   *
+   * Es la seccion "Tus tareas de hoy" del Panel de Mando. El orden es lo que
+   * aporta: primero lo vencido (fecha mas antigua arriba), despues lo que
+   * vence pronto, y las sin fecha al final — una tarea sin plazo no compite
+   * con una que se paso hace cuatro dias.
+   *
+   * Postgres ordena NULLS LAST en ascendente por defecto, asi que las sin
+   * fecha caen solas al fondo sin inventarles un plazo.
+   *
+   * `integranteId` acota a las mias via `tarea_responsables!inner`, igual que
+   * `contarVencidas`. Ojo: ese filtro tambien recorta los responsables
+   * embebidos a esa persona, asi que la vista propia no debe pintarlos como
+   * si fueran la lista completa.
+   */
+  async listDelDia(integranteId: string | undefined, limite: number): Promise<TareaConResponsables[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (this.supabase as any)
+      .from('tareas')
+      .select(
+        integranteId
+          ? `*, tarea_responsables!inner ( integrante_id, dim_integrantes ( nombre, avatar_url ) )`
+          : `*, tarea_responsables ( integrante_id, dim_integrantes ( nombre, avatar_url ) )`,
+      )
+      .is('eliminado_at', null)
+      .neq('estado', 'listo')
+      .order('fecha_limite', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(limite)
+
+    if (integranteId) query = query.eq('tarea_responsables.integrante_id', integranteId)
+
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+    return ((data ?? []) as SupabaseTarea[]).map(mapTarea)
   }
 
   /** Tareas activas del kanban. La papelera vive aparte (ver `listPapelera`). */
@@ -127,7 +231,7 @@ export class TareasRepository {
 
   /** Saca la tarea de la papelera. Si viene de arrastrarla a una columna del
    *  kanban, `estado` fija donde queda; si no, conserva el estado que tenia. */
-  async restaurar(id: string, estado?: 'sin_empezar' | 'en_curso' | 'listo'): Promise<void> {
+  async restaurar(id: string, estado?: EstadoTarea): Promise<void> {
     const update: Record<string, string | null> = { eliminado_at: null }
     if (estado) update.estado = estado
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -181,7 +285,7 @@ export class TareasRepository {
     if (error) throw new Error(error.message)
   }
 
-  async cambiarEstado(id: string, estado: 'sin_empezar' | 'en_curso' | 'listo'): Promise<void> {
+  async cambiarEstado(id: string, estado: EstadoTarea): Promise<void> {
     const update: Record<string, string | null> = {
       estado,
       updated_at: new Date().toISOString(),

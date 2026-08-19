@@ -14,11 +14,16 @@ import {
   Tag,
   Loader2,
   Trophy,
-  XCircle
+  XCircle,
+  Pencil,
+  StickyNote as StickyNoteIcon
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Lead, Interaccion } from '@/lib/types/lead'
 import { RAZONES_PERDIDA } from '@/lib/types/lead'
+import type { LeadInsert } from '@/lib/types/lead'
+import { LeadForm } from './lead-form'
+import { NotaInterna } from './nota-interna'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { LeadChatWa } from './lead-chat-wa'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -79,6 +84,7 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   const [loading, setLoading] = useState(false)
   const [visible, setVisible] = useState(false)
   const [showRazones, setShowRazones] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   // El chat de WhatsApp se abre y cierra con el mismo boton, ahi mismo.
   // Arranca abierto si se llegó con `?chat=1`: es el atajo del botón "Abrir en
   // el chat" de los borradores de Vex. Aterrizar en la ficha y tener que buscar
@@ -103,6 +109,24 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
     }
     setVisible(true)
   }, [lead?.id])
+
+  /**
+   * Guarda los datos editados del lead.
+   *
+   * Existe porque el scraper se equivoca: un teléfono mal capturado deja el
+   * lead incontactable, y corregirlo tenía que pasar por otra pantalla.
+   */
+  const guardarEdicion = async (datos: LeadInsert) => {
+    if (!lead) return
+    const res = await fetch(`/api/leads/${lead.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    })
+    if (!res.ok) throw new Error('No se pudo guardar')
+    toast.success('Lead actualizado')
+    router.refresh()
+  }
 
   const updateEstado = async (payload: { estado: Lead['estado']; razon_perdida?: string }, successMsg: string) => {
     if (!lead) return
@@ -235,10 +259,45 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           >
             <ArrowLeft size={16} />
           </button>
-          <button className="icon-btn" title="Eliminar lead" onClick={deleteLead} disabled={loading}>
-            <Trash2 size={16} />
+          {/* Editar estaba solo en la ficha completa, no aquí — y aquí es
+              donde se trabaja a diario. El scraper trae teléfonos y nombres
+              equivocados, y sin este botón un dato malo dejaba el lead
+              incontactable hasta que alguien lo abriera por otra ruta. */}
+          <button
+            className="icon-btn"
+            title="Editar datos del lead"
+            onClick={() => setEditOpen(true)}
+            disabled={loading}
+          >
+            <Pencil size={16} />
           </button>
         </div>
+
+        {/*
+         * Eliminar va FUERA del grupo, separado y con color de peligro.
+         *
+         * Estaba pegado a "editar" con 4 px de por medio y el mismo aspecto:
+         * dos botones idénticos, uno abre un formulario y el otro borra el
+         * lead para siempre. A esa distancia el error es cuestión de tiempo, y
+         * borrar no tiene deshacer.
+         *
+         * La separación y el rojo al acercarse son la advertencia: se llega a
+         * él a propósito, no de paso.
+         */}
+        <button
+          type="button"
+          title="Eliminar lead"
+          onClick={deleteLead}
+          disabled={loading}
+          className="ml-3 flex h-9 w-9 items-center justify-center rounded-full border
+            border-white/[0.07] text-[var(--tx-ink-muted)] transition-colors
+            hover:border-[color-mix(in_srgb,var(--tx-accent)_45%,transparent)]
+            hover:bg-[var(--tx-accent-subtle)] hover:text-[var(--tx-accent-2)]
+            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tx-accent-2)]
+            disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Trash2 size={15} />
+        </button>
 
         {!isTaskPanelOpen && (
           <button onClick={onToggleTaskPanel} className="reopen">
@@ -337,6 +396,11 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             )}
           </div>
         </article>
+
+        {/* El compositor va ARRIBA del hilo y no al final: con veinte
+            interacciones, dejarlo abajo obligaba a bajar hasta el fondo cada
+            vez que alguien quiere apuntar algo. */}
+        <NotaInterna leadId={lead.id} onGuardada={() => router.refresh()} />
 
         {/* Interaction thread */}
         {interacciones.length === 0 ? (
@@ -439,12 +503,33 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           </button>
         )}
 
+        </div>
+
+        {/*
+         * La nota del lead, como bloque propio y legible.
+         *
+         * Estaba arrinconada al final de la fila de botones: 12 px, en el color
+         * más apagado, en cursiva y CORTADA a 200 caracteres de ancho. Es lo
+         * único que alguien del equipo escribió a mano sobre este lead —
+         * "atiende después de las 6", "pidió que le llamemos en enero"— y era
+         * lo menos visible de la ficha.
+         *
+         * Ahora va debajo de las acciones, a ancho completo y sin truncar, en
+         * el color de contenido legible. El icono es de lucide y no el dingbat
+         * `✎` que había: un dingbat ni escala ni se recolorea.
+         */}
         {lead.notas && (
-          <div className="ml-auto text-[12px] max-w-[200px] truncate text-[var(--tx-ink-muted)] italic">
-            ✎ {lead.notas}
+          <div className="mt-3 flex gap-2.5 rounded-[18px] border border-white/[0.07] bg-white/[0.03] px-3.5 py-3">
+            <StickyNoteIcon
+              size={14}
+              className="mt-0.5 shrink-0 text-[var(--tx-ink-muted)]"
+              aria-hidden="true"
+            />
+            <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-[var(--tx-ink-secondary)]">
+              {lead.notas}
+            </p>
           </div>
         )}
-        </div>
 
         {/* El chat va en un modal y no desplegado dentro del panel: en el
             celular el panel vive en un contenedor de altura fija con overflow
@@ -486,6 +571,15 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Mismo formulario que usa la ficha completa y la creación: un lead
+            editado desde aquí y desde allí tiene que validar igual. */}
+        <LeadForm
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          lead={lead}
+          onSubmit={guardarEdicion}
+        />
       </div>
     </section>
   )

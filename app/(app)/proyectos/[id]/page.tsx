@@ -13,17 +13,24 @@ export default async function ProyectoPage({ params }: { params: Promise<{ id: s
   const proyRepo = new ProyectosRepository(supabase)
   const tareasRepo = new TareasRepository(supabase)
 
-  const [proyecto, tareas, ventas] = await Promise.all([
+  const [proyecto, tareas, ventas, integranteId] = await Promise.all([
     proyRepo.getById(id),
     tareasRepo.list({ proyecto_id: id }),
     proyRepo.listVentas(undefined, id),
+    tareasRepo.integranteIdDe(user.id),
   ])
 
   if (!proyecto) notFound()
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <ProyectoDetalle proyecto={proyecto} tareas={tareas} ventas={ventas} />
+    <div className="mx-auto max-w-[1400px] p-4 md:p-8">
+      <ProyectoDetalle
+        proyecto={proyecto}
+        tareas={tareas}
+        ventas={ventas}
+        currentUserId={user.id}
+        currentIntegranteId={integranteId}
+      />
     </div>
   )
 }

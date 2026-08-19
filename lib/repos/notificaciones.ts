@@ -45,6 +45,40 @@ export class NotificacionesRepository {
     if (error) throw new Error(error.message)
   }
 
+  /**
+   * Borra notificaciones propias. Sin `ids` limpia la bandeja entera.
+   *
+   * Borrado real, no un campo `archivada`: una notificación es un aviso de
+   * algo que pasó en otra tabla, y el hecho en sí queda registrado ahí. La
+   * fila de aquí solo existe para avisar, así que descartada no vale nada.
+   *
+   * El `eq('integrante_id')` va aunque la RLS ya acote por dueño: si un día
+   * alguien llama a este repo con la clave de servicio (que salta la RLS),
+   * el filtro sigue impidiendo borrar la bandeja de otra persona.
+   */
+  async eliminar(integranteId: string, ids?: string[]): Promise<void> {
+    let query = this.sb
+      .from('notificaciones')
+      .delete()
+      // `select` para que PostgREST devuelva lo que borró: sin esto un rechazo
+      // de la RLS llega como éxito con cero filas, y la interfaz daría por
+      // descartado algo que sigue ahí. Un borrado que no borra tiene que
+      // gritar, no pasar callando.
+      .select('id')
+      .eq('integrante_id', integranteId)
+    if (ids && ids.length > 0) query = query.in('id', ids)
+
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+
+    const borradas = ((data ?? []) as { id: string }[]).length
+    if (ids && ids.length > 0 && borradas === 0) {
+      throw new Error(
+        'La base no borró ninguna notificación: falta la política DELETE de RLS en `notificaciones`.',
+      )
+    }
+  }
+
   /** Crea la notificación para cada destinatario que tenga el toggle activo.
    *  Best-effort: nunca lanza (los emisores no deben romper la operación principal). */
   async notificar(input: {

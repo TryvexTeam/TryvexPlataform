@@ -13,16 +13,18 @@ export default async function ReunionesPage() {
   if (!user) redirect('/login')
 
   return (
-    <div className="max-w-[1100px] mx-auto px-5 py-8 flex flex-col gap-5">
-      <header>
-        <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">
-          Calendario del equipo
-        </h1>
-        <p className="text-[13px] mt-1" style={{ color: 'var(--tx-ink-muted)' }}>
-          Eventos de la semana sobre la disponibilidad del equipo. Arrastra en el
-          calendario para agendar; pinta tu disponibilidad en su pestaña.
-        </p>
-      </header>
+    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 p-4 md:p-8">
+      {/*
+        El h1 va solo para lectores de pantalla. En la pantalla el título es el
+        rango de la semana que pinta el propio calendario: tener "Calendario del
+        equipo" encima y "18 – 24 agosto" debajo apilaba dos títulos donde el
+        segundo es el único que cambia y el único que se lee de verdad.
+
+        El ancho sube de 1100 a 1400 —el mismo del Panel de Mando—: siete días
+        en 1100 px dejan columnas de 150, y ahí un evento con nombre de empresa
+        no cabe.
+      */}
+      <h1 className="sr-only">Calendario del equipo</h1>
 
       <EquipoTabs />
     </div>

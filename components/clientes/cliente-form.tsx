@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { SelectorFecha } from '@/components/ui/selector-fecha'
 
 interface ClienteFormProps {
   open: boolean
@@ -140,7 +141,7 @@ export function ClienteForm({ open, onOpenChange, cliente, onSubmit }: ClienteFo
 
           <div className="space-y-1.5">
             <Label>Fecha cierre</Label>
-            <Input type="date" value={form.fecha_cierre} onChange={(e) => set('fecha_cierre', e.target.value)} />
+            <SelectorFecha value={form.fecha_cierre} onChange={(v) => set('fecha_cierre', v)} />
           </div>
 
           <div className="space-y-1.5">

@@ -9,6 +9,8 @@ import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ProyectoForm } from './proyecto-form'
+import { TareasKanban } from '@/components/tareas/tareas-kanban'
+
 import type { Proyecto, ProyectoInsert, Venta } from '@/lib/types/proyecto'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
@@ -29,9 +31,18 @@ interface ProyectoDetalleProps {
   proyecto: Proyecto
   tareas: TareaConResponsables[]
   ventas: Venta[]
+  /** Los necesita el tablero: son los mismos que usa /tareas. */
+  currentUserId: string
+  currentIntegranteId: string | null
 }
 
-export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetalleProps) {
+export function ProyectoDetalle({
+  proyecto,
+  tareas,
+  ventas,
+  currentUserId,
+  currentIntegranteId,
+}: ProyectoDetalleProps) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
   const estadoConf = ESTADOS_PROYECTO.find((e) => e.id === proyecto.estado)
@@ -143,33 +154,25 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
 
       <Separator className="mb-6" />
 
-      {/* Tareas */}
+      {/* Pipeline del proyecto: el mismo tablero scrum que /tareas, filtrado
+          por este proyecto. Antes era una lista plana donde no se podía mover
+          nada — para cambiar el estado había que abrir cada tarea. */}
       <div className="mb-6">
-        <h2 className="text-sm font-semibold text-neutral-700 mb-3">Tareas ({tareas.length})</h2>
-        {tareas.length === 0 ? (
-          <p className="text-sm text-neutral-400 text-center py-4">Sin tareas asociadas</p>
-        ) : (
-          <div className="space-y-2">
-            {tareas.map((t) => (
-              <div
-                key={t.id}
-                onClick={() => router.push(`/tareas/${t.id}`)}
-                className="flex items-center justify-between p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <span className={cn('text-xs font-bold', prioridadColor[t.prioridad])}>●</span>
-                  <p className="text-sm text-neutral-800">{t.titulo}</p>
-                </div>
-                <span className={cn('text-xs px-2 py-0.5 rounded-full',
-                  t.estado === 'listo' ? 'bg-green-100 text-green-700' :
-                  t.estado === 'en_curso' ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'
-                )}>
-                  {t.estado === 'listo' ? 'Listo' : t.estado === 'en_curso' ? 'En curso' : 'Sin empezar'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="mb-4 flex items-center gap-3">
+          <h2 className="text-[19px] font-medium tracking-[-0.02em] text-[var(--tx-ink-primary)]">
+            Tablero
+          </h2>
+          <span className="inline-flex h-[26px] items-center rounded-full border border-white/[0.10] px-2.5 text-[11.5px] font-medium text-[var(--tx-ink-secondary)]">
+            {tareas.filter((t) => !t.eliminado_at).length}
+          </span>
+        </div>
+        <TareasKanban
+          initialTareas={tareas}
+          currentUserId={currentUserId}
+          currentIntegranteId={currentIntegranteId}
+          proyectoId={proyecto.id}
+          compacto
+        />
       </div>
 
       <ProyectoForm

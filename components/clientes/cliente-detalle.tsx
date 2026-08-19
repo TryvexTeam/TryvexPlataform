@@ -240,7 +240,7 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
         {ventas.length === 0 ? (
           <p className="text-sm text-neutral-400 py-4 text-center">Sin pagos registrados</p>
         ) : (
-          <div className="rounded-lg border border-neutral-200 overflow-hidden">
+          <div className="rounded-lg border border-neutral-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>

@@ -147,8 +147,11 @@ const cardEntrance = {
   show: {
     opacity: 1,
     y: 0,
+    scale: 1,
     transition: { type: 'spring' as const, stiffness: 350, damping: 25 },
   },
+  /** Hueco que deja la tarjeta mientras el DragOverlay la lleva bajo el cursor. */
+  arrastrando: { opacity: 0, scale: 0.98, y: 0 },
 }
 
 function SortableCard<T extends { id: string }>({
@@ -171,11 +174,25 @@ function SortableCard<T extends { id: string }>({
     <motion.div
       ref={setNodeRef}
       style={style}
+      /*
+       * `variants` y NO un `animate` con objeto literal.
+       *
+       * El padre orquesta la entrada con `initial="hidden"` / `animate="show"`,
+       * y esa cadena solo llega a los hijos que hablan el mismo idioma. Antes
+       * este nodo declaraba las dos cosas a la vez: heredaba el `hidden` del
+       * padre (`opacity: 0`) pero su propio `animate` literal pisaba la
+       * variante `show`, así que nunca volvía a opacidad 1 — las tarjetas se
+       * quedaban invisibles al abrir el tablero, con la columna dibujada y
+       * vacía, hasta que cualquier otro render las despertaba.
+       *
+       * Arrastrando se atenúa: es el hueco que deja la tarjeta mientras el
+       * `DragOverlay` la dibuja bajo el cursor.
+       */
       variants={cardEntrance}
       layout
       {...attributes}
       {...listeners}
-      animate={isDragging ? { opacity: 0, scale: 0.98 } : { opacity: 1, scale: 1 }}
+      animate={isDragging ? 'arrastrando' : 'show'}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className="touch-none"
     >
@@ -205,8 +222,13 @@ function DroppableColumn<T extends { id: string }>({
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         className="flex flex-col gap-2 min-h-[120px] rounded-xl p-2 transition-all duration-150"
         style={{
-          background: isOver ? 'oklch(58% 0.24 292 / 8%)' : 'oklch(8% 0.003 240)',
-          border: isOver ? '1.5px dashed oklch(58% 0.24 292 / 40%)' : '1px solid var(--tx-border)',
+          // El acento del CRM, no un morado suelto: `oklch(... 292)` venía de
+          // una paleta anterior y en el tablero se leía como si perteneciera a
+          // otra aplicación.
+          background: isOver ? 'var(--tx-accent-subtle)' : 'oklch(8% 0.003 240)',
+          border: isOver
+            ? '1.5px dashed color-mix(in srgb, var(--tx-accent) 45%, transparent)'
+            : '1px solid var(--tx-border)',
         }}
       >
         <motion.div
@@ -231,6 +253,34 @@ function DroppableColumn<T extends { id: string }>({
             >
               {isOver ? '↓ Soltar aquí' : 'Sin elementos'}
             </motion.p>
+          )}
+
+          {/*
+           * La misma señal en las columnas que YA tienen tarjetas.
+           *
+           * Antes el "Soltar aquí" vivía dentro del bloque de columna vacía, así
+           * que al arrastrar sobre una columna con contenido no aparecía nada:
+           * solo cambiaba el fondo, que con una tarjeta encima del cursor casi
+           * no se ve. La confirmación de a dónde va a caer tiene que ser la
+           * misma en las cinco columnas.
+           *
+           * Va al final de la lista porque es donde se añade la tarjeta.
+           */}
+          {isOver && col.items.length > 0 && (
+            <motion.div
+              key="destino"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.14 }}
+              className="flex items-center justify-center rounded-xl border border-dashed py-3 text-xs"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--tx-accent) 45%, transparent)',
+                color: 'var(--tx-accent-2)',
+              }}
+            >
+              ↓ Soltar aquí
+            </motion.div>
           )}
         </AnimatePresence>
       </motion.div>
@@ -361,7 +411,14 @@ export function KanbanBoard<T extends { id: string }>({
                 // que crezcan para repartirse el espacio disponible — con un
                 // tope (360px) para que las tarjetas no queden gigantes en
                 // pantallas muy anchas.
-                : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink'
+                //
+                // El minimo baja de 272 a 200 en `lg`: con el tablero de cinco
+                // columnas del scrum, 272 x 5 mas los huecos pasan de 1400 px y
+                // obligaban a desplazarse lateralmente en un portatil normal.
+                // Un tablero al que hay que hacerle scroll para ver la ultima
+                // columna deja de servir para lo unico que sirve un tablero,
+                // que es ver el estado completo de un vistazo.
+                : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink lg:min-w-[200px]'
             }
           >
             {/* Column header */}

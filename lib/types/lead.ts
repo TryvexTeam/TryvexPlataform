@@ -1,5 +1,58 @@
 import { z } from 'zod'
 
+/**
+ * Los estados del pipeline, en orden de avance.
+ *
+ * `perdido` y `descartado` no son etapas del embudo sino salidas: perdido
+ * avanzó y se cayó, descartado nunca calificó. Por eso van al final y no
+ * cuentan como progreso.
+ */
+export const EstadoLeadSchema = z.enum([
+  'sin_contactar',
+  'contactado',
+  'interesado',
+  'reunion_agendada',
+  'ganado',
+  'perdido',
+  'descartado',
+])
+
+export type EstadoLead = z.infer<typeof EstadoLeadSchema>
+
+/**
+ * Tipos de interacción que cuentan como HABER CONTACTADO al lead.
+ *
+ * `nota` queda fuera a propósito: anotar "me lo recomendó Pedro" no es haber
+ * hablado con nadie. Solo cuentan los canales donde hay una persona del otro
+ * lado, porque de eso depende que el lead avance a "contactado" y que el
+ * panel lo deje de marcar como frío.
+ */
+export const TIPOS_QUE_CONTACTAN = ['whatsapp', 'llamada', 'instagram', 'meet', 'email'] as const
+
+export function esContacto(tipo: string): boolean {
+  return (TIPOS_QUE_CONTACTAN as readonly string[]).includes(tipo)
+}
+
+/**
+ * Estados que ya superaron "contactado".
+ *
+ * Registrar una llamada sobre un lead que ya está en "interesado" no puede
+ * devolverlo atrás: el avance del pipeline lo decide una persona, y lo
+ * automático solo cubre el primer tramo.
+ */
+const YA_CONTACTADOS: readonly EstadoLead[] = [
+  'contactado',
+  'interesado',
+  'reunion_agendada',
+  'ganado',
+  'perdido',
+  'descartado',
+]
+
+export function debeAvanzarAContactado(estadoActual: EstadoLead, tipo: string): boolean {
+  return esContacto(tipo) && !YA_CONTACTADOS.includes(estadoActual)
+}
+
 export const LeadSchema = z.object({
   id: z.string().uuid(),
   nombre_negocio: z.string(),
@@ -11,7 +64,7 @@ export const LeadSchema = z.object({
   nicho: z.string().nullable(),
   localidad: z.string().nullable(),
   score: z.number().min(1).max(10).nullable(),
-  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'ganado', 'perdido', 'descartado']),
+  estado: EstadoLeadSchema,
   razon_perdida: z.enum(['precio', 'sin_respuesta', 'competencia', 'sin_interes', 'otro']).nullable(),
   responsable_id: z.string().uuid().nullable(),
   origen: z.enum(['scraper', 'manual', 'referido']),
@@ -31,7 +84,7 @@ export const LeadInsertSchema = z.object({
   nicho: z.string().nullable().optional(),
   localidad: z.string().nullable().optional(),
   score: z.number().min(1).max(10).nullable().optional(),
-  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'ganado', 'perdido', 'descartado']).default('sin_contactar'),
+  estado: EstadoLeadSchema.default('sin_contactar'),
   razon_perdida: z.enum(['precio', 'sin_respuesta', 'competencia', 'sin_interes', 'otro']).nullable().optional(),
   responsable_id: z.string().uuid().nullable().optional(),
   origen: z.enum(['scraper', 'manual', 'referido']).default('manual'),
@@ -62,7 +115,7 @@ export type Interaccion = {
   integrante?: { nombre: string; avatar_url: string | null } | null
 }
 
-export const ESTADOS_LEAD = [
+export const ESTADOS_LEAD: readonly { id: EstadoLead; label: string; color: string }[] = [
   { id: 'sin_contactar', label: 'Sin contactar', color: '#94a3b8' },
   { id: 'contactado', label: 'Contactado', color: '#60a5fa' },
   { id: 'interesado', label: 'Interesado', color: '#f59e0b' },
@@ -70,7 +123,12 @@ export const ESTADOS_LEAD = [
   { id: 'ganado', label: 'Ganado', color: '#22c55e' },
   { id: 'perdido', label: 'Perdido', color: '#f87171' },
   { id: 'descartado', label: 'Descartado', color: '#737373' },
-] as const
+]
+
+/** Etiqueta visible de un estado. */
+export function etiquetaEstadoLead(estado: EstadoLead): string {
+  return ESTADOS_LEAD.find((e) => e.id === estado)?.label ?? estado
+}
 
 export const RAZONES_PERDIDA = [
   { id: 'precio', label: 'Precio' },

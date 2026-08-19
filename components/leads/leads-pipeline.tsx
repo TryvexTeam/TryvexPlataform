@@ -131,7 +131,7 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
 
 function TablaLeads({ leads, onRowClick }: { leads: Lead[]; onRowClick: (id: string) => void }) {
   return (
-    <div className="rounded-lg border border-neutral-200 overflow-hidden">
+    <div className="rounded-lg border border-neutral-200 overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="bg-neutral-50 border-b border-neutral-200">
           <tr>

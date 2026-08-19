@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SelectorFecha } from '@/components/ui/selector-fecha'
 import {
   CATEGORIA_LABELS,
   METODOS_PAGO,
@@ -241,7 +242,7 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
             </div>
             <div className="space-y-1.5">
               <Label>Fecha *</Label>
-              <Input type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} />
+              <SelectorFecha value={form.fecha} onChange={(v) => set('fecha', v)} />
               {errors.fecha && <p className="text-xs text-red-500">{errors.fecha}</p>}
             </div>
           </div>

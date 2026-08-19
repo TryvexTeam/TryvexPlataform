@@ -21,31 +21,33 @@ export function EquipoTabs() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-1.5">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            aria-pressed={tab === id}
-            onClick={() => setTab(id)}
-            className="flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-1.5 rounded-lg border transition-colors"
-            style={
-              tab === id
-                ? {
-                    background: 'var(--tx-accent-subtle)',
-                    borderColor: 'color-mix(in oklab, var(--tx-accent) 35%, transparent)',
-                    color: 'color-mix(in oklab, var(--tx-accent) 85%, white)',
-                  }
-                : {
-                    background: 'transparent',
-                    borderColor: 'rgba(255,255,255,0.08)',
-                    color: 'var(--tx-ink-muted)',
-                  }
-            }
-          >
-            <Icon size={13} />
-            {label}
-          </button>
-        ))}
+      {/* Pestañas dentro de un solo carril, como el selector del Panel de
+          Mando. La activa va en blanco y no en acento: el rojo está reservado
+          para lo que hay que atender, y una pestaña no es una alerta. */}
+      <div
+        role="tablist"
+        aria-label="Vistas del equipo"
+        className="inline-flex gap-1 self-start rounded-full border border-white/[0.07] bg-white/[0.03] p-1"
+      >
+        {TABS.map(({ id, label, icon: Icon }) => {
+          const activa = tab === id
+          return (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={activa}
+              onClick={() => setTab(id)}
+              className={`flex min-h-[40px] items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors ${
+                activa
+                  ? 'bg-white text-[var(--tx-bg-primary)]'
+                  : 'text-[var(--tx-ink-secondary)] hover:text-[var(--tx-ink-primary)]'
+              }`}
+            >
+              <Icon size={15} aria-hidden="true" />
+              {label}
+            </button>
+          )
+        })}
       </div>
 
       {tab === 'calendario' ? <CalendarioSemana /> : <DisponibilidadGrid />}

@@ -4,6 +4,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { normalizarTelefono } from '@/lib/vex/telefono'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { AsignacionesRepository } from '@/lib/repos/asignaciones'
+import { debeAvanzarAContactado } from '@/lib/types/lead'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -118,6 +119,24 @@ export async function POST(req: Request) {
       tipo: 'whatsapp',
       contenido: texto,
     })
+
+    // Escribirle a un lead ES contactarlo. Antes esta ruta lo asignaba pero
+    // dejaba el estado intacto, así que el lead seguía figurando como "sin
+    // contactar" después de haberle mandado un WhatsApp — y `ultimo_contacto`,
+    // que es lo que mide "Requiere acción hoy" en el panel, no se movía.
+    const { data: lead } = await admin
+      .from('fact_leads')
+      .select('estado')
+      .eq('id', lead_id)
+      .single()
+
+    if (lead) {
+      const cambios: { ultimo_contacto: string; estado?: string } = {
+        ultimo_contacto: new Date().toISOString(),
+      }
+      if (debeAvanzarAContactado(lead.estado, 'whatsapp')) cambios.estado = 'contactado'
+      await admin.from('fact_leads').update(cambios).eq('id', lead_id)
+    }
   } catch (e) {
     console.error('[api/wa/send] mensaje encolado pero fallo la asignacion/interaccion:', e)
   }

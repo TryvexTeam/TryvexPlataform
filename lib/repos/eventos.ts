@@ -76,6 +76,43 @@ export class EventosRepository {
     }))
   }
 
+  /**
+   * Reuniones del rango contadas por integrante asistente, para el marcador
+   * del equipo. Devuelve solo a quien participo en alguna: quien no aparece
+   * no queda expuesto con un cero publico.
+   *
+   * El embed va SIN desambiguar, al reves que en `listRango`: alli el `!fkey`
+   * hace falta porque se baja hasta `dim_integrantes`, y `eventos_asistentes`
+   * tiene dos FKs hacia esa tabla (`integrante_id` y `asignado_por`). De
+   * `eventos` a `eventos_asistentes` solo hay una FK, asi que nombrar una aqui
+   * apuntaria a una relacion que no existe entre ese par de tablas.
+   */
+  async contarPorIntegrante(desdeISO: string, hastaISO: string): Promise<Map<string, number>> {
+    const { data, error } = await this.sb
+      .from('eventos')
+      .select('id, eventos_asistentes ( integrante_id )')
+      .gte('inicio', desdeISO)
+      .lt('inicio', hastaISO)
+
+    if (error) throw new Error(error.message)
+
+    const porIntegrante = new Map<string, number>()
+    for (const evento of (data ?? []) as { eventos_asistentes: { integrante_id: string }[] | null }[]) {
+      // Un evento cuenta UNA vez por persona aunque figure repetida en la
+      // tabla puente: el marcador mide reuniones, no filas.
+      const vistos = new Set<string>()
+      for (const asistente of evento.eventos_asistentes ?? []) {
+        if (!asistente.integrante_id || vistos.has(asistente.integrante_id)) continue
+        vistos.add(asistente.integrante_id)
+        porIntegrante.set(
+          asistente.integrante_id,
+          (porIntegrante.get(asistente.integrante_id) ?? 0) + 1,
+        )
+      }
+    }
+    return porIntegrante
+  }
+
   async create(input: EventoInsert, creadoPorId: string): Promise<string> {
     // invitados_externos viaja a Google/email, no a la tabla eventos
     const { asistentes_ids, invitados_externos: _externos, ...evento } = input

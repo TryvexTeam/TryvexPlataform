@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { EstadoLeadSchema } from '@/lib/types/lead'
 import { createClient } from '@/lib/supabase/server'
 import { LeadsRepository } from '@/lib/repos/leads'
 
 const EstadoSchema = z.object({
-  estado: z.enum(['sin_contactar', 'contactado', 'interesado', 'reunion_agendada', 'ganado', 'perdido', 'descartado']),
+  // Del esquema y no repetida aquí: enumerar los estados a mano fue lo que
+  // dejó la ruta de tareas rechazando las columnas nuevas con un 400.
+  estado: EstadoLeadSchema,
   razon_perdida: z.enum(['precio', 'sin_respuesta', 'competencia', 'sin_interes', 'otro']).optional(),
 })
 

@@ -12,30 +12,61 @@ import { TareaForm } from './tarea-form'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
-import type { TareaConResponsables, TareaInsert } from '@/lib/types/tarea'
+import {
+  ESTADOS_TAREA,
+  etiquetaEstado,
+  type EstadoTarea,
+  type TareaConResponsables,
+  type TareaInsert,
+} from '@/lib/types/tarea'
 
-const ESTADO_LABEL: Record<string, string> = {
-  sin_empezar: 'Sin empezar',
-  en_curso: 'En curso',
-  listo: 'Listo',
+/**
+ * Color de cada columna del tablero.
+ *
+ * Va de frío a cálido y termina en verde, siguiendo el avance del trabajo: lo
+ * que no ha empezado es apagado, lo que está en marcha llama la atención y lo
+ * aceptado se apaga otra vez, pero en verde. Los ids y las etiquetas salen de
+ * `ESTADOS_TAREA` para que el tablero, el formulario y el detalle no puedan
+ * discrepar.
+ */
+const COLOR_COLUMNA: Record<EstadoTarea, string> = {
+  backlog: '#64748b',
+  sin_empezar: '#94a3b8',
+  en_curso: '#f59e0b',
+  en_revision: '#a78bfa',
+  listo: '#22c55e',
 }
 
-const COLUMNS = [
-  { id: 'sin_empezar', title: 'Sin empezar', color: '#94a3b8' },
-  { id: 'en_curso', title: 'En curso', color: '#f59e0b' },
-  { id: 'listo', title: 'Listo', color: '#22c55e' },
-]
+const COLUMNS = ESTADOS_TAREA.map((e) => ({
+  id: e.id,
+  title: e.label,
+  color: COLOR_COLUMNA[e.id],
+}))
 
 const PAPELERA_ID = 'papelera'
-type EstadoTarea = 'sin_empezar' | 'en_curso' | 'listo'
 
 interface TareasKanbanProps {
   initialTareas: TareaConResponsables[]
   currentUserId: string
   currentIntegranteId: string | null
+  /**
+   * Ámbito del tablero. Con `proyectoId`, las tareas que se creen desde aquí
+   * nacen dentro de ese proyecto — es el mismo tablero, no una copia: la
+   * papelera, el detalle, la asignación y el arrastre se comportan igual en
+   * los dos sitios porque literalmente son el mismo componente.
+   */
+  proyectoId?: string
+  /** Oculta el título y el contador: dentro de un proyecto ya hay cabecera. */
+  compacto?: boolean
 }
 
-export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId }: TareasKanbanProps) {
+export function TareasKanban({
+  initialTareas,
+  currentUserId,
+  currentIntegranteId,
+  proyectoId,
+  compacto = false,
+}: TareasKanbanProps) {
   const router = useRouter()
   const [tareas, setTareas] = useState<TareaConResponsables[]>(initialTareas)
   const [formOpen, setFormOpen] = useState(false)
@@ -141,7 +172,9 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
     const res = await fetch('/api/tareas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      // Dentro de un proyecto la tarea nace ya asociada a él, sin que haya
+      // que elegirlo: si estás en el tablero del proyecto, es obvio de cuál.
+      body: JSON.stringify(proyectoId ? { ...data, proyecto_id: proyectoId } : data),
     })
 
     if (!res.ok) throw new Error('Error al crear tarea')
@@ -153,13 +186,22 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
     <div>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 md:mb-6">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-[var(--tx-ink-primary)]">Tareas</h1>
-          <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">
-            {tareasVisibles.length} tareas en total
+        {/* Dentro de un proyecto la ficha ya pone su propia cabecera: repetir
+            "Tareas" aquí apilaría dos títulos. */}
+        {compacto ? (
+          <p className="text-sm text-[var(--tx-ink-secondary)]">
+            {tareasVisibles.length} {tareasVisibles.length === 1 ? 'tarea' : 'tareas'}
             {enPapelera.length > 0 && ` · ${enPapelera.length} en la papelera`}
           </p>
-        </div>
+        ) : (
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-[var(--tx-ink-primary)]">Tareas</h1>
+            <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">
+              {tareasVisibles.length} tareas en total
+              {enPapelera.length > 0 && ` · ${enPapelera.length} en la papelera`}
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button
             variant={soloMias ? 'default' : 'outline'}
@@ -272,7 +314,7 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
                       {tarea.titulo}
                     </p>
                     <p className="text-xs text-[var(--tx-ink-muted)] truncate">
-                      {ESTADO_LABEL[tarea.estado] ?? tarea.estado}
+                      {etiquetaEstado(tarea.estado)}
                       {tarea.eliminado_at &&
                         ` · hace ${formatDistanceToNow(new Date(tarea.eliminado_at), { locale: es })}`}
                     </p>
