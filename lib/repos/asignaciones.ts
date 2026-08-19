@@ -16,6 +16,14 @@ type SB = any
  * Nadie entra a marcar "este lead es mío" antes de escribirle. Por eso la vía
  * principal es `autoAsignarPorContacto`, que se dispara sola al contactar.
  */
+/**
+ * Cuántos ids caben en un `.in()` por consulta.
+ *
+ * El filtro viaja en la URL, así que el límite real es el largo de la petición,
+ * no la base. Con 200 UUID la URL ronda los 7.400 caracteres.
+ */
+const LOTE_IDS = 200
+
 export class AsignacionesRepository {
   private sb: SB
 
@@ -124,19 +132,38 @@ export class AsignacionesRepository {
   ): Promise<Record<string, AsignacionConIntegrante[]>> {
     if (leadIds.length === 0) return {}
 
-    const { data, error } = await this.sb
-      .from('lead_asignaciones')
-      .select(
-        'lead_id, integrante_id, rol, dim_integrantes!lead_asignaciones_integrante_id_fkey ( nombre, avatar_url, color )'
-      )
-      .in('lead_id', leadIds)
-
-    if (error) throw new Error(error.message)
-
     const porLead: Record<string, AsignacionConIntegrante[]> = {}
-    for (const fila of data ?? []) {
-      const lista = (porLead[fila.lead_id] ??= [])
-      lista.push(...mapearAsignaciones([fila]))
+
+    /*
+     * Por lotes, y no con un `.in()` de la lista entera.
+     *
+     * PostgREST manda el filtro en la URL: con 541 leads (que ya hay hoy) eso
+     * son ~20.000 caracteres, y el `fetch` del servidor de Next se quedaba
+     * colgado diez segundos y terminaba en "fetch failed" — la página de leads
+     * dejaba de cargar por completo. La consulta no era lenta: la URL era
+     * impracticable.
+     *
+     * 200 ids son unos 7.400 caracteres, con margen de sobra bajo cualquier
+     * límite razonable. Los lotes van EN SERIE y no en paralelo: son pocos y
+     * lanzarlos a la vez solo cambiaría un problema de tamaño por uno de
+     * concurrencia contra la base.
+     */
+    for (let i = 0; i < leadIds.length; i += LOTE_IDS) {
+      const lote = leadIds.slice(i, i + LOTE_IDS)
+
+      const { data, error } = await this.sb
+        .from('lead_asignaciones')
+        .select(
+          'lead_id, integrante_id, rol, dim_integrantes!lead_asignaciones_integrante_id_fkey ( nombre, avatar_url, color )'
+        )
+        .in('lead_id', lote)
+
+      if (error) throw new Error(error.message)
+
+      for (const fila of data ?? []) {
+        const lista = (porLead[fila.lead_id] ??= [])
+        lista.push(...mapearAsignaciones([fila]))
+      }
     }
     // El owner primero: es el que se ve cuando el stack se recorta a "+N".
     for (const lista of Object.values(porLead)) {
