@@ -51,7 +51,7 @@ export function ClientesLista({ initialClientes }: ClientesListaProps) {
       </div>
 
       <div
-        className="rounded-2xl overflow-hidden"
+        className="rounded-2xl overflow-x-auto"
         style={{ border: '1px solid var(--tx-border)' }}
       >
         <table className="w-full text-[13px]">
