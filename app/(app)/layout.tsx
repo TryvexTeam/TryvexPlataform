@@ -23,29 +23,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (!user) redirect('/login')
 
-  const { data: integrante } = await supabase
-    .from('dim_integrantes')
-    .select('id, nombre, email, avatar_url')
-    .eq('auth_user_id', user.id)
-    .single() as { data: { id: string; nombre: string; email: string; avatar_url: string | null } | null; error: unknown }
+  /*
+   * Dos consultas en paralelo, no cuatro en fila.
+   *
+   * Este layout se ejecuta en CADA navegación y en cada refresco automático, así
+   * que lo que tarde aquí lo paga toda la app. Antes pedía la fila del integrante
+   * y luego, por separado, sus permisos: la misma fila de `dim_integrantes` dos
+   * veces, con la segunda esperando a que terminara la primera. Ahora los
+   * permisos traen también el nombre, el correo y la foto, y el equipo se pide a
+   * la vez en lugar de después.
+   */
+  const [permisos, { data: equipo }] = await Promise.all([
+    new PermisosRepository(supabase).misPermisos(user.id),
+    // El equipo se carga acá y no en el chat porque una llamada entrante tiene
+    // que poder decir quién llama estando uno en leads, en finanzas o donde sea.
+    supabase
+      .from('dim_integrantes')
+      .select('id, nombre, avatar_url, color')
+      .eq('activo', true) as unknown as Promise<{
+        data: { id: string; nombre: string; avatar_url: string | null; color: string | null }[] | null
+      }>,
+  ])
 
-  // El equipo se carga acá y no en el chat porque una llamada entrante tiene que
-  // poder decir quién llama estando uno en leads, en finanzas o donde sea.
-  const { data: equipo } = await supabase
-    .from('dim_integrantes')
-    .select('id, nombre, avatar_url, color')
-    .eq('activo', true) as {
-      data: { id: string; nombre: string; avatar_url: string | null; color: string | null }[] | null
-      error: unknown
-    }
-
-  const nombre = integrante?.nombre ?? user.email ?? 'Usuario'
-  const email = integrante?.email ?? user.email ?? ''
-  const avatarUrl = integrante?.avatar_url ?? null
-
-  // Solo para decidir qué links mostrar en el menú. El candado real está en la RLS y
-  // en cada ruta: esconder un link no protege nada, solo evita ofrecer un callejón.
-  const permisos = await new PermisosRepository(supabase).misPermisos(user.id)
+  const integrante = permisos
+  const nombre = permisos?.nombre ?? user.email ?? 'Usuario'
+  const email = permisos?.email ?? user.email ?? ''
+  const avatarUrl = permisos?.avatar_url ?? null
 
   // Sin fila en dim_integrantes no hay a quién llamar ni quién llame: el resto de
   // la app sigue funcionando, solo que sin llamadas.
