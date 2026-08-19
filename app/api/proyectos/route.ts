@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   ).getByAuthUser(user.id)
   const id = await repo.crearConPlantilla(
     result.data,
-    result.data.servicio_id ?? null,
+    result.data.servicios_ids ?? [],
     yoIntegrante?.id ?? null,
   )
 

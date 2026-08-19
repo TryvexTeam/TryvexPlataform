@@ -55,23 +55,38 @@ export class ProyectosRepository {
    * tareas de una vez: el equipo parte con el trabajo ya desglosado en vez de
    * armarlo desde cero. Reutiliza `create` para no duplicar la lógica de inserción.
    */
+  /**
+   * Crea el proyecto y, por cada servicio vendido, sus tareas base.
+   *
+   * Un proyecto puede llevar varios servicios porque una venta real rara vez
+   * es uno solo: landing más automatización, o MVP más WhatsApp. Las tareas de
+   * todos entran al mismo backlog, cada una etiquetada con su servicio en la
+   * descripción para que se sepa de qué bloque viene.
+   */
   async crearConPlantilla(
     datos: ProyectoInsert,
-    servicioId: string | null,
+    serviciosIds: string[],
     createdBy: string | null,
   ): Promise<string> {
     const proyectoId = await this.create(datos)
 
-    const plantilla = servicioId ? plantillaDe(servicioId as IdServicio) : undefined
-    if (!plantilla) return proyectoId
+    const plantillas = serviciosIds
+      .map((id) => plantillaDe(id as IdServicio))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p))
 
-    // Si este insert falla, el proyecto ya quedó creado. No se revierte a
-    // propósito: es mejor un proyecto sin tareas (el usuario las agrega a mano)
-    // que borrar un registro que quizá ya tiene datos asociados.
-    const { error } = await this.sb.from('tareas').insert(
+    if (plantillas.length === 0) return proyectoId
+
+    // Un solo insert con las tareas de todos los servicios: una ida a la base
+    // por servicio multiplicaría la espera sin ganar nada.
+    const filas = plantillas.flatMap((plantilla) =>
       plantilla.tareas.map((tarea) => ({
         titulo: tarea.titulo,
-        descripcion: tarea.descripcion,
+        // Con varios servicios en el mismo tablero, el nombre del servicio
+        // delante es lo que permite saber a qué bloque pertenece cada tarea.
+        descripcion:
+          plantillas.length > 1
+            ? `${plantilla.nombre} — ${tarea.descripcion}`
+            : tarea.descripcion,
         tipo: tarea.tipo,
         prioridad: tarea.prioridad,
         esfuerzo: tarea.esfuerzo,
@@ -80,6 +95,11 @@ export class ProyectosRepository {
         estado: 'backlog',
       })),
     )
+
+    // Si este insert falla, el proyecto ya quedó creado. No se revierte a
+    // propósito: es mejor un proyecto sin tareas (el usuario las agrega a mano)
+    // que borrar un registro que quizá ya tiene datos asociados.
+    const { error } = await this.sb.from('tareas').insert(filas)
     if (error) throw new Error(error.message)
 
     return proyectoId

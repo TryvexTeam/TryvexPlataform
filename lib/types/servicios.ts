@@ -591,3 +591,59 @@ export const PLANTILLAS_SERVICIO: PlantillaServicio[] = [
 export function plantillaDe(id: IdServicio): PlantillaServicio | undefined {
   return PLANTILLAS_SERVICIO.find((plantilla) => plantilla.id === id)
 }
+
+/**
+ * Las familias del catálogo, en el orden en que se presentan comercialmente.
+ *
+ * El orden no es alfabético ni por precio: va de la puerta de entrada
+ * (presencia digital) a lo más comprometido (inteligencia aplicada), que es
+ * como se recorre la conversación con un cliente.
+ */
+export const FAMILIAS_SERVICIO = [
+  'Presencia digital',
+  'Automatización de procesos',
+  'Productos a medida',
+  'Inteligencia aplicada',
+] as const
+
+/** Los servicios de una familia, conservando el orden del catálogo. */
+export function serviciosDeFamilia(familia: string): PlantillaServicio[] {
+  return PLANTILLAS_SERVICIO.filter((p) => p.familia === familia)
+}
+
+/**
+ * Precio en pesos chilenos, abreviado.
+ *
+ * Los montos van de 150 mil a 2,8 millones: escritos completos, la lista se
+ * convierte en una columna de dígitos difícil de comparar de un vistazo.
+ */
+export function precioCorto(pesos: number): string {
+  if (pesos >= 1_000_000) {
+    const millones = pesos / 1_000_000
+    return `$${millones.toFixed(millones % 1 === 0 ? 0 : 1).replace('.', ',')}M`
+  }
+  return `$${Math.round(pesos / 1000)}K`
+}
+
+/**
+ * El `tipo` de proyecto que corresponde a un servicio del catálogo.
+ *
+ * `dim_proyectos.tipo` es la clasificación gruesa que existía antes del
+ * catálogo (landing · automatización · mantención · otro). Ahora se deriva del
+ * servicio en vez de preguntarla: "Landing esencial" ya implica que es una
+ * landing, y pedir las dos cosas al crear un proyecto es pedirle al usuario
+ * que se repita.
+ *
+ * La columna se conserva porque el kanban y las fichas agrupan por ella, y
+ * porque un proyecto puede crearse sin servicio — ahí el tipo se elige a mano.
+ */
+export function tipoDeServicio(
+  id: IdServicio,
+): 'landing' | 'automatizacion' | 'mantencion' | 'otro' {
+  const familia = plantillaDe(id)?.familia
+  if (familia === 'Presencia digital') return 'landing'
+  if (familia === 'Automatización de procesos') return 'automatizacion'
+  // Productos a medida e inteligencia aplicada no son ninguna de las cuatro
+  // categorías viejas: 'otro' es más honesto que forzarlos a una que no es.
+  return 'otro'
+}

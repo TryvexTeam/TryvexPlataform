@@ -9,7 +9,8 @@ import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ProyectoForm } from './proyecto-form'
-import { PipelineProyecto } from './pipeline-proyecto'
+import { TareasKanban } from '@/components/tareas/tareas-kanban'
+
 import type { Proyecto, ProyectoInsert, Venta } from '@/lib/types/proyecto'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
@@ -30,9 +31,18 @@ interface ProyectoDetalleProps {
   proyecto: Proyecto
   tareas: TareaConResponsables[]
   ventas: Venta[]
+  /** Los necesita el tablero: son los mismos que usa /tareas. */
+  currentUserId: string
+  currentIntegranteId: string | null
 }
 
-export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetalleProps) {
+export function ProyectoDetalle({
+  proyecto,
+  tareas,
+  ventas,
+  currentUserId,
+  currentIntegranteId,
+}: ProyectoDetalleProps) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
   const estadoConf = ESTADOS_PROYECTO.find((e) => e.id === proyecto.estado)
@@ -156,7 +166,13 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
             {tareas.filter((t) => !t.eliminado_at).length}
           </span>
         </div>
-        <PipelineProyecto tareas={tareas} />
+        <TareasKanban
+          initialTareas={tareas}
+          currentUserId={currentUserId}
+          currentIntegranteId={currentIntegranteId}
+          proyectoId={proyecto.id}
+          compacto
+        />
       </div>
 
       <ProyectoForm

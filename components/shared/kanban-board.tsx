@@ -147,8 +147,11 @@ const cardEntrance = {
   show: {
     opacity: 1,
     y: 0,
+    scale: 1,
     transition: { type: 'spring' as const, stiffness: 350, damping: 25 },
   },
+  /** Hueco que deja la tarjeta mientras el DragOverlay la lleva bajo el cursor. */
+  arrastrando: { opacity: 0, scale: 0.98, y: 0 },
 }
 
 function SortableCard<T extends { id: string }>({
@@ -171,11 +174,25 @@ function SortableCard<T extends { id: string }>({
     <motion.div
       ref={setNodeRef}
       style={style}
+      /*
+       * `variants` y NO un `animate` con objeto literal.
+       *
+       * El padre orquesta la entrada con `initial="hidden"` / `animate="show"`,
+       * y esa cadena solo llega a los hijos que hablan el mismo idioma. Antes
+       * este nodo declaraba las dos cosas a la vez: heredaba el `hidden` del
+       * padre (`opacity: 0`) pero su propio `animate` literal pisaba la
+       * variante `show`, así que nunca volvía a opacidad 1 — las tarjetas se
+       * quedaban invisibles al abrir el tablero, con la columna dibujada y
+       * vacía, hasta que cualquier otro render las despertaba.
+       *
+       * Arrastrando se atenúa: es el hueco que deja la tarjeta mientras el
+       * `DragOverlay` la dibuja bajo el cursor.
+       */
       variants={cardEntrance}
       layout
       {...attributes}
       {...listeners}
-      animate={isDragging ? { opacity: 0, scale: 0.98 } : { opacity: 1, scale: 1 }}
+      animate={isDragging ? 'arrastrando' : 'show'}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className="touch-none"
     >
@@ -361,7 +378,14 @@ export function KanbanBoard<T extends { id: string }>({
                 // que crezcan para repartirse el espacio disponible — con un
                 // tope (360px) para que las tarjetas no queden gigantes en
                 // pantallas muy anchas.
-                : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink'
+                //
+                // El minimo baja de 272 a 200 en `lg`: con el tablero de cinco
+                // columnas del scrum, 272 x 5 mas los huecos pasan de 1400 px y
+                // obligaban a desplazarse lateralmente en un portatil normal.
+                // Un tablero al que hay que hacerle scroll para ver la ultima
+                // columna deja de servir para lo unico que sirve un tablero,
+                // que es ver el estado completo de un vistazo.
+                : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink lg:min-w-[200px]'
             }
           >
             {/* Column header */}

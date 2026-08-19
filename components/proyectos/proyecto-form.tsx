@@ -6,7 +6,14 @@ import { ProyectoInsertSchema, type Proyecto, type ProyectoInsert } from '@/lib/
 import { nombreCliente, type Cliente } from '@/lib/types/cliente'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { PLANTILLAS_SERVICIO, plantillaDe, type IdServicio } from '@/lib/types/servicios'
+import {
+  FAMILIAS_SERVICIO,
+  plantillaDe,
+  precioCorto,
+  serviciosDeFamilia,
+  tipoDeServicio,
+  type IdServicio,
+} from '@/lib/types/servicios'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -23,7 +30,7 @@ interface ProyectoFormProps {
 export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit }: ProyectoFormProps) {
   const [form, setForm] = useState({
     nombre: proyecto?.nombre ?? '',
-    servicio_id: proyecto?.servicio_id ?? '',
+
     tipo: (proyecto?.tipo ?? 'otro') as string,
     estado: (proyecto?.estado ?? 'brief') as string,
     cliente_id: proyecto?.cliente_id ?? '',
@@ -35,7 +42,40 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
     url_deploy: proyecto?.url_deploy ?? '',
     repo_url: proyecto?.repo_url ?? '',
   })
+  /**
+   * Servicios vendidos en este proyecto. Es un conjunto porque una venta real
+   * rara vez es un solo servicio: landing más automatización, o MVP más
+   * WhatsApp. Se marcan todos y las tareas de cada uno entran al backlog.
+   */
+  const [servicios, setServicios] = useState<Set<string>>(
+    () => new Set(proyecto?.servicios_ids ?? []),
+  )
   const [loading, setLoading] = useState(false)
+
+  /**
+   * Suma de los precios base de lo marcado.
+   *
+   * Es una PROPUESTA, no un total cerrado: el catálogo dice que los precios se
+   * ajustan según los componentes que pida el cliente. Por eso rellena el
+   * campo de valor pero se puede sobrescribir antes de guardar.
+   */
+  const precioPropuesto = [...servicios].reduce(
+    (acc, id) => acc + (plantillaDe(id as IdServicio)?.precioDesde ?? 0),
+    0,
+  )
+  const tareasPropuestas = [...servicios].reduce(
+    (acc, id) => acc + (plantillaDe(id as IdServicio)?.tareas.length ?? 0),
+    0,
+  )
+
+  function alternarServicio(id: string) {
+    setServicios((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(id)) siguiente.delete(id)
+      else siguiente.add(id)
+      return siguiente
+    })
+  }
 
   function set(field: string, value: string) {
     setForm((p) => ({ ...p, [field]: value }))
@@ -46,7 +86,14 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
     const result = ProyectoInsertSchema.safeParse({
       ...form,
       cliente_id: form.cliente_id || null,
-      servicio_id: form.servicio_id || null,
+      servicios_ids: [...servicios],
+      // El tipo lo manda el PRIMER servicio marcado: con varios, la
+      // clasificación gruesa se queda con el principal, que es el orden en que
+      // se marcaron. Sin servicios se elige a mano.
+      tipo:
+        servicios.size > 0
+          ? tipoDeServicio([...servicios][0] as IdServicio)
+          : form.tipo,
       costo_total_usd: form.costo_total_usd ? Number(form.costo_total_usd) : null,
       horas_estimadas: form.horas_estimadas ? Number(form.horas_estimadas) : null,
       horas_reales: form.horas_reales ? Number(form.horas_reales) : null,
@@ -79,45 +126,78 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
           {/* El servicio solo se elige al CREAR: cambiarlo después no tendría
               efecto —las tareas ya nacieron— y ofrecerlo prometería algo que no
               pasa. En edición el campo ni aparece. */}
+          {/* Los servicios se marcan, no se eligen de una lista: una venta
+              puede llevar varios y con un desplegable habría que abrirlo una
+              vez por cada uno sin ver lo ya marcado. Solo al CREAR: cambiarlos
+              después no tendría efecto, porque las tareas ya nacieron. */}
           {!proyecto && (
-            <div className="space-y-1.5">
-              <Label>Servicio del catálogo</Label>
-              <Select
-                value={form.servicio_id || 'ninguno'}
-                onValueChange={(v) => set('servicio_id', v === 'ninguno' ? '' : (v ?? ''))}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ninguno">Sin plantilla — empezar vacío</SelectItem>
-                  {PLANTILLAS_SERVICIO.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.nombre} · {p.tareas.length} tareas
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {form.servicio_id && (
-                <p className="text-[11.5px] text-[var(--tx-ink-muted)]">
-                  {plantillaDe(form.servicio_id as IdServicio)?.resumen} El proyecto nacerá con sus
-                  tareas base en el backlog, listas para ajustar.
-                </p>
-              )}
+            <div className="space-y-2">
+              <Label>Servicios vendidos</Label>
+              <div className="flex flex-col gap-3 rounded-[20px] border border-white/[0.07] p-3.5">
+                {FAMILIAS_SERVICIO.map((familia) => (
+                  <div key={familia}>
+                    <p className="mb-2 text-[10.5px] font-medium uppercase tracking-[0.09em] text-[var(--tx-ink-muted)]">
+                      {familia}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {serviciosDeFamilia(familia).map((p) => {
+                        const marcado = servicios.has(p.id)
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            aria-pressed={marcado}
+                            onClick={() => alternarServicio(p.id)}
+                            title={p.resumen}
+                            className={`inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] transition-colors ${
+                              marcado
+                                ? 'border-transparent bg-white font-medium text-[var(--tx-bg-primary)]'
+                                : 'border-white/[0.09] text-[var(--tx-ink-secondary)] hover:border-white/[0.18] hover:text-[var(--tx-ink-primary)]'
+                            }`}
+                          >
+                            {p.nombre}
+                            <span className={marcado ? 'opacity-60' : 'text-[var(--tx-ink-muted)]'}>
+                              {precioCorto(p.precioDesde)}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+
+                {servicios.size > 0 && (
+                  <p className="border-t border-white/[0.06] pt-3 text-[12px] text-[var(--tx-ink-secondary)]">
+                    {servicios.size} {servicios.size === 1 ? 'servicio' : 'servicios'} ·{' '}
+                    <span className="text-[var(--tx-ink-primary)]">
+                      {precioCorto(precioPropuesto)}
+                    </span>{' '}
+                    de base · {tareasPropuestas} tareas al backlog
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Tipo</Label>
-              <Select value={form.tipo} onValueChange={(v) => set('tipo', v ?? 'otro')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="landing">Landing</SelectItem>
-                  <SelectItem value="automatizacion">Automatización</SelectItem>
-                  <SelectItem value="mantencion">Mantención</SelectItem>
-                  <SelectItem value="otro">Otro</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Con servicios marcados el tipo se deriva de ellos y el campo no
+                se muestra: "Landing esencial" ya implica que es una landing, y
+                preguntarlo sería pedirle al usuario que se repita. Sin
+                servicios —o al editar— sigue eligiéndose a mano. */}
+            {servicios.size === 0 && (
+              <div className="space-y-1.5">
+                <Label>Tipo</Label>
+                <Select value={form.tipo} onValueChange={(v) => set('tipo', v ?? 'otro')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="landing">Landing</SelectItem>
+                    <SelectItem value="automatizacion">Automatización</SelectItem>
+                    <SelectItem value="mantencion">Mantención</SelectItem>
+                    <SelectItem value="otro">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Estado</Label>
               <Select value={form.estado} onValueChange={(v) => set('estado', v ?? 'brief')}>

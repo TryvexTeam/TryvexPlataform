@@ -49,9 +49,24 @@ interface TareasKanbanProps {
   initialTareas: TareaConResponsables[]
   currentUserId: string
   currentIntegranteId: string | null
+  /**
+   * Ámbito del tablero. Con `proyectoId`, las tareas que se creen desde aquí
+   * nacen dentro de ese proyecto — es el mismo tablero, no una copia: la
+   * papelera, el detalle, la asignación y el arrastre se comportan igual en
+   * los dos sitios porque literalmente son el mismo componente.
+   */
+  proyectoId?: string
+  /** Oculta el título y el contador: dentro de un proyecto ya hay cabecera. */
+  compacto?: boolean
 }
 
-export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId }: TareasKanbanProps) {
+export function TareasKanban({
+  initialTareas,
+  currentUserId,
+  currentIntegranteId,
+  proyectoId,
+  compacto = false,
+}: TareasKanbanProps) {
   const router = useRouter()
   const [tareas, setTareas] = useState<TareaConResponsables[]>(initialTareas)
   const [formOpen, setFormOpen] = useState(false)
@@ -157,7 +172,9 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
     const res = await fetch('/api/tareas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      // Dentro de un proyecto la tarea nace ya asociada a él, sin que haya
+      // que elegirlo: si estás en el tablero del proyecto, es obvio de cuál.
+      body: JSON.stringify(proyectoId ? { ...data, proyecto_id: proyectoId } : data),
     })
 
     if (!res.ok) throw new Error('Error al crear tarea')
@@ -169,13 +186,22 @@ export function TareasKanban({ initialTareas, currentUserId, currentIntegranteId
     <div>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 md:mb-6">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-[var(--tx-ink-primary)]">Tareas</h1>
-          <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">
-            {tareasVisibles.length} tareas en total
+        {/* Dentro de un proyecto la ficha ya pone su propia cabecera: repetir
+            "Tareas" aquí apilaría dos títulos. */}
+        {compacto ? (
+          <p className="text-sm text-[var(--tx-ink-secondary)]">
+            {tareasVisibles.length} {tareasVisibles.length === 1 ? 'tarea' : 'tareas'}
             {enPapelera.length > 0 && ` · ${enPapelera.length} en la papelera`}
           </p>
-        </div>
+        ) : (
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-[var(--tx-ink-primary)]">Tareas</h1>
+            <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">
+              {tareasVisibles.length} tareas en total
+              {enPapelera.length > 0 && ` · ${enPapelera.length} en la papelera`}
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button
             variant={soloMias ? 'default' : 'outline'}

@@ -16,7 +16,8 @@ export const ProyectoInsertSchema = z.object({
   responsable_id: z.string().uuid().nullable().optional(),
   // Servicio del catálogo con el que se creó el proyecto. Nullable porque los
   // proyectos anteriores al catálogo no tienen ninguno asociado.
-  servicio_id: z.string().nullable().optional(),
+  /** Servicios del catálogo vendidos en este proyecto. Vacío = sin plantilla. */
+  servicios_ids: z.array(z.string()).optional(),
 })
 
 export const ProyectoUpdateSchema = ProyectoInsertSchema.partial()
@@ -41,7 +42,8 @@ export type Proyecto = {
   responsable_id: string | null
   // Servicio del catálogo con el que se creó el proyecto. Nullable porque los
   // proyectos anteriores al catálogo no tienen ninguno asociado.
-  servicio_id: string | null
+  /** Servicios del catálogo vendidos en este proyecto. */
+  servicios_ids: string[]
   created_at: string
   updated_at: string
   cliente?: { nombre_negocio: string | null; nombre_contacto: string | null } | null
