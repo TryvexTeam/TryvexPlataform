@@ -3,8 +3,9 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import type { Celda, DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
+import { AvatarIntegrante } from '@/components/shared/avatar-integrante'
 import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
-import { hashColorHex, getInitials, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
+import { hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 
 const HORA_MIN = 10
 // 26 = 2:00 del día siguiente; filas 24-25 representan 0:00-1:00 de la madrugada
@@ -194,6 +195,11 @@ export function DisponibilidadGrid() {
           gap: '8px',
         }}
       >
+        {/* La foto de perfil de cada uno, no un disco con iniciales sobre su
+            color: la cara identifica antes que cualquier código de color, y
+            las iniciales siguen ahí de respaldo dentro del propio avatar.
+            El color del integrante queda para las celdas de la rejilla, que es
+            donde de verdad hace falta distinguir de quién es cada banda. */}
         {data.map((m, mi) => {
           const color = m.color ?? MEMBER_PALETTE[mi % MEMBER_PALETTE.length] ?? hashColorHex(m.nombre)
           return (
@@ -202,74 +208,91 @@ export function DisponibilidadGrid() {
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '6px',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--tx-ink-primary)',
-                backgroundColor: 'rgba(255,255,255,0.06)',
-                padding: '4px 10px',
-                borderRadius: '100px',
-                border: `1.5px solid ${color}`,
+                gap: '8px',
+                fontSize: '12.5px',
+                fontWeight: 500,
+                color: m.es_propio ? 'var(--tx-ink-primary)' : 'var(--tx-ink-secondary)',
+                marginRight: '10px',
               }}
             >
-              <span
-                style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  backgroundColor: color,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: '#000',
-                  flexShrink: 0,
-                }}
-              >
-                {getInitials(m.nombre)}
-              </span>
-              {m.nombre}
+              <AvatarIntegrante
+                nombre={m.nombre}
+                avatarUrl={m.avatar_url}
+                color={color}
+                size={26}
+                destacado={m.es_propio}
+              />
+              {m.nombre.split(' ')[0]}
+              {m.es_propio && (
+                <span style={{ color: 'var(--tx-ink-muted)', fontSize: '11px' }}>tú</span>
+              )}
             </span>
           )
         })}
-        {/* "Todos disponibles" chip */}
+
+        {/* La clave de "todos disponibles" muestra el mismo relleno que usa la
+            rejilla, en vez de describirlo con un símbolo: así se reconoce en
+            la cuadrícula sin tener que traducir nada. Antes iba con un dingbat
+            (✦) haciendo de icono, que ni escala ni se recolorea. */}
         <span
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '6px',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: 'var(--tx-accent)',
-            backgroundColor: 'var(--tx-accent-subtle)',
-            padding: '4px 10px',
-            borderRadius: '100px',
-            border: '1.5px solid var(--tx-accent)',
+            gap: '8px',
+            fontSize: '12.5px',
+            fontWeight: 500,
+            color: 'var(--tx-ink-secondary)',
           }}
         >
-          ✦ Todos disponibles
+          <span
+            style={{
+              width: '22px',
+              height: '14px',
+              borderRadius: '5px',
+              background: 'var(--tx-accent-subtle)',
+              boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--tx-accent) 45%, transparent)',
+              flexShrink: 0,
+            }}
+          />
+          Todos disponibles
         </span>
       </div>
 
       {/* Common window counter */}
+      {/* El número manda: es la respuesta a "¿cuándo podemos juntarnos?", que
+          es a lo que se entra a esta pantalla. Antes iba del mismo tamaño que
+          la leyenda de al lado y se perdía entre los nombres. */}
       <p
         style={{
           margin: 0,
-          fontSize: '13px',
-          fontWeight: 600,
-          color: 'var(--tx-ink-secondary)',
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: '9px',
         }}
       >
-        {commonCount} hora{commonCount !== 1 ? 's' : ''} comunes a la semana
+        <span
+          style={{
+            fontSize: '30px',
+            fontWeight: 600,
+            letterSpacing: '-0.04em',
+            lineHeight: 1,
+            color: commonCount > 0 ? 'var(--tx-ink-primary)' : 'var(--tx-ink-muted)',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {commonCount}
+        </span>
+        <span style={{ fontSize: '13px', color: 'var(--tx-ink-secondary)' }}>
+          {commonCount === 1 ? 'hora común a la semana' : 'horas comunes a la semana'}
+        </span>
       </p>
 
       {/* Grid wrapper */}
       <div
         style={{
           overflowX: 'auto',
-          borderRadius: '12px',
-          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.06)',
           background: 'rgba(255,255,255,0.02)',
         }}
       >
@@ -292,13 +315,15 @@ export function DisponibilidadGrid() {
             <div
               key={i}
               style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                color: 'var(--tx-ink-primary)',
+                fontSize: '11px',
+                fontWeight: 500,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: 'var(--tx-ink-muted)',
                 textAlign: 'center',
-                padding: '10px 4px',
-                borderBottom: '1px solid rgba(255,255,255,0.08)',
-                borderLeft: '1px solid rgba(255,255,255,0.05)',
+                padding: '12px 4px',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                borderLeft: '1px solid rgba(255,255,255,0.04)',
               }}
             >
               {dia}
@@ -311,9 +336,10 @@ export function DisponibilidadGrid() {
               {/* Hour label */}
               <div
                 style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
+                  fontSize: '10.5px',
+                  fontWeight: 500,
                   color: 'var(--tx-ink-muted)',
+                  fontVariantNumeric: 'tabular-nums',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'flex-end',

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { CifraAnimada } from '@/components/dashboard/cifra-animada'
-import { AvatarIntegrante } from '@/components/dashboard/avatar-integrante'
+import { AvatarIntegrante } from '@/components/shared/avatar-integrante'
 import type { MetricaEquipo } from '@/lib/types/dashboard'
 
 /**

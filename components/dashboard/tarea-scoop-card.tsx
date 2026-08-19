@@ -1,5 +1,5 @@
 import { ScoopCard } from '@/components/dashboard/scoop-card'
-import { AvatarIntegrante } from '@/components/dashboard/avatar-integrante'
+import { AvatarIntegrante } from '@/components/shared/avatar-integrante'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 
 /**
