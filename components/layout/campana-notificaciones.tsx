@@ -78,7 +78,24 @@ export function CampanaNotificaciones({ noLeidas, abierto = false }: CampanaNoti
             scale: rebote && !sinMovimiento ? [1, 1.28, 1] : 1,
             opacity: 1,
           }}
-          transition={{ type: 'spring', stiffness: 520, damping: 18 }}
+          /*
+           * La escala del rebote va por `duration`, no por `spring`.
+           *
+           * Un muelle solo entiende de dónde sale y a dónde llega: no puede
+           * recorrer una secuencia de keyframes. Al pedirle [1, 1.28, 1] con
+           * `type: 'spring'`, Motion lanzaba un error en cada aviso nuevo
+           * ("Only two keyframes currently supported with spring").
+           *
+           * El resto de propiedades sí conservan el muelle: la aparición del
+           * badge es un salto de un valor a otro, que es justo lo que un
+           * muelle hace bien.
+           */
+          transition={{
+            scale: rebote
+              ? { duration: 0.42, ease: 'easeOut' }
+              : { type: 'spring', stiffness: 520, damping: 18 },
+            opacity: { type: 'spring', stiffness: 520, damping: 18 },
+          }}
         >
           {noLeidas > 9 ? '9+' : noLeidas}
         </motion.span>

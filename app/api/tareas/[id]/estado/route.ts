@@ -2,9 +2,18 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { TareasRepository } from '@/lib/repos/tareas'
+import { EstadoTareaSchema } from '@/lib/types/tarea'
 
+/**
+ * El estado sale de `EstadoTareaSchema`, no de una lista repetida aquí.
+ *
+ * Esta ruta enumeraba a mano los tres estados viejos, así que al ampliar el
+ * tablero a cinco columnas rechazaba con 400 cualquier arrastre a "Backlog" o
+ * "En revisión": la tarjeta se movía en pantalla, el guardado fallaba y volvía
+ * a su sitio. Enganchada al esquema, no puede volver a desincronizarse.
+ */
 const EstadoSchema = z.object({
-  estado: z.enum(['sin_empezar', 'en_curso', 'listo']),
+  estado: EstadoTareaSchema,
 })
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

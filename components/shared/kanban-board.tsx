@@ -222,8 +222,13 @@ function DroppableColumn<T extends { id: string }>({
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         className="flex flex-col gap-2 min-h-[120px] rounded-xl p-2 transition-all duration-150"
         style={{
-          background: isOver ? 'oklch(58% 0.24 292 / 8%)' : 'oklch(8% 0.003 240)',
-          border: isOver ? '1.5px dashed oklch(58% 0.24 292 / 40%)' : '1px solid var(--tx-border)',
+          // El acento del CRM, no un morado suelto: `oklch(... 292)` venía de
+          // una paleta anterior y en el tablero se leía como si perteneciera a
+          // otra aplicación.
+          background: isOver ? 'var(--tx-accent-subtle)' : 'oklch(8% 0.003 240)',
+          border: isOver
+            ? '1.5px dashed color-mix(in srgb, var(--tx-accent) 45%, transparent)'
+            : '1px solid var(--tx-border)',
         }}
       >
         <motion.div
@@ -248,6 +253,34 @@ function DroppableColumn<T extends { id: string }>({
             >
               {isOver ? '↓ Soltar aquí' : 'Sin elementos'}
             </motion.p>
+          )}
+
+          {/*
+           * La misma señal en las columnas que YA tienen tarjetas.
+           *
+           * Antes el "Soltar aquí" vivía dentro del bloque de columna vacía, así
+           * que al arrastrar sobre una columna con contenido no aparecía nada:
+           * solo cambiaba el fondo, que con una tarjeta encima del cursor casi
+           * no se ve. La confirmación de a dónde va a caer tiene que ser la
+           * misma en las cinco columnas.
+           *
+           * Va al final de la lista porque es donde se añade la tarjeta.
+           */}
+          {isOver && col.items.length > 0 && (
+            <motion.div
+              key="destino"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.14 }}
+              className="flex items-center justify-center rounded-xl border border-dashed py-3 text-xs"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--tx-accent) 45%, transparent)',
+                color: 'var(--tx-accent-2)',
+              }}
+            >
+              ↓ Soltar aquí
+            </motion.div>
           )}
         </AnimatePresence>
       </motion.div>
