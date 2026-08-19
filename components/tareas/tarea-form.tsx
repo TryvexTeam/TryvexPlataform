@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { z } from 'zod'
-import { TareaInsertSchema, type TareaConResponsables } from '@/lib/types/tarea'
+import { ESTADOS_TAREA, TareaInsertSchema, type TareaConResponsables } from '@/lib/types/tarea'
 import type { DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
 import { getInitials, hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 import { Button } from '@/components/ui/button'
@@ -34,6 +34,7 @@ const defaults = {
   prioridad: 'media' as const,
   esfuerzo: 'medio' as const,
   fecha_limite: '',
+  hora_limite: '',
 }
 
 export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProps) {
@@ -45,6 +46,9 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
     prioridad: (tarea?.prioridad ?? defaults.prioridad) as string,
     esfuerzo: (tarea?.esfuerzo ?? defaults.esfuerzo) as string,
     fecha_limite: tarea?.fecha_limite ?? defaults.fecha_limite,
+    // La base guarda 'HH:MM:SS' y el input de hora espera 'HH:MM': se recorta
+    // al leer, y al guardar el propio input ya entrega el formato corto.
+    hora_limite: tarea?.hora_limite?.slice(0, 5) ?? defaults.hora_limite,
   })
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -83,6 +87,11 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
     const result = TareaInsertSchema.safeParse({
       ...form,
       fecha_limite: form.fecha_limite || null,
+      // Sin día no puede haber hora: es lo que exige la base (migración 054) y
+      // además una hora suelta no significa nada. Se limpia aquí para que el
+      // usuario no reciba un error de la base por algo que la interfaz puede
+      // resolver sola.
+      hora_limite: form.fecha_limite ? form.hora_limite || null : null,
       descripcion: form.descripcion || null,
       responsables_ids: Array.from(responsables),
     })
@@ -144,9 +153,11 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
               <Select value={form.estado} onValueChange={(v) => set('estado', v ?? '')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sin_empezar">Sin empezar</SelectItem>
-                  <SelectItem value="en_curso">En curso</SelectItem>
-                  <SelectItem value="listo">Listo</SelectItem>
+                  {ESTADOS_TAREA.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -176,9 +187,33 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Fecha límite</Label>
-            <Input type="date" value={form.fecha_limite ?? ''} onChange={(e) => set('fecha_limite', e.target.value)} />
+          {/* Fecha y hora separadas, no un `datetime-local`: la hora es
+              OPCIONAL y con un campo único no hay forma de decir "vence el
+              jueves, a cualquier hora" — que es como se pide la mayoría de las
+              tareas. Con hora, el calendario la coloca en su franja; sin ella,
+              aparece en el día. */}
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div className="space-y-1.5">
+              <Label>Fecha límite</Label>
+              <Input
+                type="date"
+                value={form.fecha_limite ?? ''}
+                onChange={(e) => set('fecha_limite', e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>
+                Hora <span className="text-[var(--tx-ink-muted)]">(opcional)</span>
+              </Label>
+              <Input
+                type="time"
+                value={form.hora_limite ?? ''}
+                // Sin fecha la hora no puede existir, así que el campo se
+                // apaga en vez de dejar escribir algo que se descartará.
+                disabled={!form.fecha_limite}
+                onChange={(e) => set('hora_limite', e.target.value)}
+              />
+            </div>
           </div>
 
           {integrantes.length > 0 && (

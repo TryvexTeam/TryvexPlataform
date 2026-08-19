@@ -1,15 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
-import type { TareaInsert, TareaUpdate, TareaConResponsables, Subtarea } from '@/lib/types/tarea'
+import type { TareaInsert, TareaUpdate, TareaConResponsables, Subtarea, EstadoTarea } from '@/lib/types/tarea'
 
 type SupabaseTarea = {
   id: string
   titulo: string
   descripcion: string | null
   tipo: 'error' | 'feature' | 'pulir' | 'general'
-  estado: 'sin_empezar' | 'en_curso' | 'listo'
+  estado: EstadoTarea
   prioridad: 'alta' | 'media' | 'baja'
   esfuerzo: 'pequeno' | 'medio' | 'grande'
   fecha_limite: string | null
+  hora_limite: string | null
   proyecto_id: string | null
   cliente_id: string | null
   created_by: string | null
@@ -49,12 +50,14 @@ export class TareasRepository {
     estado: string
     prioridad: string
     fecha_limite: string
+    /** 'HH:MM:SS' de Santiago; null = vence ese día sin hora fija. */
+    hora_limite: string | null
     responsables: { integrante_id: string; nombre: string; color: string | null }[]
   }[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (this.supabase as any)
       .from('tareas')
-      .select(`id, titulo, estado, prioridad, fecha_limite, tarea_responsables ( integrante_id, dim_integrantes ( nombre, color ) )`)
+      .select(`id, titulo, estado, prioridad, fecha_limite, hora_limite, tarea_responsables ( integrante_id, dim_integrantes ( nombre, color ) )`)
       .gte('fecha_limite', desde)
       .lt('fecha_limite', hasta)
       .neq('estado', 'listo')
@@ -62,6 +65,7 @@ export class TareasRepository {
     if (error) throw new Error(error.message)
     type Row = {
       id: string; titulo: string; estado: string; prioridad: string; fecha_limite: string
+      hora_limite: string | null
       tarea_responsables: { integrante_id: string; dim_integrantes: { nombre: string; color: string | null } | null }[] | null
     }
     return ((data ?? []) as Row[]).map((t) => ({
@@ -70,6 +74,7 @@ export class TareasRepository {
       estado: t.estado,
       prioridad: t.prioridad,
       fecha_limite: t.fecha_limite,
+      hora_limite: t.hora_limite,
       responsables: (t.tarea_responsables ?? []).map((r) => ({
         integrante_id: r.integrante_id,
         nombre: r.dim_integrantes?.nombre ?? '',
@@ -226,7 +231,7 @@ export class TareasRepository {
 
   /** Saca la tarea de la papelera. Si viene de arrastrarla a una columna del
    *  kanban, `estado` fija donde queda; si no, conserva el estado que tenia. */
-  async restaurar(id: string, estado?: 'sin_empezar' | 'en_curso' | 'listo'): Promise<void> {
+  async restaurar(id: string, estado?: EstadoTarea): Promise<void> {
     const update: Record<string, string | null> = { eliminado_at: null }
     if (estado) update.estado = estado
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -280,7 +285,7 @@ export class TareasRepository {
     if (error) throw new Error(error.message)
   }
 
-  async cambiarEstado(id: string, estado: 'sin_empezar' | 'en_curso' | 'listo'): Promise<void> {
+  async cambiarEstado(id: string, estado: EstadoTarea): Promise<void> {
     const update: Record<string, string | null> = {
       estado,
       updated_at: new Date().toISOString(),

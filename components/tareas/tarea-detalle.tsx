@@ -13,9 +13,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { TareaForm } from './tarea-form'
 import type { TareaConResponsables, Subtarea, TareaInsert } from '@/lib/types/tarea'
+import { etiquetaEstado } from '@/lib/types/tarea'
 import { cn } from '@/lib/utils'
 
-const estadoLabel = { sin_empezar: 'Sin empezar', en_curso: 'En curso', listo: 'Listo' }
 const prioridadColor = { alta: 'destructive', media: 'secondary', baja: 'outline' } as const
 
 interface TareaDetalleProps {
@@ -155,7 +155,7 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
 
       {/* Meta */}
       <div className="flex flex-wrap gap-2 mb-6">
-        <Badge variant="secondary">{estadoLabel[tarea.estado]}</Badge>
+        <Badge variant="secondary">{etiquetaEstado(tarea.estado)}</Badge>
         <Badge variant={prioridadColor[tarea.prioridad]}>{tarea.prioridad}</Badge>
         <Badge variant="outline">{tarea.tipo}</Badge>
         <Badge variant="outline">Esfuerzo: {tarea.esfuerzo}</Badge>

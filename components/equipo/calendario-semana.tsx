@@ -288,6 +288,8 @@ export function CalendarioSemana() {
     estado: string
     prioridad: string
     fecha_limite: string
+    /** 'HH:MM:SS' de Santiago; null = vence ese día sin hora fija. */
+    hora_limite: string | null
     responsables: { integrante_id: string; nombre: string; color: string | null }[]
   }
   const [tareasSemana, setTareasSemana] = useState<TareaSemana[]>([])
@@ -302,10 +304,49 @@ export function CalendarioSemana() {
       .catch(() => {})
   }, [weekStart])
 
+  /**
+   * Tareas de un día SIN hora fija: las que se muestran como chip bajo la
+   * cabecera, porque no hay franja donde ponerlas.
+   */
   const tareasDeDia = useCallback((d: Date): TareaSemana[] => {
     const iso = toLocalISO(d).slice(0, 10)
-    return tareasSemana.filter((t) => t.fecha_limite === iso)
+    return tareasSemana.filter((t) => t.fecha_limite === iso && !t.hora_limite)
   }, [tareasSemana])
+
+  /**
+   * Tareas de un día CON hora, ya colocadas en la rejilla.
+   *
+   * Devuelve el desplazamiento vertical en píxeles, calculado igual que los
+   * eventos, para que una tarea de las 15:30 caiga exactamente donde caería una
+   * reunión a esa hora — si no, la rejilla mentiría sobre una de las dos.
+   *
+   * Las que caen fuera del rango visible de la rejilla se descartan: pintarlas
+   * pegadas al borde daría una hora falsa.
+   */
+  const tareasConHoraDeDia = useCallback(
+    (d: Date): { tarea: TareaSemana; top: number; etiqueta: string }[] => {
+      const iso = toLocalISO(d).slice(0, 10)
+      return tareasSemana
+        .filter((t) => t.fecha_limite === iso && t.hora_limite)
+        .map((t) => {
+          const [hh = '0', mm = '0'] = (t.hora_limite ?? '').split(':')
+          const hora = Number(hh)
+          const minuto = Number(mm)
+          // Igual que los eventos: la madrugada pertenece al día extendido
+          // anterior, así que 0:30 se dibuja como 24:30.
+          const horaExt = hora < UMBRAL_MADRUGADA ? hora + 24 : hora
+          return {
+            tarea: t,
+            top: ((horaExt - HORA_MIN) * 60 + minuto) / 60 * ROW_H,
+            etiqueta: `${fmt2(hora)}:${fmt2(minuto)}`,
+            dentro: horaExt >= HORA_MIN && horaExt < HORA_MAX,
+          }
+        })
+        .filter((x) => x.dentro)
+        .map(({ tarea, top, etiqueta }) => ({ tarea, top, etiqueta }))
+    },
+    [tareasSemana],
+  )
 
   // ─── Now line interval ────────────────────────────────────────────
   useEffect(() => {
@@ -1504,6 +1545,61 @@ export function CalendarioSemana() {
                       </span>
                     </div>
                   )}
+
+                  {/* Tareas con hora: una marca fina en su franja, no un
+                      bloque como los eventos. Una tarea vence a una hora, no
+                      ocupa un rato — dibujarla con altura mentiría sobre
+                      cuánto dura, y además taparía la reunión que sí ocupa esa
+                      franja. Por eso va pegada a la izquierda y estrecha. */}
+                  {tareasConHoraDeDia(d).map(({ tarea, top, etiqueta }) => {
+                    const c = tarea.responsables[0]?.color
+                      ?? memberColor(
+                        tarea.responsables[0]?.integrante_id ?? '',
+                        tarea.responsables[0]?.nombre ?? tarea.titulo,
+                      )
+                    return (
+                      <div
+                        key={`tk-${tarea.id}`}
+                        title={`${etiqueta} · ${tarea.titulo}`}
+                        style={{
+                          position: 'absolute',
+                          top: `${top - 7}px`,
+                          left: '2px',
+                          maxWidth: 'calc(100% - 6px)',
+                          height: '15px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '0 6px 0 4px',
+                          borderRadius: '999px',
+                          background: `color-mix(in srgb, ${c} 26%, #15141a)`,
+                          boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${c} 55%, transparent)`,
+                          fontSize: '9.5px',
+                          fontWeight: 500,
+                          color: `color-mix(in oklab, ${c} 45%, white)`,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          /* Sobre los eventos: si una tarea cae dentro de una
+                             reunión, esconderla detrás la haría invisible justo
+                             el día que importa. */
+                          zIndex: 8,
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '4px',
+                            height: '4px',
+                            borderRadius: '50%',
+                            background: c,
+                            flexShrink: 0,
+                          }}
+                        />
+                        {tarea.titulo}
+                      </div>
+                    )
+                  })}
 
                   {/* Now line */}
                   {/* Línea de "ahora": 1 px y no 2. Marca un instante, y una
