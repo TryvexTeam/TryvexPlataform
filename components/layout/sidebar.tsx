@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
 import {
-  Sun,
   LayoutDashboard,
   Users,
   Building2,
@@ -29,7 +28,6 @@ import { TryvexLogo } from '@/components/shared/tryvex-logo'
 const MotionLink = motion.create(Link)
 
 const primaryNav = [
-  { href: '/hoy',                 label: 'Hoy',           icon: Sun,             count: null },
   { href: '/chat',                label: 'Chat',          icon: MessagesSquare,  count: null },
   { href: '/dashboard',           label: 'Dashboard',     icon: LayoutDashboard, count: null },
   { href: '/leads',               label: 'Leads',         icon: Users,           count: null },
