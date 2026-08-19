@@ -18,16 +18,36 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { SelectorFecha } from '@/components/ui/selector-fecha'
+import { AvatarIntegrante } from '@/components/shared/avatar-integrante'
+
+/** Lo mínimo para pintar a alguien en el selector de equipo. */
+export interface IntegranteElegible {
+  id: string
+  nombre: string
+  avatar_url: string | null
+  color: string | null
+}
 
 interface ProyectoFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   proyecto?: Proyecto
   clientes: Cliente[]
-  onSubmit: (data: ProyectoInsert) => Promise<void>
+  integrantes?: IntegranteElegible[]
+  /** Equipo que ya tiene el proyecto, al editar. */
+  equipoInicial?: string[]
+  onSubmit: (data: ProyectoInsert, integrantesIds: string[]) => Promise<void>
 }
 
-export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit }: ProyectoFormProps) {
+export function ProyectoForm({
+  open,
+  onOpenChange,
+  proyecto,
+  clientes,
+  integrantes = [],
+  equipoInicial = [],
+  onSubmit,
+}: ProyectoFormProps) {
   const [form, setForm] = useState({
     nombre: proyecto?.nombre ?? '',
 
@@ -50,6 +70,14 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
   const [servicios, setServicios] = useState<Set<string>>(
     () => new Set(proyecto?.servicios_ids ?? []),
   )
+  /**
+   * Quiénes trabajan en este proyecto.
+   *
+   * Vive aparte del resto del formulario porque no es una columna del
+   * proyecto: son filas de `proyecto_integrantes`, y se guardan en su propio
+   * paso después de crearlo.
+   */
+  const [equipo, setEquipo] = useState<Set<string>>(() => new Set(equipoInicial))
   const [loading, setLoading] = useState(false)
 
   /**
@@ -105,7 +133,7 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
     if (!result.success) { toast.error('Revisa los campos'); return }
     setLoading(true)
     try {
-      await onSubmit(result.data)
+      await onSubmit(result.data, [...equipo])
       onOpenChange(false)
     } catch { toast.error('Error al guardar') }
     finally { setLoading(false) }
@@ -176,6 +204,57 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
                   </p>
                 )}
               </div>
+            </div>
+          )}
+
+          {integrantes.length > 0 && (
+            <div className="space-y-2">
+              <Label>Equipo</Label>
+              {/* Caras y no una lista de casillas: en un equipo de cinco se
+                  reconoce antes a alguien por su foto que leyendo su nombre.
+                  El elegido se marca con su propio color de perfil, que es como
+                  ya se le distingue en el calendario y en las tareas. */}
+              <div className="flex flex-wrap gap-2">
+                {integrantes.map((integrante) => {
+                  const elegido = equipo.has(integrante.id)
+                  return (
+                    <button
+                      key={integrante.id}
+                      type="button"
+                      aria-pressed={elegido}
+                      onClick={() =>
+                        setEquipo((antes) => {
+                          const ahora = new Set(antes)
+                          if (ahora.has(integrante.id)) ahora.delete(integrante.id)
+                          else ahora.add(integrante.id)
+                          return ahora
+                        })
+                      }
+                      className="flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-[12.5px] transition-colors"
+                      style={{
+                        borderColor: elegido
+                          ? (integrante.color ?? 'rgba(255,255,255,.35)')
+                          : 'rgba(255,255,255,.09)',
+                        background: elegido ? 'rgba(255,255,255,.07)' : 'transparent',
+                        color: elegido ? 'var(--tx-ink-primary)' : 'var(--tx-ink-secondary)',
+                      }}
+                    >
+                      <AvatarIntegrante
+                        nombre={integrante.nombre}
+                        avatarUrl={integrante.avatar_url}
+                        color={integrante.color}
+                        size={22}
+                      />
+                      {integrante.nombre.split(' ')[0]}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-[11.5px] text-[var(--tx-ink-muted)]">
+                {equipo.size === 0
+                  ? 'Sin nadie asignado todavía'
+                  : `${equipo.size} ${equipo.size === 1 ? 'persona' : 'personas'} en este proyecto`}
+              </p>
             </div>
           )}
 

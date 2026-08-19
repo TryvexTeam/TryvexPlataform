@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { ProyectosRepository } from '@/lib/repos/proyectos'
 import { ProyectoUpdateSchema } from '@/lib/types/proyecto'
+import { z } from 'zod'
+
+/* Como en el POST: el equipo viaja con el proyecto pero vive en su propia
+   tabla, así que se valida aparte. `undefined` significa "no lo toques"; una
+   lista vacía sí significa "deja el proyecto sin nadie". */
+const EquipoSchema = z.array(z.string().uuid()).optional()
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
@@ -9,10 +15,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
   const { id } = await params
-  const result = ProyectoUpdateSchema.safeParse(await req.json())
+  const cuerpo = await req.json()
+  const result = ProyectoUpdateSchema.safeParse(cuerpo)
   if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
 
-  await new ProyectosRepository(supabase).update(id, result.data)
+  const equipo = EquipoSchema.safeParse(cuerpo?.integrantes_ids)
+  if (!equipo.success) {
+    return NextResponse.json({ error: 'Equipo inválido' }, { status: 400 })
+  }
+
+  const repo = new ProyectosRepository(supabase)
+  await repo.update(id, result.data)
+  if (equipo.data !== undefined) await repo.fijarEquipo(id, equipo.data)
   return NextResponse.json({ ok: true })
 }
 

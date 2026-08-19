@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronLeftIcon, Loader2Icon, PaperclipIcon, PhoneIcon, PinIcon, SendIcon, VideoIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { textoPlano } from '@/lib/markdown/mini'
+import { copiarTexto } from '@/lib/utils/copiar-texto'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
 import { avatarConversacion, pesoLegible, tituloConversacion } from '@/lib/types/chat'
@@ -354,6 +355,25 @@ export function HiloChat({
     }
   }
 
+  /**
+   * Copiar un mensaje, para la barra de puntero y para el menú táctil.
+   *
+   * Una sola función para los dos: son la misma acción vista en dos
+   * dispositivos, y separarlas garantizaba que una de las dos se quedara atrás.
+   *
+   * Devuelve `undefined` cuando no hay texto —un adjunto sin pie— para que la
+   * opción ni se ofrezca.
+   *
+   * Va por `copiarTexto` y no por `navigator.clipboard` a secas: fuera de
+   * contexto seguro (un teléfono entrando por IP de red local) esa API es
+   * `undefined`, y lanzar el aviso de éxito sin esperar al resultado hacía que
+   * dijera "Mensaje copiado" cuando no se había copiado nada.
+   */
+  const copiarMensaje = (m: { contenido: string | null }) =>
+    m.contenido
+      ? () => void copiarTexto(textoPlano(m.contenido!), 'Mensaje copiado')
+      : undefined
+
   const borrar = async (mensaje: Mensaje) => {
     const conHilo = (mensaje.respuestas ?? 0) > 0
     const aviso = conHilo
@@ -531,6 +551,7 @@ export function HiloChat({
               <GestosMensaje
                 key={m.id}
                 puedeBorrar={mio || soyAdmin}
+                onCopiar={copiarMensaje(m)}
                 fijado={Boolean(m.fijado_at)}
                 onResponder={() => setCitando(m)}
                 onAbrirHilo={() => setHiloAbierto(m)}
@@ -650,14 +671,7 @@ export function HiloChat({
                         onBorrar={() => borrar(m)}
                         onReaccionar={(emoji) => alternarReaccion(m, emoji)}
                         onFijar={() => alternarFijado(m)}
-                        onCopiar={
-                          m.contenido
-                            ? () => {
-                                navigator.clipboard.writeText(textoPlano(m.contenido!))
-                                toast.success('Mensaje copiado')
-                              }
-                            : undefined
-                        }
+                        onCopiar={copiarMensaje(m)}
                       />
                     </span>
                   </div>

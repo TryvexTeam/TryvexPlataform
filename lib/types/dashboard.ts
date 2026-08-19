@@ -114,7 +114,7 @@ export interface AporteIntegrante {
 
 /** Una métrica del marcador, ya ordenada de mayor a menor. */
 export interface MetricaEquipo {
-  id: 'horas' | 'contactos' | 'reuniones'
+  id: 'horas' | 'contactos' | 'reuniones' | 'tareas' | 'proyectos'
   label: string
   /** Unidad corta que acompaña al total ('h', 'contactos', 'reuniones'). */
   unidad: string
@@ -124,4 +124,11 @@ export interface MetricaEquipo {
   aportes: AporteIntegrante[]
   /** Cómo formatear valores decimales (las horas llevan un decimal). */
   decimales?: number
+  /**
+   * `false` en las métricas que NO se reinician el lunes.
+   *
+   * Los proyectos activos son una foto del momento, no trabajo de la semana:
+   * decir al pie que todo se reinicia sería mentir sobre esa columna.
+   */
+  semanal?: boolean
 }

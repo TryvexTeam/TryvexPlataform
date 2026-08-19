@@ -219,51 +219,25 @@ export function TareasKanban({
         </div>
       </div>
 
-      {/* Mismo tablero, misma logica de drag&drop en los dos casos — dnd-kit
-          detecta por posicion real, no por como esta armado el layout.
-          Desktop: columnas lado a lado con scroll lateral. Celular: las
-          mismas columnas apiladas a lo ancho, para que agarrar una tarjeta y
-          arrastrarla a otra seccion (o al tacho) no compita con el scroll
-          ni tape nada. */}
-      <div className="hidden md:block">
-        <KanbanBoard
-          columns={columns}
-          orientation="horizontal"
-          renderCard={(tarea) => (
-            <TareaCard
-              tarea={tarea}
-              onClick={() => router.push(`/tareas/${tarea.id}`)}
-            />
-          )}
-          onDragEnd={handleDragEnd}
-          trashZone={{
-            id: PAPELERA_ID,
-            count: enPapelera.length,
-            dropCount: papeleraDropCount,
-            onOpen: () => setPapeleraOpen(true),
-          }}
-        />
-      </div>
-
-      <div className="md:hidden">
-        <KanbanBoard
-          columns={columns}
-          orientation="vertical"
-          renderCard={(tarea) => (
-            <TareaCard
-              tarea={tarea}
-              onClick={() => router.push(`/tareas/${tarea.id}`)}
-            />
-          )}
-          onDragEnd={handleDragEnd}
-          trashZone={{
-            id: PAPELERA_ID,
-            count: enPapelera.length,
-            dropCount: papeleraDropCount,
-            onOpen: () => setPapeleraOpen(true),
-          }}
-        />
-      </div>
+      {/* Un solo tablero para los dos tamaños: apilado en el teléfono —para
+          que arrastrar una tarjeta a otra sección o al tacho no compita con el
+          scroll— y en columnas desde `md`. Antes eran dos KanbanBoard con uno
+          escondido por CSS; con dos instancias, dnd-kit monta y descarta sus
+          sensores al cruzar el breakpoint y el DOM lleva el doble de nodos
+          para el mismo tablero. */}
+      <KanbanBoard
+        columns={columns}
+        renderCard={(tarea) => (
+          <TareaCard tarea={tarea} onClick={() => router.push(`/tareas/${tarea.id}`)} />
+        )}
+        onDragEnd={handleDragEnd}
+        trashZone={{
+          id: PAPELERA_ID,
+          count: enPapelera.length,
+          dropCount: papeleraDropCount,
+          onOpen: () => setPapeleraOpen(true),
+        }}
+      />
 
       <TareaForm
         open={formOpen}

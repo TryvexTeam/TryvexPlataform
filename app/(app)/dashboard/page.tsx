@@ -7,6 +7,7 @@ import { AsignacionesRepository } from '@/lib/repos/asignaciones'
 import { LeadsRepository } from '@/lib/repos/leads'
 import { TareasRepository } from '@/lib/repos/tareas'
 import { JornadasRepository } from '@/lib/repos/jornadas'
+import { ProyectosRepository } from '@/lib/repos/proyectos'
 import { PresenciaRepository } from '@/lib/repos/presencia'
 import { EventosRepository } from '@/lib/repos/eventos'
 import { DashDeck, type LeadTarjeta, type TareaDelDia } from '@/components/dashboard/dash-deck'
@@ -110,6 +111,7 @@ function armarMetrica(
   personas: { id: string; nombre: string; avatar_url: string | null; color: string | null }[],
   miIntegranteId: string | null,
   decimales = 0,
+  semanal = true,
 ): MetricaEquipo {
   const aportes: AporteIntegrante[] = personas
     .map((persona) => ({
@@ -130,6 +132,7 @@ function armarMetrica(
     total: aportes.reduce((acc, aporte) => acc + aporte.valor, 0),
     aportes,
     decimales,
+    semanal,
   }
 }
 
@@ -331,14 +334,19 @@ export default async function DashboardPage() {
         const desdeISO = desdeSemana.toISOString()
         const hastaISO = ahora.toISOString()
 
-        const [personas, jornadas, contactos, reuniones] = await Promise.all([
-          new IntegrantesRepository(supabase).listActivos(),
-          new JornadasRepository(supabase).listEquipo(desdeISO, hastaISO).catch(() => []),
-          leads.contarInteraccionesPorIntegrante(desdeISO, hastaISO).catch(() => new Map()),
-          new EventosRepository(supabase)
-            .contarPorIntegrante(desdeISO, hastaISO)
-            .catch(() => new Map()),
-        ])
+        const [personas, jornadas, contactos, reuniones, tareasListas, proyectosActivos] =
+          await Promise.all([
+            new IntegrantesRepository(supabase).listActivos(),
+            new JornadasRepository(supabase).listEquipo(desdeISO, hastaISO).catch(() => []),
+            leads.contarInteraccionesPorIntegrante(desdeISO, hastaISO).catch(() => new Map()),
+            new EventosRepository(supabase)
+              .contarPorIntegrante(desdeISO, hastaISO)
+              .catch(() => new Map()),
+            tareas.contarCompletadasPorIntegrante(desdeISO, hastaISO).catch(() => new Map()),
+            // Sin ventana de fechas: son los proyectos que cada uno tiene
+            // encima AHORA, no los que tocó esta semana.
+            new ProyectosRepository(supabase).proyectosActivosPorIntegrante().catch(() => new Map()),
+          ])
 
         // Las horas llegan por jornada, no por persona: se suman aquí.
         const horas = new Map<string, number>()
@@ -360,6 +368,17 @@ export default async function DashboardPage() {
           armarMetrica('horas', 'Horas', 'h', horas, nombres, integranteId, 1),
           armarMetrica('contactos', 'Leads contactados', 'contactos', contactos, nombres, integranteId),
           armarMetrica('reuniones', 'Reuniones', 'reuniones', reuniones, nombres, integranteId),
+          armarMetrica('tareas', 'Tareas completadas', 'tareas', tareasListas, nombres, integranteId),
+          armarMetrica(
+            'proyectos',
+            'Proyectos en curso',
+            'proyectos',
+            proyectosActivos,
+            nombres,
+            integranteId,
+            0,
+            false,
+          ),
         ]
       } catch {
         // Sin marcador el resto del panel sigue en pie: la sección

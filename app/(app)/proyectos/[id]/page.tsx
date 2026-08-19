@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ProyectosRepository } from '@/lib/repos/proyectos'
 import { TareasRepository } from '@/lib/repos/tareas'
+import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { ProyectoDetalle } from '@/components/proyectos/proyecto-detalle'
 
 export default async function ProyectoPage({ params }: { params: Promise<{ id: string }> }) {
@@ -13,11 +14,13 @@ export default async function ProyectoPage({ params }: { params: Promise<{ id: s
   const proyRepo = new ProyectosRepository(supabase)
   const tareasRepo = new TareasRepository(supabase)
 
-  const [proyecto, tareas, ventas, integranteId] = await Promise.all([
+  const [proyecto, tareas, ventas, integranteId, integrantes, equipo] = await Promise.all([
     proyRepo.getById(id),
     tareasRepo.list({ proyecto_id: id }),
     proyRepo.listVentas(undefined, id),
     tareasRepo.integranteIdDe(user.id),
+    new IntegrantesRepository(supabase).listActivos(),
+    proyRepo.equipoDe(id),
   ])
 
   if (!proyecto) notFound()
@@ -30,6 +33,8 @@ export default async function ProyectoPage({ params }: { params: Promise<{ id: s
         ventas={ventas}
         currentUserId={user.id}
         currentIntegranteId={integranteId}
+        integrantes={integrantes}
+        equipo={equipo}
       />
     </div>
   )

@@ -1,11 +1,13 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { MessageSquareIcon, PinIcon, PinOffIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react'
+import { CopyIcon, MessageSquareIcon, PinIcon, PinOffIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { EMOJIS_RAPIDOS } from '@/lib/types/chat'
 
 interface GestosMensajeProps {
   puedeBorrar: boolean
+  /** Copiar el mensaje. `undefined` en un adjunto sin pie: no hay qué copiar. */
+  onCopiar?: () => void
   /** Si el mensaje ya está fijado, para saber si el gesto fija o desfija. */
   fijado?: boolean
   onResponder: () => void
@@ -39,6 +41,7 @@ const TOLERANCIA_MOVIMIENTO = 10
  */
 export function GestosMensaje({
   puedeBorrar,
+  onCopiar,
   fijado,
   onResponder,
   onAbrirHilo,
@@ -139,6 +142,7 @@ export function GestosMensaje({
       {menuAbierto && (
         <HojaAcciones
           puedeBorrar={puedeBorrar}
+          onCopiar={onCopiar}
           fijado={fijado}
           onCerrar={() => setMenuAbierto(false)}
           onResponder={onResponder}
@@ -154,6 +158,7 @@ export function GestosMensaje({
 
 function HojaAcciones({
   puedeBorrar,
+  onCopiar,
   fijado,
   onCerrar,
   onResponder,
@@ -163,6 +168,7 @@ function HojaAcciones({
   onFijar,
 }: {
   puedeBorrar: boolean
+  onCopiar?: () => void
   fijado?: boolean
   onCerrar: () => void
   onResponder: () => void
@@ -226,6 +232,13 @@ function HojaAcciones({
         <Fila icono={<MessageSquareIcon className="size-4.5" />} onClick={elegir(onAbrirHilo)}>
           Abrir hilo
         </Fila>
+        {/* Un adjunto sin pie no tiene texto que copiar, y una fila que no
+            hace nada es peor que no tenerla. */}
+        {onCopiar && (
+          <Fila icono={<CopyIcon className="size-4.5" />} onClick={elegir(onCopiar)}>
+            Copiar mensaje
+          </Fila>
+        )}
         {onFijar && (
           <Fila
             icono={fijado ? <PinOffIcon className="size-4.5" /> : <PinIcon className="size-4.5" />}

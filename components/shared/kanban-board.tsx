@@ -45,7 +45,12 @@ interface KanbanBoardProps<T extends { id: string }> {
    *  para celular, donde el scroll lateral y el drag competian por el mismo
    *  gesto. El drag y el drop funcionan igual en los dos casos, dnd-kit
    *  detecta por posicion real, no le importa la direccion del layout. */
-  orientation?: 'horizontal' | 'vertical'
+  /**
+   * `responsive` (por defecto) apila las columnas en el teléfono y las pone
+   * lado a lado desde `md`. Las otras dos fuerzan una sola forma en todos los
+   * tamaños, para quien monta dos tableros distintos por breakpoint.
+   */
+  orientation?: 'horizontal' | 'vertical' | 'responsive'
 }
 
 /** Tacho de basura propio (no un icono de lucide): cuerpo + tapa por separado
@@ -294,7 +299,7 @@ export function KanbanBoard<T extends { id: string }>({
   onDragEnd,
   scrollContainerRef,
   trashZone,
-  orientation = 'horizontal',
+  orientation = 'responsive',
 }: KanbanBoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sobrePapelera, setSobrePapelera] = useState(false)
@@ -387,14 +392,22 @@ export function KanbanBoard<T extends { id: string }>({
     >
       <div
         ref={scrollContainerRef}
+        /*
+         * `responsive` cambia de eje por CSS, en un solo árbol, en vez de
+         * montar dos tableros y esconder uno: con dos instancias, dnd-kit
+         * arranca y descarta sus sensores al cruzar el breakpoint, y hay el
+         * doble de nodos en el DOM para el mismo tablero.
+         *
+         * Sin colchón a la derecha en vertical: el tacho solo "atrapa" con el
+         * puntero exacto (ver collisionDetection), así que ya no hace falta
+         * robarle ancho a las tarjetas.
+         */
         className={
           orientation === 'vertical'
-            // Sin colchon a la derecha: el tacho ahora solo "atrapa" con el
-            // puntero exacto (ver collisionDetection), asi que ya no hace
-            // falta robarle ancho a las tarjetas para evitar toques
-            // accidentales — se superpone igual que en desktop.
             ? 'flex flex-col gap-5 pb-24'
-            : 'flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none'
+            : orientation === 'horizontal'
+              ? 'flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none'
+              : 'flex flex-col gap-5 pb-24 md:flex-row md:gap-4 md:overflow-x-auto md:pb-4'
         }
         style={orientation === 'horizontal' ? { scrollPaddingLeft: '1rem' } : undefined}
       >
@@ -405,6 +418,11 @@ export function KanbanBoard<T extends { id: string }>({
             className={
               orientation === 'vertical'
                 ? 'flex flex-col w-full'
+                : orientation === 'responsive'
+                  // Ancho completo apiladas; desde `md`, el mismo reparto que
+                  // en horizontal. Sin `snap`: apiladas no hay nada a lo que
+                  // engancharse.
+                  ? 'flex flex-col w-full md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink lg:min-w-[200px]'
                 // En celular las columnas quedan a ancho fijo (85vw, con
                 // scroll+snap entre ellas). De md para arriba, en vez de eso
                 // dejarlas pegadas a la izquierda con un hueco vacio al lado,

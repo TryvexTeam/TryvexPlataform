@@ -439,6 +439,7 @@ export function PanelLlamada({
         streamLocal={streamLocal}
         onAlternarMicro={alternarMicro}
         onAlternarCamara={alternarCamara}
+        onAlternarEnsordecer={alternarEnsordecer}
         onColgar={colgar}
       />
     )
