@@ -6,7 +6,7 @@ import { normalizarPermisos } from '@/lib/types/permisos'
 type SB = any
 
 const CAMPOS =
-  'id, nombre, email, activo, es_superadmin, ver_jornadas_equipo, ver_finanzas, gestionar_finanzas, visible_en_landing'
+  'id, nombre, email, avatar_url, activo, es_superadmin, ver_jornadas_equipo, ver_finanzas, gestionar_finanzas, visible_en_landing'
 
 export class PermisosRepository {
   private sb: SB
