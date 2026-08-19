@@ -6,7 +6,7 @@ import { Plus } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { KanbanBoard } from '@/components/shared/kanban-board'
 import { Button } from '@/components/ui/button'
-import { ProyectoForm } from './proyecto-form'
+import { ProyectoForm, type IntegranteElegible } from './proyecto-form'
 import type { Proyecto, ProyectoInsert } from '@/lib/types/proyecto'
 import type { Cliente } from '@/lib/types/cliente'
 import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
@@ -16,6 +16,7 @@ import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 interface ProyectosKanbanProps {
   initialProyectos: Proyecto[]
   clientes: Cliente[]
+  integrantes?: IntegranteElegible[]
 }
 
 function ProyectoCard({ proyecto, onClick }: { proyecto: Proyecto; onClick?: () => void }) {
@@ -51,7 +52,7 @@ function ProyectoCard({ proyecto, onClick }: { proyecto: Proyecto; onClick?: () 
   )
 }
 
-export function ProyectosKanban({ initialProyectos, clientes }: ProyectosKanbanProps) {
+export function ProyectosKanban({ initialProyectos, clientes, integrantes = [] }: ProyectosKanbanProps) {
   // Mantiene proyectos al día sin recargar.
   useDatosVivos(['dim_proyectos', 'tareas'])
 
@@ -83,11 +84,11 @@ export function ProyectosKanban({ initialProyectos, clientes }: ProyectosKanbanP
     }
   }
 
-  async function handleCreate(data: ProyectoInsert) {
+  async function handleCreate(data: ProyectoInsert, integrantesIds: string[]) {
     const res = await fetch('/api/proyectos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, integrantes_ids: integrantesIds }),
     })
     if (!res.ok) throw new Error()
     toast.success('Proyecto creado')
@@ -114,7 +115,13 @@ export function ProyectosKanban({ initialProyectos, clientes }: ProyectosKanbanP
         onDragEnd={handleDragEnd}
       />
 
-      <ProyectoForm open={formOpen} onOpenChange={setFormOpen} clientes={clientes} onSubmit={handleCreate} />
+      <ProyectoForm
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        clientes={clientes}
+        integrantes={integrantes}
+        onSubmit={handleCreate}
+      />
     </div>
   )
 }

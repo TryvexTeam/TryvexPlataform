@@ -5,6 +5,12 @@ import { plantillaDe, type IdServicio } from '@/lib/types/servicios'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
 
+/** Tope de ids por consulta: más arriba, la URL se vuelve impracticable. */
+const LOTE_IDS = 200
+
+/** Estados que significan "todavía se trabaja en esto". */
+const ESTADOS_EN_CURSO = ['brief', 'desarrollo', 'revision', 'mantencion'] as const
+
 export class ProyectosRepository {
   private sb: SB
 
@@ -103,6 +109,86 @@ export class ProyectosRepository {
     if (error) throw new Error(error.message)
 
     return proyectoId
+  }
+
+  /**
+   * Quiénes trabajan en cada proyecto, en una sola consulta.
+   *
+   * Va por lotes y no por embed anidado a propósito: pedir los ids sueltos en
+   * la URL fue lo que tumbó la página de leads (541 ids = 20.137 caracteres y
+   * la petición muere), y los embeds anidados de PostgREST se rompen en cuanto
+   * aparece una segunda clave foránea hacia la misma tabla.
+   */
+  async equiposDe(proyectoIds: string[]): Promise<Map<string, string[]>> {
+    const porProyecto = new Map<string, string[]>()
+    if (proyectoIds.length === 0) return porProyecto
+
+    for (let i = 0; i < proyectoIds.length; i += LOTE_IDS) {
+      const lote = proyectoIds.slice(i, i + LOTE_IDS)
+      const { data, error } = await this.sb
+        .from('proyecto_integrantes')
+        .select('proyecto_id, integrante_id')
+        .in('proyecto_id', lote)
+      if (error) throw new Error(error.message)
+
+      for (const fila of (data ?? []) as { proyecto_id: string; integrante_id: string }[]) {
+        const actuales = porProyecto.get(fila.proyecto_id) ?? []
+        actuales.push(fila.integrante_id)
+        porProyecto.set(fila.proyecto_id, actuales)
+      }
+    }
+
+    return porProyecto
+  }
+
+  /** El equipo de un proyecto concreto. */
+  async equipoDe(proyectoId: string): Promise<string[]> {
+    return (await this.equiposDe([proyectoId])).get(proyectoId) ?? []
+  }
+
+  /**
+   * Deja el equipo del proyecto exactamente como dice `integranteIds`.
+   *
+   * Borra y reinserta en vez de calcular el diferencial: son unas pocas filas
+   * por proyecto y el diferencial solo añadiría ocasiones de equivocarse.
+   */
+  async fijarEquipo(proyectoId: string, integranteIds: string[]): Promise<void> {
+    const { error: errorBorrado } = await this.sb
+      .from('proyecto_integrantes')
+      .delete()
+      .eq('proyecto_id', proyectoId)
+    if (errorBorrado) throw new Error(errorBorrado.message)
+
+    if (integranteIds.length === 0) return
+
+    // `Set` porque el formulario podría mandar un id repetido y la clave
+    // primaria compuesta rechazaría el insert entero por una fila duplicada.
+    const filas = [...new Set(integranteIds)].map((integrante_id) => ({
+      proyecto_id: proyectoId,
+      integrante_id,
+    }))
+    const { error } = await this.sb.from('proyecto_integrantes').insert(filas)
+    if (error) throw new Error(error.message)
+  }
+
+  /**
+   * Cuántos proyectos EN CURSO tiene encima cada integrante.
+   *
+   * Entregado y cerrado no cuentan: la cifra mide carga de trabajo actual, y un
+   * proyecto terminado hace meses seguiría inflándola para siempre.
+   */
+  async proyectosActivosPorIntegrante(): Promise<Map<string, number>> {
+    const { data, error } = await this.sb
+      .from('proyecto_integrantes')
+      .select('integrante_id, dim_proyectos!inner ( estado )')
+      .in('dim_proyectos.estado', ESTADOS_EN_CURSO)
+    if (error) throw new Error(error.message)
+
+    const conteo = new Map<string, number>()
+    for (const fila of (data ?? []) as { integrante_id: string }[]) {
+      conteo.set(fila.integrante_id, (conteo.get(fila.integrante_id) ?? 0) + 1)
+    }
+    return conteo
   }
 
   async update(id: string, data: ProyectoUpdate): Promise<void> {

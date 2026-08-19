@@ -353,4 +353,39 @@ export class TareasRepository {
     const { error } = await (this.supabase as any).from('subtareas').delete().eq('id', id)
     if (error) throw new Error(error.message)
   }
+
+  /**
+   * Cuántas tareas terminó cada persona en el periodo.
+   *
+   * Se apoya en `completada_at`, que mantiene un disparador de la base: contar
+   * por `updated_at` haría figurar como trabajo de esta semana una tarea
+   * cerrada hace meses y retocada hoy.
+   *
+   * Una tarea con dos responsables suma para los dos. No se reparte a medias
+   * porque nadie hizo media tarea, y el marcador mide participación, no
+   * facturación.
+   */
+  async contarCompletadasPorIntegrante(
+    desdeISO: string,
+    hastaISO: string,
+  ): Promise<Map<string, number>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (this.supabase as any)
+      .from('tareas')
+      .select('id, tarea_responsables ( integrante_id )')
+      .eq('estado', 'listo')
+      .is('eliminado_at', null)
+      .gte('completada_at', desdeISO)
+      .lte('completada_at', hastaISO)
+    if (error) throw new Error(error.message)
+
+    const conteo = new Map<string, number>()
+    for (const fila of (data ?? []) as { tarea_responsables: { integrante_id: string }[] | null }[]) {
+      for (const responsable of fila.tarea_responsables ?? []) {
+        conteo.set(responsable.integrante_id, (conteo.get(responsable.integrante_id) ?? 0) + 1)
+      }
+    }
+    return conteo
+  }
+
 }

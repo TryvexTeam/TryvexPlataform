@@ -8,7 +8,7 @@ import { ArrowLeft, Pencil, Trash2, ExternalLink, GitBranch, Clock } from 'lucid
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { ProyectoForm } from './proyecto-form'
+import { ProyectoForm, type IntegranteElegible } from './proyecto-form'
 import { TareasKanban } from '@/components/tareas/tareas-kanban'
 
 import type { Proyecto, ProyectoInsert, Venta } from '@/lib/types/proyecto'
@@ -34,6 +34,9 @@ interface ProyectoDetalleProps {
   /** Los necesita el tablero: son los mismos que usa /tareas. */
   currentUserId: string
   currentIntegranteId: string | null
+  integrantes?: IntegranteElegible[]
+  /** Quiénes trabajan ya en este proyecto. */
+  equipo?: string[]
 }
 
 export function ProyectoDetalle({
@@ -42,16 +45,18 @@ export function ProyectoDetalle({
   ventas,
   currentUserId,
   currentIntegranteId,
+  integrantes = [],
+  equipo = [],
 }: ProyectoDetalleProps) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
   const estadoConf = ESTADOS_PROYECTO.find((e) => e.id === proyecto.estado)
 
-  async function handleEdit(data: ProyectoInsert) {
+  async function handleEdit(data: ProyectoInsert, integrantesIds: string[]) {
     const res = await fetch(`/api/proyectos/${proyecto.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, integrantes_ids: integrantesIds }),
     })
     if (!res.ok) throw new Error()
     toast.success('Proyecto actualizado')
@@ -180,6 +185,8 @@ export function ProyectoDetalle({
         onOpenChange={setEditOpen}
         proyecto={proyecto}
         clientes={proyecto.cliente ? [{ id: proyecto.cliente_id!, nombre_negocio: proyecto.cliente.nombre_negocio, nombre_contacto: proyecto.cliente.nombre_contacto } as never] : []}
+        integrantes={integrantes}
+        equipoInicial={equipo}
         onSubmit={handleEdit}
       />
     </div>

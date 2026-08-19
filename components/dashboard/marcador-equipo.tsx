@@ -84,8 +84,10 @@ export function MarcadorEquipo({ metricas }: MarcadorEquipoProps) {
             formato={(n) => formatear(n, decimales)}
           />
         </p>
+        {/* "Esta semana" solo donde es verdad: los proyectos en curso son una
+            foto del momento, no trabajo acumulado desde el lunes. */}
         <p className="text-[13px] text-[var(--tx-ink-secondary)]">
-          {activa.unidad} · todo el equipo esta semana
+          {activa.unidad} · todo el equipo{activa.semanal === false ? ' ahora mismo' : ' esta semana'}
         </p>
       </div>
 
@@ -158,7 +160,9 @@ export function MarcadorEquipo({ metricas }: MarcadorEquipoProps) {
       )}
 
       <p className="mt-6 text-[11px] text-[var(--tx-ink-muted)]">
-        Se reinicia cada semana. Solo aparece quien registró actividad.
+        {activa.semanal === false
+          ? 'Proyectos sin entregar ni cerrar. Solo aparece quien tiene alguno.'
+          : 'Se reinicia cada semana. Solo aparece quien registró actividad.'}
       </p>
     </div>
   )
