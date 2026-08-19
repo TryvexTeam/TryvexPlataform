@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import {
+  HeadphoneOffIcon,
+  HeadphonesIcon,
   MaximizeIcon,
   MicIcon,
   MicOffIcon,
@@ -51,6 +53,7 @@ interface PipLlamadaProps {
   streamLocal: MediaStream | null
   onAlternarMicro: () => void
   onAlternarCamara: () => void
+  onAlternarEnsordecer: () => void
   onColgar: () => void
 }
 
@@ -134,6 +137,7 @@ export function PipLlamada({
   streamLocal,
   onAlternarMicro,
   onAlternarCamara,
+  onAlternarEnsordecer,
   onColgar,
 }: PipLlamadaProps) {
   const caja = useRef<HTMLDivElement>(null)
@@ -354,6 +358,29 @@ export function PipLlamada({
               <VideoIcon size={13} aria-hidden="true" />
             ) : (
               <VideoOffIcon size={13} aria-hidden="true" />
+            )}
+          </button>
+
+          {/* Ensordecer también aquí y no solo en la llamada abierta: el
+              recuadro existe para poder seguir en otra cosa mientras se oye,
+              y sin este botón, quien ensordecía tenía que restaurar la llamada
+              entera para volver a escuchar — justo lo que venía a evitar. */}
+          <button
+            type="button"
+            onClick={onAlternarEnsordecer}
+            aria-label={ensordecido ? 'Volver a escuchar' : 'Dejar de oír a todos'}
+            aria-pressed={ensordecido}
+            className="flex h-8 w-8 items-center justify-center rounded-full border transition-colors"
+            style={{
+              borderColor: ensordecido ? 'transparent' : 'rgba(255,255,255,.12)',
+              background: ensordecido ? 'rgba(255,255,255,.16)' : 'transparent',
+              color: ensordecido ? '#ffffff' : 'var(--tx-ink-secondary)',
+            }}
+          >
+            {ensordecido ? (
+              <HeadphoneOffIcon size={13} aria-hidden="true" />
+            ) : (
+              <HeadphonesIcon size={13} aria-hidden="true" />
             )}
           </button>
 
