@@ -7,6 +7,33 @@ import { AvatarIntegrante } from '@/components/shared/avatar-integrante'
 import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
 import { hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 
+/**
+ * Lado del avatar dentro de una celda de la rejilla.
+ *
+ * 18 px es el punto de equilibrio: por debajo la foto deja de distinguirse de
+ * una mancha, y por encima dejan de entrar en una columna de 80 px.
+ */
+const AVATAR_CELDA = 18
+
+/**
+ * Cuánto se monta cada avatar sobre el anterior: la mitad justa.
+ *
+ * Es lo que hace que quepan. En fila suelta, cinco personas ocupan 103 px y la
+ * columna mide 80; solapados a la mitad ocupan 54 y sobra sitio. El montaje
+ * además se lee como grupo — cinco discos separados parecen cinco cosas, y
+ * apilados parecen un equipo.
+ */
+const SOLAPE = Math.round(AVATAR_CELDA / 2)
+
+/**
+ * Cuántas caras se muestran antes de resumir el resto en un "+N".
+ *
+ * Con el solape entran seis en el ancho mínimo de columna, así que el corte
+ * casi nunca se alcanza: existe para que un equipo grande no rompa la celda,
+ * no como comportamiento de todos los días.
+ */
+const MAX_EN_CELDA = 6
+
 const HORA_MIN = 10
 // 26 = 2:00 del día siguiente; filas 24-25 representan 0:00-1:00 de la madrugada
 const HORA_MAX = 26
@@ -384,12 +411,24 @@ export function DisponibilidadGrid() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '2px',
+                      gap: 0,
                       padding: '3px',
-                      flexWrap: 'wrap',
+                      /* Sin envolver: si una celda pasa a dos filas, esa fila
+                         de la rejilla crece y se desalinea de la regleta. */
+                      flexWrap: 'nowrap',
+                      overflow: 'hidden',
                     }}
                   >
-                    {members.map((m) => {
+                    {/* La cara de cada uno con un anillo de su color, en vez de
+                        un punto de color a secas: se ve QUIÉN puede a esa hora
+                        sin tener que memorizar qué color es cada persona.
+
+                        Solo caben MAX_EN_CELDA: la columna mide 80 px de ancho
+                        mínimo y el equipo puede ser de cinco, así que a partir
+                        de ahí el resto se resume en un "+N". Dejarlos envolver
+                        haría crecer la fila y la rejilla se desalinearía de la
+                        regleta de horas de la izquierda. */}
+                    {members.slice(0, MAX_EN_CELDA).map((m, idx) => {
                       const mi = data.findIndex((d2) => d2.integrante_id === m.integrante_id)
                       const color = (mi >= 0 ? data[mi].color : null)
                         ?? (mi >= 0 ? MEMBER_PALETTE[mi % MEMBER_PALETTE.length] : hashColorHex(m.nombre))
@@ -398,16 +437,55 @@ export function DisponibilidadGrid() {
                           key={m.integrante_id}
                           title={m.nombre}
                           style={{
-                            width: '8px',
-                            height: '8px',
+                            /* El anillo va por `box-shadow` y no por `border`:
+                               un borde real sumaría al tamaño de la caja y
+                               descuadraría el solape, que se calcula sobre el
+                               lado del avatar. */
+                            boxShadow: `0 0 0 1.5px ${color}`,
                             borderRadius: '50%',
-                            backgroundColor: color,
                             flexShrink: 0,
-                            opacity: 0.9,
+                            lineHeight: 0,
+                            /* Fondo OPACO bajo cada avatar. El relleno del
+                               avatar es translúcido, y apilados se
+                               transparentaban entre sí: se veían las iniciales
+                               del de atrás cruzando la cara del de delante.
+                               `color-mix` contra el fondo del panel da el mismo
+                               tono que se veía antes, pero tapando. */
+                            background: `color-mix(in srgb, ${color} 16%, #15141a)`,
+                            marginLeft: idx === 0 ? 0 : `-${SOLAPE}px`,
+                            /* El primero queda encima y cada siguiente detrás.
+                               Al revés, la pila se leería de derecha a
+                               izquierda y el orden de la lista dejaría de
+                               coincidir con lo que se ve. */
+                            zIndex: MAX_EN_CELDA - idx,
+                            position: 'relative',
                           }}
-                        />
+                        >
+                          <AvatarIntegrante
+                            nombre={m.nombre}
+                            avatarUrl={data[mi]?.avatar_url ?? null}
+                            color={color}
+                            size={AVATAR_CELDA}
+                          />
+                        </span>
                       )
                     })}
+
+                    {members.length > MAX_EN_CELDA && (
+                      <span
+                        title={members.slice(MAX_EN_CELDA).map((m) => m.nombre).join(', ')}
+                        style={{
+                          fontSize: '9.5px',
+                          fontWeight: 500,
+                          color: 'var(--tx-ink-secondary)',
+                          fontVariantNumeric: 'tabular-nums',
+                          flexShrink: 0,
+                          marginLeft: '4px',
+                        }}
+                      >
+                        +{members.length - MAX_EN_CELDA}
+                      </span>
+                    )}
                   </div>
                 )
               })}
