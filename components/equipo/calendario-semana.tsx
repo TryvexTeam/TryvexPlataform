@@ -8,6 +8,7 @@ import { TIPOS_EVENTO } from '@/lib/types/evento'
 import type { DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
 import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
 import { getInitials, hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
+import { SelectorHora } from '@/components/ui/selector-hora'
 
 // ─── Constants ────────────────────────────────────────────────────────
 const HORA_MIN = 10
@@ -1999,37 +2000,9 @@ export function CalendarioSemana() {
 
             {/* Time inputs */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <input
-                type="time"
-                value={modalInicio}
-                onChange={(e) => setModalInicio(e.target.value)}
-                style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  borderRadius: '8px',
-                  padding: '6px 10px',
-                  fontSize: '13px',
-                  color: 'var(--tx-ink-primary)',
-                  outline: 'none',
-                  colorScheme: 'dark',
-                }}
-              />
+              <SelectorHora value={modalInicio} onChange={(v) => setModalInicio(v)} />
               <span style={{ color: 'var(--tx-ink-muted)', fontSize: '13px' }}>–</span>
-              <input
-                type="time"
-                value={modalFin}
-                onChange={(e) => setModalFin(e.target.value)}
-                style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  borderRadius: '8px',
-                  padding: '6px 10px',
-                  fontSize: '13px',
-                  color: 'var(--tx-ink-primary)',
-                  outline: 'none',
-                  colorScheme: 'dark',
-                }}
-              />
+              <SelectorHora value={modalFin} onChange={(v) => setModalFin(v)} />
             </div>
 
             {/* Attendees */}

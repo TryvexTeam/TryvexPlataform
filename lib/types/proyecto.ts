@@ -14,6 +14,9 @@ export const ProyectoInsertSchema = z.object({
   fecha_inicio: z.string().nullable().optional(),
   fecha_entrega: z.string().nullable().optional(),
   responsable_id: z.string().uuid().nullable().optional(),
+  // Servicio del catálogo con el que se creó el proyecto. Nullable porque los
+  // proyectos anteriores al catálogo no tienen ninguno asociado.
+  servicio_id: z.string().nullable().optional(),
 })
 
 export const ProyectoUpdateSchema = ProyectoInsertSchema.partial()
@@ -36,6 +39,9 @@ export type Proyecto = {
   fecha_inicio: string | null
   fecha_entrega: string | null
   responsable_id: string | null
+  // Servicio del catálogo con el que se creó el proyecto. Nullable porque los
+  // proyectos anteriores al catálogo no tienen ninguno asociado.
+  servicio_id: string | null
   created_at: string
   updated_at: string
   cliente?: { nombre_negocio: string | null; nombre_contacto: string | null } | null

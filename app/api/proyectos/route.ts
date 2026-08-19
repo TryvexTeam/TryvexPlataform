@@ -12,13 +12,22 @@ export async function POST(req: Request) {
   if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
 
   const repo = new ProyectosRepository(supabase)
-  const id = await repo.create(result.data)
+  // `crearConPlantilla` y no `create`: si el proyecto trae servicio del
+  // catálogo, nacen con él las tareas base de ese servicio. Sin servicio se
+  // comporta igual que antes, así que los proyectos sin plantilla no cambian.
+  const yoIntegrante = await new (await import('@/lib/repos/integrantes')).IntegrantesRepository(
+    supabase,
+  ).getByAuthUser(user.id)
+  const id = await repo.crearConPlantilla(
+    result.data,
+    result.data.servicio_id ?? null,
+    yoIntegrante?.id ?? null,
+  )
 
   // Aviso: al responsable si existe; si no, a todo el equipo
   const { NotificacionesRepository } = await import('@/lib/repos/notificaciones')
-  const { IntegrantesRepository } = await import('@/lib/repos/integrantes')
   const notif = new NotificacionesRepository(supabase)
-  const yo = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+  const yo = yoIntegrante
   await notif.notificar({
     destinatarios: result.data.responsable_id ? [result.data.responsable_id] : await notif.idsActivos(),
     tipo: 'proyecto_asignado',

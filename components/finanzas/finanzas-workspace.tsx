@@ -5,9 +5,9 @@ import { motion } from 'framer-motion'
 import { ArrowDownRight, ArrowUpRight, FileWarning, Paperclip, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SelectorFecha } from '@/components/ui/selector-fecha'
 import { ConfirmarDialog } from '@/components/clientes/confirmar-dialog'
 import { MovimientoForm, type ClienteOpcion } from '@/components/finanzas/movimiento-form'
 import {
@@ -200,11 +200,11 @@ export function FinanzasWorkspace({
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="f-desde">Desde</Label>
-          <Input id="f-desde" type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+          <SelectorFecha id="f-desde" value={desde} onChange={(v) => setDesde(v)} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="f-hasta">Hasta</Label>
-          <Input id="f-hasta" type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+          <SelectorFecha id="f-hasta" value={hasta} onChange={(v) => setHasta(v)} />
         </div>
         <div className="space-y-1.5">
           <Label>Tipo</Label>

@@ -6,9 +6,11 @@ import { ProyectoInsertSchema, type Proyecto, type ProyectoInsert } from '@/lib/
 import { nombreCliente, type Cliente } from '@/lib/types/cliente'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PLANTILLAS_SERVICIO, plantillaDe, type IdServicio } from '@/lib/types/servicios'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { SelectorFecha } from '@/components/ui/selector-fecha'
 
 interface ProyectoFormProps {
   open: boolean
@@ -21,6 +23,7 @@ interface ProyectoFormProps {
 export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit }: ProyectoFormProps) {
   const [form, setForm] = useState({
     nombre: proyecto?.nombre ?? '',
+    servicio_id: proyecto?.servicio_id ?? '',
     tipo: (proyecto?.tipo ?? 'otro') as string,
     estado: (proyecto?.estado ?? 'brief') as string,
     cliente_id: proyecto?.cliente_id ?? '',
@@ -43,6 +46,7 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
     const result = ProyectoInsertSchema.safeParse({
       ...form,
       cliente_id: form.cliente_id || null,
+      servicio_id: form.servicio_id || null,
       costo_total_usd: form.costo_total_usd ? Number(form.costo_total_usd) : null,
       horas_estimadas: form.horas_estimadas ? Number(form.horas_estimadas) : null,
       horas_reales: form.horas_reales ? Number(form.horas_reales) : null,
@@ -71,6 +75,35 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
             <Label>Nombre *</Label>
             <Input value={form.nombre} onChange={(e) => set('nombre', e.target.value)} placeholder="Nombre del proyecto" />
           </div>
+
+          {/* El servicio solo se elige al CREAR: cambiarlo después no tendría
+              efecto —las tareas ya nacieron— y ofrecerlo prometería algo que no
+              pasa. En edición el campo ni aparece. */}
+          {!proyecto && (
+            <div className="space-y-1.5">
+              <Label>Servicio del catálogo</Label>
+              <Select
+                value={form.servicio_id || 'ninguno'}
+                onValueChange={(v) => set('servicio_id', v === 'ninguno' ? '' : (v ?? ''))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ninguno">Sin plantilla — empezar vacío</SelectItem>
+                  {PLANTILLAS_SERVICIO.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.nombre} · {p.tareas.length} tareas
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.servicio_id && (
+                <p className="text-[11.5px] text-[var(--tx-ink-muted)]">
+                  {plantillaDe(form.servicio_id as IdServicio)?.resumen} El proyecto nacerá con sus
+                  tareas base en el backlog, listas para ajustar.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -133,11 +166,11 @@ export function ProyectoForm({ open, onOpenChange, proyecto, clientes, onSubmit 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Inicio</Label>
-              <Input type="date" value={form.fecha_inicio} onChange={(e) => set('fecha_inicio', e.target.value)} />
+              <SelectorFecha value={form.fecha_inicio} onChange={(v) => set('fecha_inicio', v)} />
             </div>
             <div className="space-y-1.5">
               <Label>Entrega</Label>
-              <Input type="date" value={form.fecha_entrega} onChange={(e) => set('fecha_entrega', e.target.value)} />
+              <SelectorFecha value={form.fecha_entrega} onChange={(v) => set('fecha_entrega', v)} />
             </div>
           </div>
 

@@ -8,6 +8,8 @@ import type { DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
 import { getInitials, hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SelectorFecha } from '@/components/ui/selector-fecha'
+import { SelectorHora } from '@/components/ui/selector-hora'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -191,27 +193,37 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
               OPCIONAL y con un campo único no hay forma de decir "vence el
               jueves, a cualquier hora" — que es como se pide la mayoría de las
               tareas. Con hora, el calendario la coloca en su franja; sin ella,
-              aparece en el día. */}
+              aparece en el día.
+
+              Componentes propios y no `<input type="date">`: el control nativo
+              lo dibuja el sistema operativo, ignora los tokens del CRM y
+              cambia de aspecto entre Windows, macOS y Android. */}
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <div className="space-y-1.5">
-              <Label>Fecha límite</Label>
-              <Input
-                type="date"
+              <Label htmlFor="tarea-fecha">Fecha límite</Label>
+              <SelectorFecha
+                id="tarea-fecha"
                 value={form.fecha_limite ?? ''}
-                onChange={(e) => set('fecha_limite', e.target.value)}
+                onChange={(v) => {
+                  set('fecha_limite', v)
+                  // Al quitar la fecha se limpia la hora: la base rechaza una
+                  // hora huérfana (migración 054), y es mejor resolverlo aquí
+                  // que devolverle al usuario un error de la base.
+                  if (!v) set('hora_limite', '')
+                }}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>
+              <Label htmlFor="tarea-hora">
                 Hora <span className="text-[var(--tx-ink-muted)]">(opcional)</span>
               </Label>
-              <Input
-                type="time"
+              <SelectorHora
+                id="tarea-hora"
                 value={form.hora_limite ?? ''}
                 // Sin fecha la hora no puede existir, así que el campo se
                 // apaga en vez de dejar escribir algo que se descartará.
                 disabled={!form.fecha_limite}
-                onChange={(e) => set('hora_limite', e.target.value)}
+                onChange={(v) => set('hora_limite', v)}
               />
             </div>
           </div>

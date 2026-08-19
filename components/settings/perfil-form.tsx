@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SelectorHora } from '@/components/ui/selector-hora'
 import {
   PALETA_CALENDARIO,
   NOTIFICACIONES_LABELS,
@@ -218,19 +219,19 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                 <span className="w-9 font-medium text-[var(--tx-ink-secondary)]">{DIAS_SEMANA[dia]}</span>
                 {h.activo ? (
                   <div className="flex items-center gap-1.5">
-                    <Input
-                      type="time"
-                      value={h.bloques[0]?.inicio ?? '10:00'}
-                      onChange={(e) => setBloque(dia, 0, 'inicio', e.target.value)}
-                      className="h-8 w-[104px] text-xs"
-                    />
+                    <div className="w-[104px]">
+                      <SelectorHora
+                        value={h.bloques[0]?.inicio ?? '10:00'}
+                        onChange={(v) => setBloque(dia, 0, 'inicio', v)}
+                      />
+                    </div>
                     <span className="text-[var(--tx-ink-muted)]">—</span>
-                    <Input
-                      type="time"
-                      value={h.bloques[0]?.fin ?? '18:00'}
-                      onChange={(e) => setBloque(dia, 0, 'fin', e.target.value)}
-                      className="h-8 w-[104px] text-xs"
-                    />
+                    <div className="w-[104px]">
+                      <SelectorHora
+                        value={h.bloques[0]?.fin ?? '18:00'}
+                        onChange={(v) => setBloque(dia, 0, 'fin', v)}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <span className="text-xs text-[var(--tx-ink-muted)]">Offline</span>
