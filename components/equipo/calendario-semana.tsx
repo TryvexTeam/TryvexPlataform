@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Evento, EventoInsert } from '@/lib/types/evento'
 import { TIPOS_EVENTO } from '@/lib/types/evento'
@@ -678,16 +679,56 @@ export function CalendarioSemana() {
   const nowCollidesHour = nowInRange ? nowH : -1
 
   // ─── Styles ──────────────────────────────────────────────────────
+  /**
+   * Botón circular de 40 px, el mismo de la cabecera del Panel de Mando. Antes
+   * eran rectángulos de 8 px de radio con flechas tipográficas (← →): el
+   * cursor tenía que acertarle a un blanco de 26 px de alto, por debajo del
+   * mínimo táctil.
+   */
   const navBtn: React.CSSProperties = {
-    border: '1px solid rgba(255,255,255,0.10)',
-    borderRadius: '8px',
-    padding: '5px 10px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '38px',
+    height: '38px',
+    border: 'none',
+    borderRadius: '999px',
     background: 'transparent',
-    color: 'var(--tx-ink-primary)',
+    color: 'var(--tx-ink-secondary)',
+    cursor: 'pointer',
+    transition: 'background 0.15s, color 0.15s',
+  }
+
+  /**
+   * Las dos flechas viven dentro de un mismo control en vez de ser dos botones
+   * sueltos: son la misma acción en dos sentidos, y agrupadas se leen como un
+   * mando de semana y no como dos iconos que casualmente están al lado.
+   */
+  const grupoNav: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '2px',
+    padding: '3px',
+    border: '1px solid rgba(255,255,255,0.09)',
+    borderRadius: '999px',
+  }
+
+  /** Chip de la barra: misma píldora que los filtros del panel. */
+  const chip: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '7px',
+    height: '40px',
+    padding: '0 16px',
+    border: '1px solid rgba(255,255,255,0.09)',
+    borderRadius: '999px',
+    background: 'transparent',
+    color: 'var(--tx-ink-secondary)',
     cursor: 'pointer',
     fontSize: '13px',
-    fontWeight: 600,
-    transition: 'background 0.15s',
+    fontWeight: 500,
+    transition: 'background 0.15s, color 0.15s',
+    userSelect: 'none',
   }
 
   const todayBtnDisabled = isCurrentWeek
@@ -704,36 +745,94 @@ export function CalendarioSemana() {
           flexWrap: 'wrap',
         }}
       >
-        <button type="button" style={navBtn} onClick={prevWeek} onMouseEnter={(e) => { (e.currentTarget.style.background = 'rgba(255,255,255,0.05)') }} onMouseLeave={(e) => { (e.currentTarget.style.background = 'transparent') }}>
-          ←
-        </button>
+        {/* El rango de la semana manda: es lo que uno lee para orientarse, así
+            que va primero y con el peso del título, no detrás de los botones.
+            La etiqueta de arriba da el contexto que antes ponía el h1 de la
+            página, sin robarle el protagonismo al dato que cambia. */}
+        <div style={{ marginRight: '6px' }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: '11px',
+              fontWeight: 500,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--tx-ink-muted)',
+            }}
+          >
+            Calendario del equipo
+          </p>
+          <p
+            style={{
+              margin: '6px 0 0',
+              fontSize: '28px',
+              fontWeight: 600,
+              letterSpacing: '-0.03em',
+              lineHeight: 1,
+              color: 'var(--tx-ink-primary)',
+            }}
+          >
+            {rangeLabel(weekStart)}
+          </p>
+        </div>
+
+        <div style={grupoNav}>
+          <button
+            type="button"
+            style={navBtn}
+            onClick={prevWeek}
+            aria-label="Semana anterior"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+              e.currentTarget.style.color = 'var(--tx-ink-primary)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--tx-ink-secondary)'
+            }}
+          >
+            <ChevronLeftIcon size={17} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            style={navBtn}
+            onClick={nextWeek}
+            aria-label="Semana siguiente"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+              e.currentTarget.style.color = 'var(--tx-ink-primary)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--tx-ink-secondary)'
+            }}
+          >
+            <ChevronRightIcon size={17} aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* "Hoy" no se deshabilita cuando ya estás en la semana actual: se
+            marca como activo. Un botón apagado obliga a mirarlo para deducir
+            en qué semana estás; uno encendido lo dice de frente. */}
         <button
           type="button"
           style={{
-            ...navBtn,
-            opacity: todayBtnDisabled ? 0.4 : 1,
-            cursor: todayBtnDisabled ? 'default' : 'pointer',
-            pointerEvents: todayBtnDisabled ? 'none' : 'auto',
+            ...chip,
+            ...(todayBtnDisabled
+              ? { background: '#ffffff', borderColor: '#ffffff', color: 'var(--tx-bg-primary)', cursor: 'default' }
+              : {}),
           }}
           onClick={goToday}
-          onMouseEnter={(e) => { if (!todayBtnDisabled) e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          aria-current={todayBtnDisabled ? 'date' : undefined}
+          onMouseEnter={(e) => {
+            if (!todayBtnDisabled) e.currentTarget.style.color = 'var(--tx-ink-primary)'
+          }}
+          onMouseLeave={(e) => {
+            if (!todayBtnDisabled) e.currentTarget.style.color = 'var(--tx-ink-secondary)'
+          }}
         >
           Hoy
         </button>
-        <button type="button" style={navBtn} onClick={nextWeek} onMouseEnter={(e) => { (e.currentTarget.style.background = 'rgba(255,255,255,0.05)') }} onMouseLeave={(e) => { (e.currentTarget.style.background = 'transparent') }}>
-          →
-        </button>
-        <span
-          style={{
-            fontSize: '15px',
-            fontWeight: 700,
-            color: 'var(--tx-ink-primary)',
-            marginLeft: '4px',
-          }}
-        >
-          {rangeLabel(weekStart)}
-        </span>
 
         {/* Keyboard shortcuts hint (desktop only) */}
         <span
@@ -748,51 +847,32 @@ export function CalendarioSemana() {
           ← → semanas · T hoy
         </span>
 
-        {/* Toggle disponibilidad */}
-        <label
+        {/* Un chip que se enciende, no un interruptor con etiqueta al lado.
+            El interruptor pedía leer dos cosas (el estado del switch y su
+            texto) para saber si la disponibilidad estaba visible; el chip
+            encendido lo dice de una sola mirada, igual que los filtros del
+            panel. */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={showDisp}
+          onClick={() => setShowDisp((v) => !v)}
           style={{
+            ...chip,
             marginLeft: 'auto',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: 'var(--tx-ink-secondary)',
-            cursor: 'pointer',
-            userSelect: 'none',
+            ...(showDisp
+              ? { background: '#ffffff', borderColor: '#ffffff', color: 'var(--tx-bg-primary)' }
+              : {}),
+          }}
+          onMouseEnter={(e) => {
+            if (!showDisp) e.currentTarget.style.color = 'var(--tx-ink-primary)'
+          }}
+          onMouseLeave={(e) => {
+            if (!showDisp) e.currentTarget.style.color = 'var(--tx-ink-secondary)'
           }}
         >
-          <span
-            role="switch"
-            aria-checked={showDisp}
-            tabIndex={0}
-            onClick={() => setShowDisp((v) => !v)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowDisp((v) => !v) }}
-            style={{
-              width: '34px',
-              height: '18px',
-              borderRadius: '9px',
-              background: showDisp ? 'var(--tx-accent)' : 'rgba(255,255,255,0.12)',
-              position: 'relative',
-              transition: 'background 0.2s',
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                position: 'absolute',
-                top: '2px',
-                left: showDisp ? '18px' : '2px',
-                width: '14px',
-                height: '14px',
-                borderRadius: '50%',
-                background: '#fff',
-                transition: 'left 0.2s',
-              }}
-            />
-          </span>
-          Ver disponibilidad
-        </label>
+          Disponibilidad
+        </button>
       </div>
 
       {/* ── Leyenda de disponibilidad por integrante ───────────── */}
@@ -801,14 +881,18 @@ export function CalendarioSemana() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: '18px',
             flexWrap: 'wrap',
             fontSize: '12px',
-            fontWeight: 600,
+            fontWeight: 500,
             color: 'var(--tx-ink-secondary)',
           }}
         >
-          <span style={{ color: 'var(--tx-ink-muted)' }}>Disponibilidad:</span>
+          {/* Cada persona es un punto de su color con el nombre al lado, sin
+              píldora alrededor. Con cinco integrantes las píldoras de colores
+              formaban una fila de semáforos que competía con el propio
+              calendario: el color ya lo lleva la banda dentro de la rejilla, y
+              aquí solo hace falta la clave para leerlo. */}
           {disp.map((m) => {
             const c = memberColor(m.integrante_id, m.nombre)
             return (
@@ -817,26 +901,25 @@ export function CalendarioSemana() {
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '3px 10px',
-                  borderRadius: '100px',
-                  background: `color-mix(in srgb, ${c} 24%, transparent)`,
-                  border: `1px solid ${c}`,
-                  color: `color-mix(in oklab, ${c} 55%, white)`,
-                  fontSize: '11.5px',
+                  gap: '7px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: m.es_propio ? 'var(--tx-ink-primary)' : 'var(--tx-ink-secondary)',
                 }}
               >
                 <span
                   style={{
-                    width: '8px',
-                    height: '8px',
+                    width: '9px',
+                    height: '9px',
                     borderRadius: '50%',
                     background: c,
                     flexShrink: 0,
                   }}
                 />
-                {m.nombre}
-                {m.es_propio && ' (tú)'}
+                {m.nombre.split(' ')[0]}
+                {m.es_propio && (
+                  <span style={{ color: 'var(--tx-ink-muted)', fontSize: '11px' }}>tú</span>
+                )}
               </span>
             )
           })}
@@ -976,41 +1059,45 @@ export function CalendarioSemana() {
                   background: 'rgba(10,10,12,0.92)',
                   backdropFilter: 'blur(8px)',
                   scrollSnapAlign: snapAlign,
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  color: isToday
-                    ? 'var(--tx-accent)'
-                    : isWeekend
-                      ? 'var(--tx-ink-muted)'
-                      : isPast
-                        ? 'var(--tx-ink-primary)'
-                        : 'var(--tx-ink-primary)',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: 'var(--tx-ink-muted)',
                   textAlign: 'center',
-                  padding: '10px 4px 8px',
+                  padding: '12px 4px 10px',
                   borderBottom: '1px solid rgba(255,255,255,0.06)',
                   borderLeft: '1px solid rgba(255,255,255,0.04)',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '2px',
-                  opacity: isPast && !isToday ? 0.55 : 1,
+                  gap: '6px',
+                  opacity: isPast && !isToday ? 0.5 : 1,
                 }}
               >
-                <span style={isWeekend ? { color: 'var(--tx-ink-muted)' } : undefined}>{DIAS_SEMANA[i]}</span>
+                <span>{DIAS_SEMANA[i]}</span>
+                {/* El número del día en un disco relleno cuando es hoy. El
+                    peso baja de 800 a 600: con el disco de acento detrás, la
+                    negrita extra solo emborronaba la cifra. */}
                 <span
                   style={{
-                    width: '28px',
-                    height: '28px',
+                    width: '30px',
+                    height: '30px',
                     borderRadius: '50%',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '14px',
-                    fontWeight: 800,
-                    background: isToday ? 'var(--tx-accent)' : 'transparent',
-                    color: isToday ? 'var(--tx-accent-fg)' : 'inherit',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    letterSpacing: '-0.02em',
+                    textTransform: 'none',
+                    background: isToday ? 'var(--tx-accent-surface)' : 'transparent',
+                    color: isToday
+                      ? '#ffffff'
+                      : isWeekend
+                        ? 'var(--tx-ink-muted)'
+                        : 'var(--tx-ink-primary)',
                     fontVariantNumeric: 'tabular-nums',
-                    fontFamily: 'var(--font-mono, monospace)',
                   }}
                 >
                   {d.getDate()}
@@ -1073,15 +1160,18 @@ export function CalendarioSemana() {
                       justifyContent: 'flex-end',
                       paddingRight: '8px',
                       paddingTop: '0px',
-                      fontSize: '11px',
-                      fontWeight: 600,
+                      fontSize: '10.5px',
+                      fontWeight: 500,
                       color: 'var(--tx-ink-muted)',
                       borderBottom: '1px solid rgba(255,255,255,0.06)',
                       boxSizing: 'border-box',
                       position: 'relative',
                       top: '-6px',
+                      /* `tabular-nums` basta para que las horas queden en
+                         columna; el monospace además cambiaba de familia
+                         tipográfica a media pantalla, y la regleta es
+                         referencia, no protagonista. */
                       fontVariantNumeric: 'tabular-nums',
-                      fontFamily: 'var(--font-mono, monospace)',
                       visibility: isColliding ? 'hidden' : 'visible',
                     }}
                   >
@@ -1094,18 +1184,20 @@ export function CalendarioSemana() {
                 <div
                   style={{
                     position: 'absolute',
-                    top: `${nowTop - 7}px`,
+                    top: `${nowTop - 8}px`,
                     right: '4px',
                     fontSize: '10px',
-                    fontWeight: 700,
-                    color: 'var(--tx-accent)',
+                    fontWeight: 600,
+                    color: '#ffffff',
                     fontVariantNumeric: 'tabular-nums',
-                    fontFamily: 'var(--font-mono, monospace)',
-                    lineHeight: '14px',
+                    lineHeight: '16px',
                     zIndex: 16,
-                    background: 'rgba(10,10,12,0.92)',
-                    padding: '0 2px',
-                    borderRadius: '2px',
+                    /* Píldora rellena en vez de texto suelto sobre el fondo:
+                       la hora actual pisa las etiquetas de la regleta, y sin
+                       un fondo propio se leían las dos superpuestas. */
+                    background: 'var(--tx-accent-surface)',
+                    padding: '0 5px',
+                    borderRadius: '999px',
                   }}
                 >
                   {nowTimeLabel}
@@ -1271,26 +1363,35 @@ export function CalendarioSemana() {
                           left,
                           width,
                           height: `${item.height}px`,
-                          minHeight: '22px',
-                          background: `color-mix(in srgb, ${color} 28%, transparent)`,
-                          borderLeft: `3px solid ${color}`,
-                          borderRadius: '4px',
-                          padding: '3px 6px',
+                          minHeight: '24px',
+                          background: `color-mix(in srgb, ${color} 22%, transparent)`,
+                          /* La banda de color va por `box-shadow` interior y no
+                             por `border-left`: un borde real come 3 px del
+                             ancho, y con dos eventos a la misma hora las cajas
+                             quedaban desalineadas entre sí. */
+                          boxShadow: `inset 3px 0 0 ${color}`,
+                          borderRadius: '10px',
+                          padding: '4px 8px',
                           overflow: 'hidden',
                           cursor: 'pointer',
                           zIndex: 5,
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '1px',
-                          transition: 'background 120ms, box-shadow 120ms',
+                          transition: 'background 140ms, box-shadow 140ms, transform 140ms',
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 40%, transparent)`
-                          e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.4)'
+                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 34%, transparent)`
+                          e.currentTarget.style.boxShadow = `inset 3px 0 0 ${color}, 0 6px 18px rgba(0,0,0,0.45)`
+                          /* Un pelo hacia arriba, no un `scale`: escalar un
+                             bloque posicionado en una rejilla horaria lo
+                             desalinea de su franja. */
+                          e.currentTarget.style.transform = 'translateY(-1px)'
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 28%, transparent)`
-                          e.currentTarget.style.boxShadow = 'none'
+                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 22%, transparent)`
+                          e.currentTarget.style.boxShadow = `inset 3px 0 0 ${color}`
+                          e.currentTarget.style.transform = 'none'
                         }}
                       >
                         <span
@@ -1405,6 +1506,9 @@ export function CalendarioSemana() {
                   )}
 
                   {/* Now line */}
+                  {/* Línea de "ahora": 1 px y no 2. Marca un instante, y una
+                      banda de 2 px cubre casi tres minutos de la rejilla —
+                      además de tapar el borde superior del evento en curso. */}
                   {dayNowTop !== null && (
                     <div
                       style={{
@@ -1412,7 +1516,7 @@ export function CalendarioSemana() {
                         top: `${dayNowTop}px`,
                         left: 0,
                         right: 0,
-                        height: '2px',
+                        height: '1px',
                         background: 'var(--tx-accent)',
                         zIndex: 15,
                         pointerEvents: 'none',
@@ -1421,12 +1525,13 @@ export function CalendarioSemana() {
                       <div
                         style={{
                           position: 'absolute',
-                          left: '-4px',
-                          top: '-4px',
-                          width: '10px',
-                          height: '10px',
+                          left: '-3px',
+                          top: '-3px',
+                          width: '7px',
+                          height: '7px',
                           borderRadius: '50%',
                           background: 'var(--tx-accent)',
+                          boxShadow: '0 0 0 3px color-mix(in srgb, var(--tx-accent) 22%, transparent)',
                         }}
                       />
                     </div>
