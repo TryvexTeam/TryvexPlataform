@@ -1,4 +1,5 @@
 import { ScoopCard } from '@/components/dashboard/scoop-card'
+import { AvatarIntegrante } from '@/components/dashboard/avatar-integrante'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 
 /**
@@ -46,15 +47,6 @@ function etiquetaPlazo(diasVencida: number, fechaLimite: string | null): string 
   })
 }
 
-function iniciales(nombre: string): string {
-  return nombre
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('')
-}
-
 export function TareaScoopCard({
   tarea,
   diasVencida,
@@ -83,15 +75,11 @@ export function TareaScoopCard({
     >
       {responsable && (
         <div className="mb-3 flex items-center gap-2.5">
-          <div
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-medium ${
-              acento
-                ? 'border-white/25 bg-black/25 text-white'
-                : 'border-white/[0.09] bg-white/[0.06] text-[var(--tx-ink-secondary)]'
-            }`}
-          >
-            {iniciales(responsable.nombre)}
-          </div>
+          <AvatarIntegrante
+            nombre={responsable.nombre}
+            avatarUrl={responsable.avatar_url}
+            size={32}
+          />
           <p
             className={`truncate text-[12.5px] font-medium ${
               acento ? 'text-white' : 'text-[var(--tx-ink-primary)]'

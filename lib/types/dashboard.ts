@@ -104,6 +104,10 @@ export interface AporteIntegrante {
   integranteId: string
   nombre: string
   valor: number
+  /** Foto de perfil; null cae en las iniciales. */
+  avatarUrl: string | null
+  /** Color de perfil del integrante, para el fondo de las iniciales. */
+  color: string | null
   /** Es el usuario que está mirando: se marca para orientarse, no para exponerlo. */
   esMio: boolean
 }

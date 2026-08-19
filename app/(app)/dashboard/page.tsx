@@ -107,7 +107,7 @@ function armarMetrica(
   label: string,
   unidad: string,
   valores: Map<string, number>,
-  personas: { id: string; nombre: string }[],
+  personas: { id: string; nombre: string; avatar_url: string | null; color: string | null }[],
   miIntegranteId: string | null,
   decimales = 0,
 ): MetricaEquipo {
@@ -116,6 +116,8 @@ function armarMetrica(
       integranteId: persona.id,
       nombre: persona.nombre,
       valor: valores.get(persona.id) ?? 0,
+      avatarUrl: persona.avatar_url,
+      color: persona.color,
       esMio: persona.id === miIntegranteId,
     }))
     .filter((aporte) => aporte.valor > 0)
@@ -347,7 +349,12 @@ export default async function DashboardPage() {
           )
         }
 
-        const nombres = personas.map((persona) => ({ id: persona.id, nombre: persona.nombre }))
+        const nombres = personas.map((persona) => ({
+          id: persona.id,
+          nombre: persona.nombre,
+          avatar_url: persona.avatar_url,
+          color: persona.color,
+        }))
 
         return [
           armarMetrica('horas', 'Horas', 'h', horas, nombres, integranteId, 1),

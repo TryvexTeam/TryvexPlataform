@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { CifraAnimada } from '@/components/dashboard/cifra-animada'
+import { AvatarIntegrante } from '@/components/dashboard/avatar-integrante'
 import type { MetricaEquipo } from '@/lib/types/dashboard'
 
 /**
@@ -30,18 +31,6 @@ import type { MetricaEquipo } from '@/lib/types/dashboard'
 
 interface MarcadorEquipoProps {
   metricas: MetricaEquipo[]
-}
-
-/** Iniciales para el avatar: dos letras, sin fotos que no tenemos. */
-function iniciales(nombre: string): string {
-  return (
-    nombre
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() ?? '')
-      .join('') || '·'
-  )
 }
 
 function formatear(valor: number, decimales: number): string {
@@ -118,15 +107,13 @@ export function MarcadorEquipo({ metricas }: MarcadorEquipoProps) {
                 transition={{ type: 'spring', stiffness: 320, damping: 30 }}
                 className="flex items-center gap-3.5"
               >
-                <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium ${
-                    aporte.esMio
-                      ? 'border-[var(--tx-accent)] bg-[var(--tx-accent-subtle)] text-[var(--tx-accent-2)]'
-                      : 'border-white/[0.09] bg-white/[0.06] text-[var(--tx-ink-secondary)]'
-                  }`}
-                >
-                  {iniciales(aporte.nombre)}
-                </div>
+                <AvatarIntegrante
+                  nombre={aporte.nombre}
+                  avatarUrl={aporte.avatarUrl}
+                  color={aporte.color}
+                  size={36}
+                  destacado={aporte.esMio}
+                />
 
                 <div className="min-w-0 flex-1">
                   <div className="mb-2 flex items-baseline justify-between gap-3">
