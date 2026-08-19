@@ -274,8 +274,14 @@ export function PipLlamada({
           </div>
         )}
 
+        {/* Para el arrastre igual que los controles de abajo. El contenedor
+            hace `setPointerCapture` al bajar el puntero, y desde ese momento
+            el `pointerup` se entrega al contenedor y no a este botón: el
+            navegador dispara el `click` en el ancestro común, así que el
+            botón no llegaba a enterarse y la llamada no se restauraba nunca. */}
         <button
           type="button"
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={onRestaurar}
           aria-label="Volver a la llamada"
           className="absolute left-3.5 top-3.5 flex h-7 w-7 items-center justify-center rounded-full
