@@ -152,9 +152,15 @@ export function SelectorFecha({
       </Popover.Trigger>
 
       <Popover.Portal>
-        <Popover.Positioner sideOffset={8} align="start">
+        {/* `isolate z-50` en el POSITIONER, no solo en el popup: es el patrón
+            que ya usan `select` y `dropdown-menu` del repo, y hace falta para
+            que el calendario funcione dentro de un modal. El overlay del
+            diálogo lleva `isolate`, que abre un contexto de apilamiento
+            propio; sin esto el popover quedaba atrapado DETRÁS del contenido
+            del modal — visible a medias y sin poder tocarlo. */}
+        <Popover.Positioner sideOffset={8} align="start" className="isolate z-50">
           <Popover.Popup
-            className="z-50 rounded-[22px] border border-white/[0.09] p-3.5 outline-none"
+            className="rounded-[22px] border border-white/[0.09] p-3.5 outline-none"
             style={{
               background: 'rgba(20,18,26,.96)',
               backdropFilter: 'blur(28px) saturate(150%)',

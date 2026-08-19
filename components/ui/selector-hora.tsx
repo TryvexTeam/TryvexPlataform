@@ -103,7 +103,18 @@ export function SelectorHora({
 
   return (
     <Popover.Root open={abierto} onOpenChange={setAbierto}>
-      <div
+      {/* El campo ENTERO es el ancla del popover. Antes el disparador era un
+          botón `sr-only`: la lista se posicionaba contra una caja de tamaño
+          cero y aparecía descolocada respecto al campo. `render` deja que el
+          disparador sea este mismo div sin añadir otro nodo. */}
+      <Popover.Trigger
+        disabled={disabled}
+        render={<div />}
+        // El disparador es un div, no un botón: dentro va un `<input>` de
+        // texto, y anidar un campo editable dentro de un <button> rompe el
+        // foco y las semánticas de formulario. `nativeButton={false}` le dice
+        // a Base UI que es deliberado — sin esto avisa en cada render.
+        nativeButton={false}
         className={`flex h-11 items-center gap-2 rounded-full border border-white/[0.09] px-4
           transition-colors ${disabled ? 'opacity-40' : 'focus-within:border-white/[0.2] hover:border-white/[0.16]'}`}
       >
@@ -144,17 +155,18 @@ export function SelectorHora({
           </button>
         )}
 
-        <Popover.Trigger
-          disabled={disabled}
-          aria-label="Elegir hora de una lista"
-          className="sr-only"
-        />
-      </div>
+      </Popover.Trigger>
 
       <Popover.Portal>
-        <Popover.Positioner sideOffset={8} align="start">
+        {/* `isolate z-50` en el POSITIONER, no solo en el popup: es el patrón
+            que ya usan `select` y `dropdown-menu` del repo, y hace falta para
+            que el calendario funcione dentro de un modal. El overlay del
+            diálogo lleva `isolate`, que abre un contexto de apilamiento
+            propio; sin esto el popover quedaba atrapado DETRÁS del contenido
+            del modal — visible a medias y sin poder tocarlo. */}
+        <Popover.Positioner sideOffset={8} align="start" className="isolate z-50">
           <Popover.Popup
-            className="z-50 rounded-[20px] border border-white/[0.09] p-1.5 outline-none"
+            className="rounded-[20px] border border-white/[0.09] p-1.5 outline-none"
             style={{
               background: 'rgba(20,18,26,.96)',
               backdropFilter: 'blur(28px) saturate(150%)',
