@@ -64,7 +64,7 @@ export function DashReader({ item, stats }: DashReaderProps) {
   /* ── Sin lead seleccionado: hub de resumen con datos reales ── */
   if (!item) {
     return (
-      <section className="reader flex flex-col" style={{ padding: '20px 24px', gap: 20, overflowY: 'auto' }}>
+      <section className="reader flex flex-col h-full" style={{ padding: '20px 24px', gap: 20, overflowY: 'auto' }}>
         <header className="flex flex-col gap-1.5 pb-4 border-b border-white/5">
           <div className="flex items-center gap-2">
             <span

@@ -3,12 +3,11 @@
 import { useRef, useState } from 'react'
 import { CopyIcon, MessageSquareIcon, PinIcon, PinOffIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { EMOJIS_RAPIDOS } from '@/lib/types/chat'
-import { copiarTexto } from '@/lib/utils/copiar-texto'
 
 interface GestosMensajeProps {
   puedeBorrar: boolean
-  /** Texto del mensaje. `null` en un adjunto sin pie: entonces no hay qué copiar. */
-  contenido?: string | null
+  /** Copiar el mensaje. `undefined` en un adjunto sin pie: no hay qué copiar. */
+  onCopiar?: () => void
   /** Si el mensaje ya está fijado, para saber si el gesto fija o desfija. */
   fijado?: boolean
   onResponder: () => void
@@ -42,7 +41,7 @@ const TOLERANCIA_MOVIMIENTO = 10
  */
 export function GestosMensaje({
   puedeBorrar,
-  contenido,
+  onCopiar,
   fijado,
   onResponder,
   onAbrirHilo,
@@ -143,7 +142,7 @@ export function GestosMensaje({
       {menuAbierto && (
         <HojaAcciones
           puedeBorrar={puedeBorrar}
-          contenido={contenido}
+          onCopiar={onCopiar}
           fijado={fijado}
           onCerrar={() => setMenuAbierto(false)}
           onResponder={onResponder}
@@ -159,7 +158,7 @@ export function GestosMensaje({
 
 function HojaAcciones({
   puedeBorrar,
-  contenido,
+  onCopiar,
   fijado,
   onCerrar,
   onResponder,
@@ -169,7 +168,7 @@ function HojaAcciones({
   onFijar,
 }: {
   puedeBorrar: boolean
-  contenido?: string | null
+  onCopiar?: () => void
   fijado?: boolean
   onCerrar: () => void
   onResponder: () => void
@@ -235,11 +234,8 @@ function HojaAcciones({
         </Fila>
         {/* Un adjunto sin pie no tiene texto que copiar, y una fila que no
             hace nada es peor que no tenerla. */}
-        {contenido && (
-          <Fila
-            icono={<CopyIcon className="size-4.5" />}
-            onClick={elegir(() => void copiarTexto(contenido, 'Mensaje copiado'))}
-          >
+        {onCopiar && (
+          <Fila icono={<CopyIcon className="size-4.5" />} onClick={elegir(onCopiar)}>
             Copiar mensaje
           </Fila>
         )}

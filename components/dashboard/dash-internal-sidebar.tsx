@@ -84,9 +84,10 @@ export function DashInternalSidebar({ active, onSelect }: DashSidebarProps) {
           </button>
         </div>
         <button
-          className="w-[38px] h-[38px] rounded-[12px] flex items-center justify-center text-white transition-all hover:-translate-y-0.5"
+          className="w-[38px] h-[38px] rounded-[12px] flex items-center justify-center transition-all hover:-translate-y-0.5"
           style={{
             background: 'var(--tx-accent)',
+            color: 'var(--tx-accent-fg)',
             boxShadow: '0 10px 30px rgba(139,92,246,.55), inset 0 1px 0 rgba(255,255,255,.18)',
           }}
           aria-label="Componer"

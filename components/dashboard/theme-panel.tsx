@@ -130,7 +130,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="text-[10px] font-semibold tracking-[.06em] uppercase pt-3 first:pt-0"
-      style={{ color: 'rgba(255,255,255,.35)' }}
+      style={{ color: 'rgba(255,255,255,.5)' }}
     >
       {children}
     </div>
@@ -342,7 +342,7 @@ function ThemePresets() {
               <div className="text-[12px] font-semibold truncate" style={{ color: 'rgba(255,255,255,.85)' }}>
                 {p.name}
               </div>
-              <div className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,.4)' }}>
+              <div className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,.55)' }}>
                 {p.desc}
               </div>
             </div>
@@ -692,7 +692,7 @@ export function ThemePanel() {
               <div className="text-[12px] font-medium" style={{ color: 'rgba(255,255,255,.72)' }}>
                 Grano de film
               </div>
-              <div className="text-[10.5px]" style={{ color: 'rgba(255,255,255,.35)' }}>
+              <div className="text-[10.5px]" style={{ color: 'rgba(255,255,255,.55)' }}>
                 Textura cinematográfica sutil
               </div>
             </div>
