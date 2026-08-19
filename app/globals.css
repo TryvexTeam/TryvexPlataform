@@ -98,6 +98,12 @@
   --tx-accent-hover:       oklch(56% 0.25 24.3);
   --tx-accent-fg:          #ffffff;  /* texto sobre fondos de acento — lo recalcula applyTheme por luminancia */
   --tx-accent-subtle:      oklch(58% 0.24 24.3 / 12%);
+  /* Rojo profundo para SUPERFICIES RELLENAS con texto encima. El acento
+     normal (58%) da 4.22:1 contra blanco: pasa para texto grande, falla para
+     texto pequeño. Este baja a 50% y sube a 5.8:1, que cubre cualquier
+     tamaño. Se usa solo como fondo — bordes, cifras y barras siguen con
+     --tx-accent, que ahí no lleva texto encima. */
+  --tx-accent-surface:     oklch(50% 0.22 24.3);
   --tx-accent-glow:        oklch(58% 0.24 24.3 / 25%);
   --tx-border:             oklch(100% 0 0 / 6%);
   --tx-border-strong:      oklch(100% 0 0 / 12%);
@@ -1272,4 +1278,75 @@
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Muesca del Panel de Mando
+ *
+ * La esquina superior derecha del card se recorta con una curva cóncava y el
+ * botón de acción queda alojado ahí, encima del fondo. La geometría vive en
+ * una pieza SVG de 100x100 px anclada a esa esquina: mide igual en un card de
+ * 300 o de 900 px de ancho, así que el card sigue siendo fluido y no hace
+ * falta medirlo en JavaScript.
+ *
+ * La máscara son tres capas que se suman:
+ *   1. la pieza SVG, que rellena el cuadrado de la esquina con la curva;
+ *   2. una franja horizontal opaca desde los 99 px hacia abajo;
+ *   3. una franja vertical opaca desde los 99 px hacia la izquierda.
+ * Juntas cubren todo menos el cuadrado, que rellena la pieza.
+ *
+ * Los 99 px no son un error de cuenta: el compositing de máscaras es
+ * `a + b - a*b`, no `a + b`, así que dos capas que se tocan justo en el borde
+ * dan 0.75 de alfa y dejan una costura translúcida de 1 px. Solapándolas ese
+ * píxel queda cubierto por ambas.
+ *
+ * Geometría: centro a 22 px de ambos bordes, radio de corte 34, botón de 44 —
+ * quedan 12 px de aire parejo. Los filetes de 14 px en las dos tangencias son
+ * lo que evita que el borde llegue al corte en punta.
+ * ──────────────────────────────────────────────────────────────────────────── */
+.tx-scoop {
+  -webkit-mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0L30.671 0A14 14 0 0 1 44.475 16.333A34 34 0 0 0 83.667 55.525A14 14 0 0 1 100 69.329L100 100L0 100Z' fill='%23fff'/%3E%3C/svg%3E"),
+    linear-gradient(to bottom, transparent 0 99px, #000 99px),
+    linear-gradient(to left, transparent 0 99px, #000 99px);
+  -webkit-mask-size: 100px 100px, 100% 100%, 100% 100%;
+  -webkit-mask-position: top right, 0 0, 0 0;
+  -webkit-mask-repeat: no-repeat;
+  mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0L30.671 0A14 14 0 0 1 44.475 16.333A34 34 0 0 0 83.667 55.525A14 14 0 0 1 100 69.329L100 100L0 100Z' fill='%23fff'/%3E%3C/svg%3E"),
+    linear-gradient(to bottom, transparent 0 99px, #000 99px),
+    linear-gradient(to left, transparent 0 99px, #000 99px);
+  mask-size: 100px 100px, 100% 100%, 100% 100%;
+  mask-position: top right, 0 0, 0 0;
+  mask-repeat: no-repeat;
+}
+
+/* Filo de 1 px sobre la curva. Es un trazo de 2 px dibujado DENTRO del
+   elemento enmascarado: la máscara se lleva la mitad de afuera y deja el
+   hairline justo sobre el borde. Va como hijo, no como ::after, para que
+   funcione también cuando el card ya usa ::after para otra cosa. */
+.tx-scoop-edge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100px;
+  height: 100px;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M30.671 0A14 14 0 0 1 44.475 16.333A34 34 0 0 0 83.667 55.525A14 14 0 0 1 100 69.329' fill='none' stroke='%23ffffff' stroke-opacity='.20' stroke-width='2'/%3E%3C/svg%3E");
+  background-size: 100px 100px;
+  background-repeat: no-repeat;
+}
+
+/* Trama diagonal de la tarjeta de acento. Textura sin degradado: el acento ya
+   es un plano de color y esto le da superficie sin ensuciarlo. */
+.tx-hatch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.1;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9) 0 1.5px,
+    transparent 1.5px 16px
+  );
 }
