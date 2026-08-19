@@ -1387,3 +1387,29 @@
   font-weight: 500;
   letter-spacing: -0.01em;
 }
+
+/* Entrada de página.
+   
+   Va en CSS y no en JS a propósito: la animación arranca sola al montarse el
+   elemento, sin depender de que otra termine antes. La versión con
+   `AnimatePresence mode="wait"` dejaba páginas enteras en `opacity: 0` cuando
+   el contenido tardaba en llegar del servidor (ver `page-transition.tsx`).
+   
+   `backwards` aplica el primer fotograma durante el retardo; sin `forwards`,
+   al acabar manda el estilo normal del elemento, así que el peor caso posible
+   es que no se anime — nunca que se quede invisible. */
+@keyframes tx-page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.tx-page-enter {
+  animation: tx-page-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* Quien pide menos movimiento recibe el contenido sin desplazamiento. */
+@media (prefers-reduced-motion: reduce) {
+  .tx-page-enter {
+    animation: none;
+  }
+}
