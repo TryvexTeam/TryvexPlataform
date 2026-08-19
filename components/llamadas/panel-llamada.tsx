@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { MusicIcon } from 'lucide-react'
 import { AvatarChat } from '@/components/chat/avatar-chat'
-import { BotonEnLlamada } from './boton-en-llamada'
+import { PipLlamada } from './pip-llamada'
 import { ChatLlamada } from './chat-llamada'
 import { ReproductorMusica, type TamanoMusica } from './reproductor-musica'
 import { useGrillaVideo } from './use-grilla-video'
@@ -147,6 +147,7 @@ export function PanelLlamada({
 
   const porId = new Map(personas.map((p) => [p.id, p]))
   const yo = porId.get(miIntegranteId)
+
 
   /**
    * Quiénes están en la llamada ahora mismo. De acá sale quién es el encargado
@@ -417,14 +418,28 @@ export function PanelLlamada({
         </button>
       </div>
     )
-  // Minimizado: una barra fina para volver. Sin esto, atender una llamada
-  // significa no poder usar el CRM, que es justo lo contrario de lo que se busca.
+  // Minimizado: el recuadro con imagen y controles, en cualquier página. Sin
+  // esto, atender una llamada significa no poder usar el CRM, que es justo lo
+  // contrario de lo que se busca.
+  //
+  // Reemplaza a la píldora de "En llamada" que había antes: se sigue pudiendo
+  // arrastrar y recuerda dónde se dejó, pero además deja ver a quién se está
+  // oyendo y silenciar o colgar sin restaurar la llamada entera.
   } else if (minimizado) {
     vista = (
-      <BotonEnLlamada
+      <PipLlamada
         onRestaurar={() => setMinimizado(false)}
+        participantes={participantes}
+        personas={porId}
+        quienesHablan={quienesHablan}
+        miIntegranteId={miIntegranteId}
+        micro={micro}
+        camara={camara}
         ensordecido={ensordecido}
-        participantesCount={participantes.length + 1}
+        streamLocal={streamLocal}
+        onAlternarMicro={alternarMicro}
+        onAlternarCamara={alternarCamara}
+        onColgar={colgar}
       />
     )
   } else {
