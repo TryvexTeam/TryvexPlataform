@@ -37,7 +37,7 @@ export function LeadsCategories({ leads, activeEstado, onSelect }: LeadsCategori
       <button
         key={cat.id}
         onClick={() => onSelect(cat.id)}
-        className="leads-categories__item rounded-full border transition-colors duration-150"
+        className="leads-categories__item"
         // El activo va en blanco, no en acento: el rojo de la marca queda
         // reservado para lo que exige atención (mensajes sin leer, urgencias),
         // y un filtro seleccionado no es una alerta.
@@ -46,11 +46,20 @@ export function LeadsCategories({ leads, activeEstado, onSelect }: LeadsCategori
             ? { background: '#fff', color: 'var(--tx-bg-primary)', borderColor: '#fff', fontWeight: 500 }
             : { background: 'transparent', color: 'var(--tx-ink-secondary)', borderColor: 'rgba(255,255,255,.09)' }
         }
+        /* El hover va por JS y no por CSS porque los estilos en línea de arriba
+           le ganan a la regla `:hover` de la hoja: dejarlo en CSS hacía que el
+           ítem no reaccionara al puntero. */
         onMouseEnter={e => {
-          if (!isActive) (e.currentTarget as HTMLElement).style.color = 'var(--tx-ink-primary)'
+          if (isActive) return
+          const e0 = e.currentTarget as HTMLElement
+          e0.style.color = 'var(--tx-ink-primary)'
+          e0.style.background = 'rgba(255,255,255,.05)'
         }}
         onMouseLeave={e => {
-          if (!isActive) (e.currentTarget as HTMLElement).style.color = 'var(--tx-ink-secondary)'
+          if (isActive) return
+          const e0 = e.currentTarget as HTMLElement
+          e0.style.color = 'var(--tx-ink-secondary)'
+          e0.style.background = 'transparent'
         }}
       >
         <span className="leads-categories__left">

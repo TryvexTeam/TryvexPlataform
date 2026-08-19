@@ -564,10 +564,9 @@
   background: rgba(255, 255, 255, 0.05);
   color: var(--tx-ink-primary);
 }
-.leads-categories__item.is-active {
-  background: rgba(232, 53, 42, 0.10);
-  color: var(--tx-accent-2);
-}
+/* El estado activo lo pinta el componente en línea (chip blanco): la regla
+   que había aquí quedó muerta al hacerlo, y dejarla invitaba a editarla
+   creyendo que seguía mandando. */
 .leads-categories__dot {
   width: 7px;
   height: 7px;
