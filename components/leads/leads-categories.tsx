@@ -37,13 +37,32 @@ export function LeadsCategories({ leads, activeEstado, onSelect }: LeadsCategori
       <button
         key={cat.id}
         onClick={() => onSelect(cat.id)}
-        className={`leads-categories__item ${isActive ? 'is-active' : ''}`}
+        className="leads-categories__item rounded-full border transition-colors duration-150"
+        // El activo va en blanco, no en acento: el rojo de la marca queda
+        // reservado para lo que exige atención (mensajes sin leer, urgencias),
+        // y un filtro seleccionado no es una alerta.
+        style={
+          isActive
+            ? { background: '#fff', color: 'var(--tx-bg-primary)', borderColor: '#fff', fontWeight: 500 }
+            : { background: 'transparent', color: 'var(--tx-ink-secondary)', borderColor: 'rgba(255,255,255,.09)' }
+        }
+        onMouseEnter={e => {
+          if (!isActive) (e.currentTarget as HTMLElement).style.color = 'var(--tx-ink-primary)'
+        }}
+        onMouseLeave={e => {
+          if (!isActive) (e.currentTarget as HTMLElement).style.color = 'var(--tx-ink-secondary)'
+        }}
       >
         <span className="leads-categories__left">
           <span className="truncate">{cat.label}</span>
         </span>
         {count > 0 && (
-          <span className="leads-categories__count">{count}</span>
+          <span
+            className="leads-categories__count"
+            style={{ color: isActive ? 'rgba(15,15,20,.55)' : 'var(--tx-ink-muted)' }}
+          >
+            {count}
+          </span>
         )}
       </button>
     )

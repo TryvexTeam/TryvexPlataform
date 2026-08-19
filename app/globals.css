@@ -607,6 +607,10 @@
 }
 .reader__bar {
   display: flex;
+  /* `align-items: center` porque el botón de eliminar vive FUERA del grupo de
+     acciones —para que no se toque con "editar"— y sin esto se estiraría al
+     alto del grupo en vez de quedar centrado con él. */
+  align-items: center;
   justify-content: flex-start;
   margin-bottom: 22px;
 }

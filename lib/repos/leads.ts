@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { LeadInsert, LeadUpdate, Lead, Interaccion } from '@/lib/types/lead'
 import type { FilaAccionHoy, SerieDia } from '@/lib/types/dashboard'
+import { debeAvanzarAContactado, esContacto } from '@/lib/types/lead'
 import { diaSantiago } from '@/lib/utils/fecha-santiago'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -338,6 +339,25 @@ export class LeadsRepository {
     })
   }
 
+  /**
+   * Registra una interaccion y, si corresponde, mueve el lead.
+   *
+   * Antes esto solo insertaba la fila, y el estado habia que arrastrarlo a
+   * mano en el kanban: se registraba una llamada y el lead seguia figurando
+   * como "sin contactar". Dos datos contando lo mismo y contradiciendose.
+   *
+   * Ahora, cuando la interaccion es de un canal donde hay alguien del otro
+   * lado (no una nota interna):
+   *   - `ultimo_contacto` se pone al dia SIEMPRE. Es el campo que alimenta
+   *     "Requiere accion hoy" del panel, y casi nadie lo escribia: la tabla de
+   *     leads frios estaba midiendo contra un dato muerto.
+   *   - El estado avanza a `contactado` SOLO si aun estaba en `sin_contactar`.
+   *     Nunca retrocede: registrar una llamada sobre un lead en "interesado"
+   *     no puede devolverlo atras — ese avance lo decide una persona.
+   *
+   * El update va DESPUES del insert y en su propio try: si falla, la
+   * interaccion ya quedo registrada, que es el dato que no se puede perder.
+   */
   async createInteraccion(data: {
     lead_id: string
     integrante_id: string
@@ -347,6 +367,23 @@ export class LeadsRepository {
   }): Promise<void> {
     const { error } = await this.sb.from('interacciones_lead').insert(data)
     if (error) throw new Error(error.message)
+
+    if (!esContacto(data.tipo)) return
+
+    try {
+      const lead = await this.getById(data.lead_id)
+      if (!lead) return
+
+      const cambios: { ultimo_contacto: string; estado?: Lead['estado'] } = {
+        ultimo_contacto: new Date().toISOString(),
+      }
+      if (debeAvanzarAContactado(lead.estado, data.tipo)) cambios.estado = 'contactado'
+
+      await this.sb.from('fact_leads').update(cambios).eq('id', data.lead_id)
+    } catch {
+      // La interaccion ya se guardo; que el lead quede sin mover es molesto
+      // pero recuperable a mano, y romper aqui haria creer que no se registro.
+    }
   }
 
   async insertarMuchos(leads: LeadInsert[]): Promise<{ inserted: number; errors: string[] }> {

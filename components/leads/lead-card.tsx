@@ -55,15 +55,33 @@ export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
             💬 {noLeidos}
           </span>
         )}
-        {lead.score && (
-          <span
-            className="flex items-center gap-0.5 text-[11px] shrink-0 font-medium"
-            style={{ color: 'oklch(74% 0.17 55)' }}
-          >
-            <Star size={10} fill="currentColor" />
-            {lead.score}
-          </span>
-        )}
+      </div>
+
+      {/*
+        El score de IA decide a quién llamar primero, así que va como cifra +
+        barra, no como un número perdido entre otros datos. Sin score no es
+        "cero" (eso se leería como "pésimo"): es un guion, porque significa
+        que todavía nadie lo calificó.
+      */}
+      <div className="flex items-center gap-1.5 mb-2">
+        <Star size={10} style={{ color: lead.score && lead.score >= 8 ? 'var(--tx-accent-2)' : 'var(--tx-ink-muted)' }} fill="currentColor" />
+        <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,.08)' }}>
+          {lead.score && (
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${(lead.score / 10) * 100}%`,
+                background: lead.score >= 8 ? 'var(--tx-accent)' : 'rgba(255,255,255,.34)',
+              }}
+            />
+          )}
+        </div>
+        <span
+          className="text-[11px] font-medium shrink-0 tabular-nums"
+          style={{ color: lead.score ? (lead.score >= 8 ? 'var(--tx-accent-2)' : 'var(--tx-ink-primary)') : 'var(--tx-ink-muted)' }}
+        >
+          {lead.score ?? '—'}
+        </span>
       </div>
 
       <div className="space-y-1 mb-2.5">
