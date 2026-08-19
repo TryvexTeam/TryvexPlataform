@@ -1,11 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageSquareIcon, PinIcon, PinOffIcon, ReplyIcon, SmilePlusIcon, Trash2Icon } from 'lucide-react'
+import { CopyIcon, MessageSquareIcon, PinIcon, PinOffIcon, ReplyIcon, SmilePlusIcon, Trash2Icon } from 'lucide-react'
 import { EMOJIS_RAPIDOS } from '@/lib/types/chat'
+import { copiarTexto } from '@/lib/utils/copiar-texto'
 
 interface AccionesMensajeProps {
   puedeBorrar: boolean
+  /** Texto del mensaje. `null` en un adjunto sin pie: entonces no hay qué copiar. */
+  contenido?: string | null
   fijado?: boolean
   onResponder: () => void
   onAbrirHilo: () => void
@@ -23,6 +26,7 @@ interface AccionesMensajeProps {
  */
 export function AccionesMensaje({
   puedeBorrar,
+  contenido,
   fijado,
   onResponder,
   onAbrirHilo,
@@ -86,6 +90,11 @@ export function AccionesMensaje({
       <Boton etiqueta="Abrir hilo" onClick={onAbrirHilo}>
         <MessageSquareIcon className="size-3.5" />
       </Boton>
+      {contenido && (
+        <Boton etiqueta="Copiar mensaje" onClick={() => void copiarTexto(contenido, 'Mensaje copiado')}>
+          <CopyIcon className="size-3.5" />
+        </Boton>
+      )}
       {onFijar && (
         <Boton etiqueta={fijado ? 'Dejar de fijar' : 'Fijar en la conversación'} onClick={onFijar}>
           {fijado ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}

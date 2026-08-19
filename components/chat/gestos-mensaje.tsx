@@ -1,11 +1,14 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { MessageSquareIcon, PinIcon, PinOffIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react'
+import { CopyIcon, MessageSquareIcon, PinIcon, PinOffIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { EMOJIS_RAPIDOS } from '@/lib/types/chat'
+import { copiarTexto } from '@/lib/utils/copiar-texto'
 
 interface GestosMensajeProps {
   puedeBorrar: boolean
+  /** Texto del mensaje. `null` en un adjunto sin pie: entonces no hay qué copiar. */
+  contenido?: string | null
   /** Si el mensaje ya está fijado, para saber si el gesto fija o desfija. */
   fijado?: boolean
   onResponder: () => void
@@ -39,6 +42,7 @@ const TOLERANCIA_MOVIMIENTO = 10
  */
 export function GestosMensaje({
   puedeBorrar,
+  contenido,
   fijado,
   onResponder,
   onAbrirHilo,
@@ -139,6 +143,7 @@ export function GestosMensaje({
       {menuAbierto && (
         <HojaAcciones
           puedeBorrar={puedeBorrar}
+          contenido={contenido}
           fijado={fijado}
           onCerrar={() => setMenuAbierto(false)}
           onResponder={onResponder}
@@ -154,6 +159,7 @@ export function GestosMensaje({
 
 function HojaAcciones({
   puedeBorrar,
+  contenido,
   fijado,
   onCerrar,
   onResponder,
@@ -163,6 +169,7 @@ function HojaAcciones({
   onFijar,
 }: {
   puedeBorrar: boolean
+  contenido?: string | null
   fijado?: boolean
   onCerrar: () => void
   onResponder: () => void
@@ -226,6 +233,16 @@ function HojaAcciones({
         <Fila icono={<MessageSquareIcon className="size-4.5" />} onClick={elegir(onAbrirHilo)}>
           Abrir hilo
         </Fila>
+        {/* Un adjunto sin pie no tiene texto que copiar, y una fila que no
+            hace nada es peor que no tenerla. */}
+        {contenido && (
+          <Fila
+            icono={<CopyIcon className="size-4.5" />}
+            onClick={elegir(() => void copiarTexto(contenido, 'Mensaje copiado'))}
+          >
+            Copiar mensaje
+          </Fila>
+        )}
         {onFijar && (
           <Fila
             icono={fijado ? <PinOffIcon className="size-4.5" /> : <PinIcon className="size-4.5" />}

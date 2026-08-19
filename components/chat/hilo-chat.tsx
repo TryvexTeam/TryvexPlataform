@@ -498,6 +498,7 @@ export function HiloChat({
               <GestosMensaje
                 key={m.id}
                 puedeBorrar={mio || soyAdmin}
+                contenido={m.contenido}
                 fijado={Boolean(m.fijado_at)}
                 onResponder={() => setCitando(m)}
                 onAbrirHilo={() => setHiloAbierto(m)}
@@ -607,6 +608,7 @@ export function HiloChat({
                     <span className="solo-puntero-fino">
                       <AccionesMensaje
                         puedeBorrar={mio || soyAdmin}
+                        contenido={m.contenido}
                         fijado={Boolean(m.fijado_at)}
                         onResponder={() => setCitando(m)}
                         onAbrirHilo={() => setHiloAbierto(m)}
