@@ -1350,3 +1350,37 @@
     transparent 1.5px 16px
   );
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Sileo adaptado al CRM
+ *
+ * La librería trae su propia paleta (verdes, azules y ámbares de Tailwind) que
+ * no es la de Tryvex: un toast con el verde de otra marca se lee como una
+ * pieza invitada. Aquí se reasignan sus variables a los tokens del sistema,
+ * así los toasts hablan el mismo idioma que el resto de la interfaz.
+ *
+ * Se sobreescriben variables públicas, no clases internas: la librería puede
+ * cambiar su markup entre versiones, pero estas variables son su contrato.
+ * ──────────────────────────────────────────────────────────────────────────── */
+:root {
+  --sileo-state-success: var(--tx-success);
+  --sileo-state-error:   var(--tx-error);
+  --sileo-state-warning: var(--tx-warning);
+  --sileo-state-info:    var(--tx-ink-secondary);
+  --sileo-state-loading: var(--tx-ink-muted);
+  /* Las confirmaciones con acción son lo único que se lleva el acento: es la
+     misma regla del panel — el rojo señala lo que hay que atender. */
+  --sileo-state-action:  var(--tx-accent-2);
+
+  /* Algo más ancho y alto que el original: el CRM manda mensajes con nombres
+     de empresa y montos, no solo "Guardado". */
+  --sileo-width: 380px;
+  --sileo-height: 46px;
+}
+
+/* El botón de acción del toast, con la misma forma que los del panel. */
+[data-sileo-toast] button {
+  border-radius: 999px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
