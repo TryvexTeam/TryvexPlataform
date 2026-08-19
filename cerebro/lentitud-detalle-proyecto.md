@@ -1,91 +1,84 @@
-# Investigación: la espera al abrir el detalle de un proyecto
+# La espera al abrir el detalle de un proyecto — resuelto
 
-> 2026-08-19. Abierta — falta el dato que la cierra. Ver "Qué falta" al final.
+> 2026-08-19. **Cerrado.** Causa encontrada y corregida en el PR #105,
+> verificado en el preview de Vercel.
 
-## El síntoma, según quien lo sufre
+## El síntoma
 
-Al entrar a un proyecto, el tablero tarda **más de medio minuto** en mostrar
-sus tarjetas. Pasa desde cualquier ruta, no solo desde el chat, y se repite:
-no es solo la primera vez tras un despliegue.
+Al entrar a un proyecto, la pantalla se quedaba vacía hasta medio minuto y de
+golpe aparecía todo. Desde cualquier ruta, no solo desde el chat, y de forma
+intermitente.
 
-Un matiz que llegó tarde y que cambia dónde hay que mirar: **lo que tarda no es
-llegar a la pantalla, son las tarjetas del pipeline**. La ruta abre; lo que se
-hace esperar es el contenido del tablero.
+## La causa
 
-## Lo que se descartó, con números
+**El contenido llegaba bien. Lo que fallaba era que se mostrara.**
+
+Medido en producción: el detalle del proyecto entra al DOM a los **1.002 ms**, y
+la capa de `PageTransition` sigue en **`opacity: 0`** en diez muestras
+consecutivas, más allá de los 5,5 s. Dentro de esa capa invisible ya estaban las
+seis tarjetas y el texto completo.
+
+`<AnimatePresence mode="wait">` hace que la entrada de la página nueva espere a
+que la anterior termine de salir. En el App Router, el router desmonta el
+contenido viejo y monta el nuevo por su cuenta, sin avisar a Framer Motion: la
+salida nunca llega a ejecutarse, la entrada se queda esperándola, y el elemento
+nuevo se queda plantado en su estado inicial.
+
+Es un problema conocido: [vercel/next.js#59349](https://github.com/vercel/next.js/discussions/59349),
+más las guías de [LogRocket](https://blog.logrocket.com/advanced-page-transitions-next-js-framer-motion/)
+y [Glance](https://glance.thyonix.com/blog/nextjs-page-transitions-app-router),
+que describen el mismo mecanismo y el mismo "stuck at opacity 0".
+
+Por qué encajaba todo:
+
+- **Recargar funcionaba siempre**: en una carga completa no hay página saliente
+  que esperar. Este fue el dato que señaló dónde mirar.
+- **Solo al cambiar de ruta**: es cuando `AnimatePresence` orquesta salida y
+  entrada.
+- **Se notaba más en un proyecto**: su contenido tarda más en llegar del
+  servidor, así que la desincronización es mayor. La animación depende de que la
+  base ya haya respondido.
+- **Intermitente**: según si la salida alcanzaba a completarse antes de que
+  llegara el contenido.
+
+## El arreglo (PR #105)
+
+La animación de página pasa a CSS. No hay nada que orquestar: arranca sola al
+montarse el elemento y termina sola, así que el peor caso posible es que no se
+anime, nunca que la página no se vea. Se pierde la animación de salida, que en
+el App Router no llegaba a verse igualmente.
+
+## Lo que se descartó por el camino, con números
 
 | Qué se midió | Resultado | Conclusión |
 |---|---|---|
-| Consulta de tareas del proyecto (`EXPLAIN ANALYZE`) | 0,18 ms, usa `tareas_proyecto_idx` | La base no es el cuello |
+| Consulta de tareas (`EXPLAIN ANALYZE`) | 0,18 ms, usa `tareas_proyecto_idx` | La base nunca fue el cuello |
 | Función `/proyectos/[id]` en Vercel | 316 ms | El servidor responde bien |
-| Middleware | 574 ms | Caro, pero lejos de 30 s |
-| Respuesta completa en Vercel | 1,2 s | El servidor entrega rápido |
-| `/login` en producción, 3 intentos | 0,22–0,54 s | La plataforma está sana |
-| Región de base y función | ambas en us-east-1 | No hay viaje entre continentes |
-| Entrar al proyecto en local (12 vueltas) | mediana 1,07 s | Estable |
-| Entrar al proyecto en producción (6 vueltas) | 886–1.098 ms | Estable |
+| Middleware | 574 ms | Caro, pero lejos del síntoma |
+| Respuesta completa en Vercel | 1,2 s | Entrega rápida |
+| `/login` en producción | 0,22–0,54 s | Plataforma sana |
+| Región de base y función | ambas en us-east-1 | Sin viaje entre continentes |
+| Entrar al proyecto, midiendo el DOM | ~300 ms | **Engañoso: medía el DOM, no lo visible** |
 
-**Nada de esto reprodujo los 30 segundos.** El único pico observado —20,7 s en
-local— apareció una sola vez y se explica por la compilación bajo demanda del
-modo desarrollo, que no existe en producción.
+Falsas pistas: las consultas repetidas cada 45 s son el repaso deliberado de
+`useDatosVivos`; la ambigüedad de claves foráneas de PostgREST no afectaba a
+esta página; la animación de entrada de las tarjetas dura ~0,2 s; el tablero no
+tiene guarda de montaje.
 
-Aviso sobre esas dos últimas filas: la medición esperaba a que apareciera el
-título de la columna **"Backlog"**, no las tarjetas. Como el síntoma real son
-las tarjetas, esos números dicen "la pantalla llega en ~1 s" pero **no** miden
-lo que el usuario está esperando. Hay que rehacerlas esperando el título de una
-tarea concreta.
+## Las tres lecciones
 
-## Falsas pistas descartadas
-
-- **Las consultas repetidas cada ~45 s** que aparecen en los logs de Supabase no
-  son un bucle: son el repaso de `useDatosVivos` (`lib/hooks/use-datos-vivos.ts`),
-  una red de seguridad deliberada por si el tiempo real falla en silencio. Solo
-  corre con la pestaña visible.
-- **Otro integrante conectado**: descartado, las consultas llevan el id del
-  proyecto que estaba abierto.
-- **Ambigüedad de claves foráneas en PostgREST** (antecedente real en este
-  repo): las FK añadidas en el #103 no afectan a las consultas de esta página.
-- **La animación de entrada de las tarjetas**: `staggerChildren` de 0,03 s con
-  muelle 350/25. Con seis tareas son ~0,2 s.
-- **Guarda de montaje en el tablero**: no existe; el tablero no espera a
-  hidratar para pintarse.
-
-## Lo que sí se corrigió por el camino
-
-`app/(app)/layout.tsx` hacía **cuatro idas a la base encadenadas** en cada
-navegación y en cada refresco automático, y dos de ellas pedían la **misma
-fila** de `dim_integrantes`. Quedó en `getUser` más dos consultas en paralelo
-(PR #104, ya en `main`). El señor Ignacio notó mejora tras desplegarlo.
-
-Es una mejora buena por sí misma, pero **no es el arreglo del síntoma**: actúa
-sobre los ~900 ms de servidor, y la espera que se ve son decenas de segundos.
-
-## Sospechas vivas, por orden
-
-1. **Las tarjetas, no la ruta.** Medir hasta que aparezca el texto de una tarea
-   real. Si la pantalla llega en 1 s y las tarjetas en 30, el problema está
-   entre la hidratación de `TareasKanban` y el primer pintado de las tarjetas.
-2. **Peso del JS.** 466 KB en 36 archivos en esa pantalla; el tablero arrastra
-   dnd-kit y framer-motion. En un equipo cargado, parsear y ejecutar eso puede
-   dominar el tiempo. El LCP medido por el usuario fue 20,61 s con INP de 56 ms:
-   responde bien una vez está, lo que tarda es llegar a pintarlo.
-3. **`router.refresh()` y la caché del router.** El repaso de 45 s invalida la
-   caché del router de Next, así que volver a una ruta nunca se sirve de caché
-   y siempre va al servidor.
-
-## Qué falta para cerrarla
-
-Una de estas dos, y basta:
-
-- **Del navegador de quien lo sufre**, cuando esté ocurriendo: F12 → Network →
-  ordenar por Time → nombre y duración de la fila de arriba. Distingue de
-  inmediato entre esperar el documento, esperar un `.js` o una petición colgada.
-- **Una grabación de la pestaña Performance** durante la espera, que diría si el
-  hilo principal está bloqueado.
+1. **Medir que un elemento está en el DOM no es medir que se ve.** Durante horas
+   las mediciones dieron 300 ms mientras el usuario esperaba 30 segundos, porque
+   se comprobaba `innerText` y no la opacidad computada. La pregunta correcta
+   era "¿lo ve un humano?", no "¿existe el nodo?".
+2. **El dato que cerró el caso lo dio el usuario**: *"si recargas funciona
+   perfecto, es solo cuando vas de una ruta a otra"*. Esa frase descartó de un
+   golpe servidor, base y datos, y dejó una sola familia de causas.
+3. **Buscar documentación antes de teorizar.** El problema estaba descrito en la
+   discusión oficial de Next.js con el mismo síntoma literal. Media hora de
+   hipótesis se habría ahorrado con una búsqueda al principio.
 
 ## Cómo entrar a la app para medir, sin credenciales
-
-Sirve para reproducir en local o en producción sin pedir contraseñas:
 
 1. Generar un enlace de recuperación con la API de administración, usando
    `SUPABASE_SERVICE_ROLE_KEY` de `.env.local`:
@@ -97,7 +90,34 @@ Sirve para reproducir en local o en producción sin pedir contraseñas:
 
 No crea usuarios ni escribe datos. **Borrar el token del disco al terminar.**
 
-`BYPASS_AUTH=true` no sirve para esto: inventa un usuario sin autenticar contra
-Supabase, así que la RLS rechaza todas las consultas con
-`permission denied for table dim_integrantes`. Además el middleware solo lo
-acepta fuera de producción, así que `next start` lo ignora.
+`BYPASS_AUTH=true` no sirve: inventa un usuario sin autenticar contra Supabase,
+así que la RLS rechaza todo con `permission denied for table dim_integrantes`.
+Además el middleware solo lo acepta fuera de producción.
+
+## Sonda para medir esto en el navegador de cualquiera
+
+Pegar en la consola, navegar, y leer la línea roja de cada entrada:
+
+```js
+(() => {
+  let t0 = performance.now(), esperando = false, ruta = location.pathname
+  const revisar = () => {
+    if (location.pathname !== ruta) {
+      ruta = location.pathname
+      if (ruta.startsWith('/proyectos/')) { t0 = performance.now(); esperando = true }
+    }
+    const capa = document.querySelector('main div.h-full')
+    const visible = capa && Number(getComputedStyle(capa).opacity) > 0.9
+    if (esperando && visible && document.body.innerText.includes('Costo total')) {
+      esperando = false
+      console.log('%c VISIBLE EN ' + Math.round(performance.now() - t0) + ' ms ',
+        'background:#e8352a;color:#fff;font-size:14px')
+    }
+    requestAnimationFrame(revisar)
+  }
+  revisar()
+})()
+```
+
+Nótese que comprueba **opacidad**, no solo presencia en el DOM. Ese fue el
+error de las primeras mediciones.
