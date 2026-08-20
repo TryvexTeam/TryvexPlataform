@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
   const cuerpo = await req.json()
   const result = ProyectoInsertSchema.safeParse(cuerpo)
-  if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const equipo = EquipoSchema.safeParse(cuerpo?.integrantes_ids)
   if (!equipo.success) {

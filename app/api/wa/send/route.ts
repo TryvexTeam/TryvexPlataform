@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => null)
   const parsed = bodySchema.safeParse(raw)
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
   const { lead_id, texto } = parsed.data
 

@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   const body = await req.json()
   const result = TareaInsertSchema.safeParse(body)
   if (!result.success) {
-    return NextResponse.json({ error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   try {

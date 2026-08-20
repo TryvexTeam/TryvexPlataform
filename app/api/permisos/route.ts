@@ -39,7 +39,7 @@ export async function PATCH(req: NextRequest) {
 
   const result = ActualizarPermisosSchema.safeParse(await req.json())
   if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ success: false, error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   const { integrante_id, ...cambios } = result.data

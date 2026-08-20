@@ -13,7 +13,7 @@ export async function PATCH(
   if (!user) return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
 
   const result = VentaUpdateSchema.safeParse(await req.json())
-  if (!result.success) return NextResponse.json({ success: false, error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ success: false, error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const repo = new PagosRepository(supabase)
   await repo.update(id, result.data)

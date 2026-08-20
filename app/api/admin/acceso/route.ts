@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   const cuerpo = await req.json().catch(() => null)
   const parsed = CambiarAccesoSchema.safeParse(cuerpo)
   if (!parsed.success) {
-    return NextResponse.json({ success: false, error: parsed.error.issues }, { status: 400 })
+    return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
   const { integrante_id, activo, motivo } = parsed.data
 

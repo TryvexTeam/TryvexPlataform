@@ -17,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params
   const cuerpo = await req.json()
   const result = ProyectoUpdateSchema.safeParse(cuerpo)
-  if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const equipo = EquipoSchema.safeParse(cuerpo?.integrantes_ids)
   if (!equipo.success) {

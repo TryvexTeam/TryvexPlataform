@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
   const result = ClienteInsertSchema.safeParse(await req.json())
-  if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const repo = new ClientesRepository(supabase)
   const id = await repo.create(result.data)

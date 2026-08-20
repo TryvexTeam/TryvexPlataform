@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
     const body = await req.json()
     const result = CrearInvitacionSchema.safeParse(body)
-    if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+    if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
     const { email, enviarEmail } = result.data
     const { invitacion, tokenRaw } = await crearInvitacion(supabase, email, integrante.id)

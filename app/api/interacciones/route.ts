@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
   const body = await req.json()
   const result = Schema.safeParse(body)
-  if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
   if (!perfil) {

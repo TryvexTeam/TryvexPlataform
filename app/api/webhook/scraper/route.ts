@@ -31,7 +31,7 @@ export async function POST(req: Request) {
 
   const result = PayloadSchema.safeParse(body)
   if (!result.success) {
-    return NextResponse.json({ error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   // Webhook usa service role key — no necesita sesión de usuario

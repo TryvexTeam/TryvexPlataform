@@ -10,7 +10,7 @@ export async function POST(req: Request) {
 
   const body = await req.json()
   const result = LeadInsertSchema.safeParse(body)
-  if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const repo = new LeadsRepository(supabase)
   const id = await repo.create(result.data)
