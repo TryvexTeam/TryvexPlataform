@@ -905,7 +905,9 @@ export function CalendarioSemana() {
             explica qué hace, en vez de flechas tipográficas sueltas en el texto. */}
         <span
           style={{
-            display: 'inline-flex',
+            // El `display` NO va acá: el className ya trae `hidden md:inline-flex`,
+            // y un `display` inline pisa siempre a la clase — por eso se veía en
+            // el teléfono a pesar de `hidden` (el inline style ganaba siempre).
             alignItems: 'center',
             gap: '5px',
             fontSize: '11px',
