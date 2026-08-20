@@ -265,6 +265,12 @@ export function HiloChat({
     if (reaccionesEnVuelo.current.has(clave)) return
     reaccionesEnVuelo.current.add(clave)
 
+    // El popover lista nombres reales que vienen del servidor (join con
+    // dim_integrantes) -- nunca dice "Tú". Filtrar por ese string literal no
+    // encontraba nada al sacar la reacción y el nombre propio quedaba pegado
+    // en la lista para siempre.
+    const miNombre = porId.get(miIntegranteId)?.nombre ?? 'Tú'
+
     // Lo que el usuario quiso hacer, leído de la píldora que efectivamente tocó.
     const queriaPoner = !(mensaje.reacciones ?? []).find((r) => r.emoji === emoji)?.mia
 
@@ -285,7 +291,7 @@ export function HiloChat({
         if (!existente) {
           return {
             ...m,
-            reacciones: [...actuales, { emoji, cuenta: 1, mia: true, quienes: ['Tú'] }],
+            reacciones: [...actuales, { emoji, cuenta: 1, mia: true, quienes: [miNombre] }],
           }
         }
 
@@ -301,7 +307,7 @@ export function HiloChat({
               // El contador solo no alcanza: si "Tú" entra o sale, la lista de
               // nombres del popover tiene que moverse con él o queda mintiendo
               // sobre quién reaccionó.
-              quienes: yoAhora ? [...r.quienes, 'Tú'] : r.quienes.filter((n) => n !== 'Tú'),
+              quienes: yoAhora ? [...r.quienes, miNombre] : r.quienes.filter((n) => n !== miNombre),
             }
           }),
         }
