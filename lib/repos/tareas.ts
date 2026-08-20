@@ -303,14 +303,20 @@ export class TareasRepository {
     if (error) throw new Error(error.message)
   }
 
+  /**
+   * Reemplaza los responsables de la tarea en un solo paso atómico.
+   *
+   * Antes era delete() + insert() como dos llamadas de PostgREST: si el insert
+   * fallaba, la tarea quedaba sin nadie asignado y sin rollback. `set_tarea_responsables`
+   * (migración 063) hace ambas dentro de la misma transacción SQL.
+   */
   async setResponsables(tareaId: string, integranteIds: string[]): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = this.supabase as any
-    await sb.from('tarea_responsables').delete().eq('tarea_id', tareaId)
-    if (integranteIds.length === 0) return
-    const { error } = await sb.from('tarea_responsables').insert(
-      integranteIds.map((id) => ({ tarea_id: tareaId, integrante_id: id }))
-    )
+    const { error } = await sb.rpc('set_tarea_responsables', {
+      p_tarea_id: tareaId,
+      p_integrante_ids: integranteIds,
+    })
     if (error) throw new Error(error.message)
   }
 

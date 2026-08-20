@@ -15,12 +15,20 @@ export class PermisosRepository {
     this.sb = supabase as SB
   }
 
-  /** Permisos de quien está usando la app. null si no es integrante. */
+  /**
+   * Permisos de quien está usando la app. null si no es integrante ACTIVO.
+   *
+   * Sin este filtro, alguien dado de baja pero cuya sesión sigue viva conservaba
+   * es_superadmin/ver_finanzas/gestionar_finanzas en las rutas que consultan esta
+   * función en vez de IntegrantesRepository.getByAuthUser() (que sí filtra
+   * activo). Ver migración 062: mismo hueco existía en soy_superadmin()/tengo_permiso().
+   */
   async misPermisos(authUserId: string): Promise<IntegrantePermisos | null> {
     const { data, error } = await this.sb
       .from('dim_integrantes')
       .select(CAMPOS)
       .eq('auth_user_id', authUserId)
+      .eq('activo', true)
       .maybeSingle()
     if (error) throw new Error(error.message)
     return (data as IntegrantePermisos) ?? null

@@ -21,6 +21,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
 
   const repo = new LeadsRepository(supabase)
-  await repo.cambiarEstado(id, result.data.estado)
+  await repo.cambiarEstado(id, result.data.estado, result.data.razon_perdida)
   return NextResponse.json({ ok: true })
 }

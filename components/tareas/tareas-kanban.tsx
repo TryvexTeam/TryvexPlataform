@@ -96,6 +96,16 @@ export function TareasKanban({
   }))
 
   async function cambiarEstado(itemId: string, estado: EstadoTarea) {
+    // Se guarda el estado previo de ESTA tarjeta nada más: revertir a
+    // `initialTareas` entero pisaba cambios de OTRAS tarjetas ya confirmados
+    // en el servidor mientras esta petición estaba en vuelo.
+    //
+    // El revert solo pisa si la tarjeta SIGUE mostrando el valor optimista que
+    // puso ESTA llamada (`t.estado === estado`): dos drags rápidos sobre la
+    // misma tarjeta (ej. A→B, después B→C con la respuesta de A→B llegando
+    // tarde y fallando) no deben hacer que el fallo del primero borre el
+    // resultado ya confirmado del segundo.
+    const anterior = tareas.find((t) => t.id === itemId)
     setTareas((prev) => prev.map((t) => (t.id === itemId ? { ...t, estado } : t)))
     const res = await fetch(`/api/tareas/${itemId}/estado`, {
       method: 'PATCH',
@@ -104,15 +114,21 @@ export function TareasKanban({
     })
     if (!res.ok) {
       toast.error('Error al mover la tarea')
-      setTareas(initialTareas)
+      if (anterior) {
+        setTareas((prev) =>
+          prev.map((t) => (t.id === itemId && t.estado === estado ? anterior : t))
+        )
+      }
     }
   }
 
   // No borra nada: solo marca eliminado_at (ver migracion 050) y la saca del
   // tablero. Restaurar y borrar definitivo viven en el panel de la papelera.
   async function moverAPapelera(itemId: string) {
+    const anterior = tareas.find((t) => t.id === itemId)
+    const marcaOptimista = new Date().toISOString()
     setTareas((prev) =>
-      prev.map((t) => (t.id === itemId ? { ...t, eliminado_at: new Date().toISOString() } : t))
+      prev.map((t) => (t.id === itemId ? { ...t, eliminado_at: marcaOptimista } : t))
     )
     const res = await fetch(`/api/tareas/${itemId}/papelera`, {
       method: 'PATCH',
@@ -121,7 +137,11 @@ export function TareasKanban({
     })
     if (!res.ok) {
       toast.error('Error al mover la tarea a la papelera')
-      setTareas(initialTareas)
+      if (anterior) {
+        setTareas((prev) =>
+          prev.map((t) => (t.id === itemId && t.eliminado_at === marcaOptimista ? anterior : t))
+        )
+      }
       return
     }
     setPapeleraDropCount((n) => n + 1)
@@ -140,6 +160,7 @@ export function TareasKanban({
   }
 
   async function handleRestaurar(id: string, estado?: EstadoTarea) {
+    const anterior = tareas.find((t) => t.id === id)
     setTareas((prev) =>
       prev.map((t) => (t.id === id ? { ...t, eliminado_at: null, ...(estado ? { estado } : {}) } : t))
     )
@@ -150,7 +171,13 @@ export function TareasKanban({
     })
     if (!res.ok) {
       toast.error('Error al restaurar la tarea')
-      setTareas(initialTareas)
+      // Solo revierte si sigue "restaurada" (eliminado_at null): si mientras
+      // tanto otra acción ya la movió de nuevo a la papelera, esa es la que manda.
+      if (anterior) {
+        setTareas((prev) =>
+          prev.map((t) => (t.id === id && t.eliminado_at === null ? anterior : t))
+        )
+      }
       return
     }
     toast.success('Tarea restaurada')
@@ -158,11 +185,22 @@ export function TareasKanban({
 
   async function handleEliminarDefinitivo(id: string) {
     if (!confirm('¿Eliminar esta tarea para siempre? No se puede deshacer.')) return
+    const anterior = tareas.find((t) => t.id === id)
+    const indice = tareas.findIndex((t) => t.id === id)
     setTareas((prev) => prev.filter((t) => t.id !== id))
     const res = await fetch(`/api/tareas/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       toast.error('Error al eliminar la tarea')
-      setTareas(initialTareas)
+      // Solo la reinserta si sigue ausente: si mientras tanto otra acción ya
+      // la trajo de vuelta (poco probable con el item borrado, pero por las dudas).
+      if (anterior) {
+        setTareas((prev) => {
+          if (prev.some((t) => t.id === id)) return prev
+          const copia = [...prev]
+          copia.splice(indice, 0, anterior)
+          return copia
+        })
+      }
       return
     }
     toast.success('Tarea eliminada para siempre')

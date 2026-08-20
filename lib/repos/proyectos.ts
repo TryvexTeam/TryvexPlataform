@@ -152,22 +152,18 @@ export class ProyectosRepository {
    * Borra y reinserta en vez de calcular el diferencial: son unas pocas filas
    * por proyecto y el diferencial solo añadiría ocasiones de equivocarse.
    */
+  /**
+   * Reemplaza el equipo del proyecto en un solo paso atómico.
+   *
+   * Antes era delete() + insert() como dos llamadas de PostgREST: si el insert
+   * fallaba, el proyecto quedaba sin equipo y sin rollback. `set_proyecto_equipo`
+   * (migración 063) hace ambas dentro de la misma transacción SQL.
+   */
   async fijarEquipo(proyectoId: string, integranteIds: string[]): Promise<void> {
-    const { error: errorBorrado } = await this.sb
-      .from('proyecto_integrantes')
-      .delete()
-      .eq('proyecto_id', proyectoId)
-    if (errorBorrado) throw new Error(errorBorrado.message)
-
-    if (integranteIds.length === 0) return
-
-    // `Set` porque el formulario podría mandar un id repetido y la clave
-    // primaria compuesta rechazaría el insert entero por una fila duplicada.
-    const filas = [...new Set(integranteIds)].map((integrante_id) => ({
-      proyecto_id: proyectoId,
-      integrante_id,
-    }))
-    const { error } = await this.sb.from('proyecto_integrantes').insert(filas)
+    const { error } = await this.sb.rpc('set_proyecto_equipo', {
+      p_proyecto_id: proyectoId,
+      p_integrante_ids: integranteIds,
+    })
     if (error) throw new Error(error.message)
   }
 
