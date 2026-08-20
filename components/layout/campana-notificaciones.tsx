@@ -68,7 +68,10 @@ export function CampanaNotificaciones({ noLeidas, abierto = false }: CampanaNoti
             rounded-full px-1 text-[10px] font-semibold tabular-nums"
           style={{
             background: 'var(--tx-accent)',
-            color: '#ffffff',
+            // Contraste calculado contra el acento, no blanco fijo: con un
+            // acento claro (p. ej. el tema "Modo Minimalista") el número
+            // quedaba invisible sobre su propio fondo.
+            color: 'var(--tx-accent-fg)',
             // Un aro del color del fondo separa el badge del icono sin
             // dibujarle un borde que compita con el acento.
             boxShadow: '0 0 0 2px var(--tx-bg-primary)',
