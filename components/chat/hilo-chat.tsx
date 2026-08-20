@@ -67,6 +67,11 @@ export function HiloChat({
   const [fijadosAbiertos, setFijadosAbiertos] = useState(false)
   const finRef = useRef<HTMLDivElement>(null)
   const cajaRef = useRef<HTMLTextAreaElement>(null)
+  // Clicks repetidos en la misma píldora antes de que responda el servidor
+  // disparaban dos POST concurrentes: el toggle del servidor es leer-y-actuar,
+  // no atómico, así que el segundo veía el mismo estado que el primero y
+  // llegaba tarde a la DB -- 403. Se bloquea acá, no en el servidor.
+  const reaccionesEnVuelo = useRef<Set<string>>(new Set())
   const archivosRef = useRef<HTMLInputElement>(null)
 
   const { llamar, conversacionActiva } = useLlamadas()
@@ -256,6 +261,10 @@ export function HiloChat({
    * resultado no fue el que se pintó, hay que volver atrás y decirlo.
    */
   const alternarReaccion = async (mensaje: Mensaje, emoji: string) => {
+    const clave = `${mensaje.id}:${emoji}`
+    if (reaccionesEnVuelo.current.has(clave)) return
+    reaccionesEnVuelo.current.add(clave)
+
     // Lo que el usuario quiso hacer, leído de la píldora que efectivamente tocó.
     const queriaPoner = !(mensaje.reacciones ?? []).find((r) => r.emoji === emoji)?.mia
 
@@ -314,6 +323,8 @@ export function HiloChat({
     } catch (err) {
       setMensajes((previos) => aplicar(previos, true))
       toast.error(err instanceof Error ? err.message : 'Error al reaccionar')
+    } finally {
+      reaccionesEnVuelo.current.delete(clave)
     }
   }
 
