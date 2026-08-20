@@ -87,9 +87,19 @@ export function NuevaNota({ entidades, onCreada, children }: NuevaNotaProps) {
               onChange={(e) => setClave(e.target.value)}
               className="w-full h-9 rounded-md border border-neutral-200 px-3 text-sm bg-transparent"
             >
-              <option value="equipo">Equipo (general)</option>
+              {/* La lista desplegable de un <select> nativo la pinta el sistema
+                  operativo con fondo blanco, sin importar el tema de la app —
+                  bg-transparent solo alcanza al control cerrado. Sin un color
+                  de texto explícito, las opciones heredaban el gris claro
+                  pensado para el fondo oscuro del modal y quedaban casi
+                  invisibles sobre ese blanco nativo. */}
+              <option value="equipo" className="text-neutral-900">Equipo (general)</option>
               {entidades.map((e) => (
-                <option key={`${e.entidad_tipo}:${e.entidad_id}`} value={`${e.entidad_tipo}:${e.entidad_id}`}>
+                <option
+                  key={`${e.entidad_tipo}:${e.entidad_id}`}
+                  value={`${e.entidad_tipo}:${e.entidad_id}`}
+                  className="text-neutral-900"
+                >
                   {ENTIDAD_LABEL[e.entidad_tipo as keyof typeof ENTIDAD_LABEL] ?? e.entidad_tipo} — {e.entidad_nombre}
                 </option>
               ))}

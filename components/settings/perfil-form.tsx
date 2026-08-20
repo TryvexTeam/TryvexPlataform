@@ -218,20 +218,22 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                 <Switch checked={h.activo} onCheckedChange={(v) => setDia(dia, { activo: v })} />
                 <span className="w-9 font-medium text-[var(--tx-ink-secondary)]">{DIAS_SEMANA[dia]}</span>
                 {h.activo ? (
+                  // Sin ancho fijo: el selector trae ícono + input + botón de
+                  // quitar hora, más ancho que los 104px que tenía este
+                  // contenedor — el contenido quedaba apretado. Se lo deja
+                  // ajustarse a su tamaño natural en vez de adivinar un número.
                   <div className="flex items-center gap-1.5">
-                    <div className="w-[104px]">
-                      <SelectorHora
-                        value={h.bloques[0]?.inicio ?? '10:00'}
-                        onChange={(v) => setBloque(dia, 0, 'inicio', v)}
-                      />
-                    </div>
+                    <SelectorHora
+                      value={h.bloques[0]?.inicio ?? '10:00'}
+                      onChange={(v) => setBloque(dia, 0, 'inicio', v)}
+                      ancho="compacto"
+                    />
                     <span className="text-[var(--tx-ink-muted)]">—</span>
-                    <div className="w-[104px]">
-                      <SelectorHora
-                        value={h.bloques[0]?.fin ?? '18:00'}
-                        onChange={(v) => setBloque(dia, 0, 'fin', v)}
-                      />
-                    </div>
+                    <SelectorHora
+                      value={h.bloques[0]?.fin ?? '18:00'}
+                      onChange={(v) => setBloque(dia, 0, 'fin', v)}
+                      ancho="compacto"
+                    />
                   </div>
                 ) : (
                   <span className="text-xs text-[var(--tx-ink-muted)]">Offline</span>

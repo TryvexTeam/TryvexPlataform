@@ -100,6 +100,12 @@ function applyTheme(t: ThemeTokens) {
   root.style.setProperty('--primary', t.accentColor)
   root.style.setProperty('--primary-foreground', accentFg)
   root.style.setProperty('--accent', t.accentColor)
+  // --accent-foreground quedaba fijo en casi-blanco (pensado para el rojo
+  // Tryvex por defecto): con un acento claro (p. ej. blanco en "Modo
+  // Minimalista"), el texto resaltado de <Select>/<DropdownMenu> —que usan
+  // este token genérico de shadcn, no --tx-accent-fg— se volvía invisible al
+  // pasar el mouse o seleccionar una opción.
+  root.style.setProperty('--accent-foreground', accentFg)
   root.style.setProperty('--sidebar-primary', t.accentColor)
 
   root.style.setProperty('--tx-glow-color', hexToRgba(t.glowColor, 0.35 * intensity))

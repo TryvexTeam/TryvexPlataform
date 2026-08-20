@@ -92,6 +92,32 @@ function tipoColor(tipo: TipoEvento): string {
   return TIPOS_EVENTO.find((t) => t.id === tipo)?.color ?? '#a78bfa'
 }
 
+/** Una tecla del aviso de atajos, como una keycap chica. */
+function Tecla({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: '16px',
+        height: '16px',
+        padding: '0 4px',
+        borderRadius: '4px',
+        border: '1px solid rgba(255,255,255,0.14)',
+        background: 'rgba(255,255,255,0.05)',
+        fontFamily: 'inherit',
+        fontSize: '10px',
+        fontWeight: 600,
+        lineHeight: 1,
+        color: 'var(--tx-ink-secondary)',
+      }}
+    >
+      {children}
+    </kbd>
+  )
+}
+
 /** Hora efectiva en el día extendido: 0:00-1:59 cuentan como 24-25.x del día anterior */
 function horaExtendida(d: Date): number {
   const h = d.getHours()
@@ -731,8 +757,6 @@ export function CalendarioSemana() {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '38px',
-    height: '38px',
     border: 'none',
     borderRadius: '999px',
     background: 'transparent',
@@ -760,14 +784,11 @@ export function CalendarioSemana() {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '7px',
-    height: '40px',
-    padding: '0 16px',
     border: '1px solid rgba(255,255,255,0.09)',
     borderRadius: '999px',
     background: 'transparent',
     color: 'var(--tx-ink-secondary)',
     cursor: 'pointer',
-    fontSize: '13px',
     fontWeight: 500,
     transition: 'background 0.15s, color 0.15s',
     userSelect: 'none',
@@ -821,6 +842,7 @@ export function CalendarioSemana() {
         <div style={grupoNav}>
           <button
             type="button"
+            className="w-[38px] h-[38px] md:w-10 md:h-10"
             style={navBtn}
             onClick={prevWeek}
             aria-label="Semana anterior"
@@ -837,6 +859,7 @@ export function CalendarioSemana() {
           </button>
           <button
             type="button"
+            className="w-[38px] h-[38px] md:w-10 md:h-10"
             style={navBtn}
             onClick={nextWeek}
             aria-label="Semana siguiente"
@@ -858,6 +881,7 @@ export function CalendarioSemana() {
             en qué semana estás; uno encendido lo dice de frente. */}
         <button
           type="button"
+          className="h-10 px-4 text-[13px] md:h-11 md:px-5 md:text-sm"
           style={{
             ...chip,
             ...(todayBtnDisabled
@@ -876,17 +900,27 @@ export function CalendarioSemana() {
           Hoy
         </button>
 
-        {/* Keyboard shortcuts hint (desktop only) */}
+        {/* Aviso de atajos de teclado (solo desktop). Cada tecla en su propia
+            "cápsula" — igual que un atajo de menú — separada de la frase que
+            explica qué hace, en vez de flechas tipográficas sueltas en el texto. */}
         <span
           style={{
-            fontSize: '10.5px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '11px',
             color: 'var(--tx-ink-muted)',
             marginLeft: '4px',
             whiteSpace: 'nowrap',
           }}
-          className="hidden md:block"
+          className="hidden md:inline-flex"
         >
-          ← → semanas · T hoy
+          <Tecla>←</Tecla>
+          <Tecla>→</Tecla>
+          cambia de semana
+          <span style={{ opacity: 0.4 }}>·</span>
+          <Tecla>T</Tecla>
+          hoy
         </span>
 
         {/* Un chip que se enciende, no un interruptor con etiqueta al lado.
@@ -898,6 +932,7 @@ export function CalendarioSemana() {
           type="button"
           role="switch"
           aria-checked={showDisp}
+          className="h-10 px-4 text-[13px] md:h-11 md:px-5 md:text-sm"
           onClick={() => setShowDisp((v) => !v)}
           style={{
             ...chip,
@@ -1038,7 +1073,10 @@ export function CalendarioSemana() {
       <div
         ref={gridScrollRef}
         style={{
-          maxHeight: 'calc(100vh - 320px)',
+          // Sin tope de alto: el calendario crece completo, como "Mi
+          // disponibilidad", y es la página la que scrollea para verlo
+          // entero. `overflow: auto` queda solo por el scroll HORIZONTAL de
+          // días en móvil (scroll-snap de abajo).
           overflow: 'auto',
           overscrollBehaviorX: 'contain',
           scrollSnapType: semanaCompleta ? undefined : 'x mandatory',
@@ -1057,11 +1095,12 @@ export function CalendarioSemana() {
             userSelect: 'none',
           }}
         >
-          {/* Gutter header with timezone — esquina: fija arriba y a la izquierda */}
+          {/* Gutter header with timezone — esquina: fija a la izquierda (para
+              deslizar días en móvil). Sin `top: 0`: el scroll vertical es el
+              de la página, no el de este contenedor. */}
           <div
             style={{
               position: 'sticky',
-              top: 0,
               left: 0,
               zIndex: 30,
               background: 'rgba(10,10,12,0.92)',
@@ -1095,8 +1134,6 @@ export function CalendarioSemana() {
               <div
                 key={`dh-${i}`}
                 style={{
-                  position: 'sticky',
-                  top: 0,
                   zIndex: 20,
                   background: 'rgba(10,10,12,0.92)',
                   backdropFilter: 'blur(8px)',
@@ -1208,7 +1245,10 @@ export function CalendarioSemana() {
                       borderBottom: '1px solid rgba(255,255,255,0.06)',
                       boxSizing: 'border-box',
                       position: 'relative',
-                      top: '-6px',
+                      // Centrado sobre la línea divisoria — salvo la primera
+                      // hora: sin fila anterior de la que "robar" esos 6px,
+                      // se metía debajo de la cabecera y quedaba cortada.
+                      top: h === HORA_MIN ? '0px' : '-6px',
                       /* `tabular-nums` basta para que las horas queden en
                          columna; el monospace además cambiaba de familia
                          tipográfica a media pantalla, y la regleta es
@@ -1385,15 +1425,35 @@ export function CalendarioSemana() {
                     </div>
                   )}
 
-                  {/* Event blocks */}
+                  {/* Event blocks — un ícono de tamaño fijo, no una caja que
+                      estira con la duración: un evento de 20 min y uno de 2
+                      horas se veían igual de "grandes" antes, y el título +
+                      hora apretados en 20 min quedaban cortados y chocaban con
+                      el bloque de al lado. El nombre y el horario completo
+                      viven en el tooltip nativo (mouse encima) y en el
+                      popover de detalle (clic) — no en el ícono. */}
                   {laid.map((item) => {
                     const color = tipoColor(item.ev.tipo)
-                    const width = `calc(${100 / item.totalCols}% - 4px)`
-                    const left = `calc(${(item.col / item.totalCols) * 100}% + 2px)`
+                    // Reserva a la izquierda para las líneas de disponibilidad
+                    // (una por integrante libre esa hora): antes el ícono las
+                    // tapaba de lleno. Solo aplica cuando el evento ocupa toda
+                    // la columna del día — con dos eventos simultáneos ya se
+                    // reparten el ancho y no llegan a pisar el margen.
+                    const reservaDisp = item.totalCols === 1 ? 34 : 0
+                    const width =
+                      item.totalCols === 1
+                        ? `calc(100% - ${reservaDisp + 4}px)`
+                        : `calc(${100 / item.totalCols}% - 4px)`
+                    const left =
+                      item.totalCols === 1
+                        ? `${reservaDisp}px`
+                        : `calc(${(item.col / item.totalCols) * 100}% + 2px)`
+                    const etiquetaTipo = TIPOS_EVENTO.find((t) => t.id === item.ev.tipo)?.label ?? ''
                     return (
                       <div
                         key={item.ev.id}
                         data-event-block="true"
+                        title={`${item.ev.titulo} · ${etiquetaTipo} · ${hhmm(new Date(item.ev.inicio))}–${hhmm(new Date(item.ev.fin))}`}
                         onClick={(e) => {
                           e.stopPropagation()
                           setDetailEvento(item.ev)
@@ -1401,47 +1461,45 @@ export function CalendarioSemana() {
                         }}
                         style={{
                           position: 'absolute',
-                          top: `${item.top}px`,
+                          top: `${item.top + 2}px`,
                           left,
                           width,
-                          height: `${item.height}px`,
-                          minHeight: '24px',
-                          background: `color-mix(in srgb, ${color} 22%, transparent)`,
-                          /* La banda de color va por `box-shadow` interior y no
-                             por `border-left`: un borde real come 3 px del
-                             ancho, y con dos eventos a la misma hora las cajas
-                             quedaban desalineadas entre sí. */
-                          boxShadow: `inset 3px 0 0 ${color}`,
-                          borderRadius: '10px',
-                          padding: '4px 8px',
+                          height: '20px',
+                          background: `color-mix(in srgb, ${color} 26%, transparent)`,
+                          boxShadow: `inset 0 0 0 1px ${color}`,
+                          borderRadius: '6px',
+                          padding: '0 6px',
                           overflow: 'hidden',
                           cursor: 'pointer',
                           zIndex: 5,
                           display: 'flex',
-                          flexDirection: 'column',
-                          gap: '1px',
-                          transition: 'background 140ms, box-shadow 140ms, transform 140ms',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'background 140ms, box-shadow 140ms',
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 34%, transparent)`
-                          e.currentTarget.style.boxShadow = `inset 3px 0 0 ${color}, 0 6px 18px rgba(0,0,0,0.45)`
-                          /* Un pelo hacia arriba, no un `scale`: escalar un
-                             bloque posicionado en una rejilla horaria lo
-                             desalinea de su franja. */
-                          e.currentTarget.style.transform = 'translateY(-1px)'
+                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 40%, transparent)`
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 22%, transparent)`
-                          e.currentTarget.style.boxShadow = `inset 3px 0 0 ${color}`
-                          e.currentTarget.style.transform = 'none'
+                          e.currentTarget.style.background = `color-mix(in srgb, ${color} 26%, transparent)`
                         }}
                       >
                         <span
+                          aria-hidden="true"
                           style={{
-                            fontSize: '12px',
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: color,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: '10.5px',
                             fontWeight: 600,
-                            color: `color-mix(in oklab, ${color} 60%, white)`,
-                            lineHeight: '1.2',
+                            color: 'var(--tx-ink-primary)',
+                            lineHeight: 1,
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -1449,70 +1507,9 @@ export function CalendarioSemana() {
                         >
                           {item.ev.titulo}
                         </span>
-                         <span
-                           style={{
-                             fontSize: '10.5px',
-                             color: 'var(--tx-ink-muted)',
-                             lineHeight: '1.2',
-                           }}
-                         >
-                           {hhmm(new Date(item.ev.inicio))}–{hhmm(new Date(item.ev.fin))}
-                         </span>
-                         {/* Avatares de asistentes internos: máx. 3 + overflow.
-                             En bloques bajos se omiten para no pisar el título. */}
-                         {item.ev.asistentes.length > 0 && item.height >= 48 && (
-                           <div
-                             style={{
-                               display: 'flex',
-                               alignItems: 'center',
-                               gap: '2px',
-                               marginTop: '1px',
-                               flexShrink: 0,
-                             }}
-                           >
-                             {item.ev.asistentes.slice(0, 3).map((a) => {
-                               const c = memberColor(a.integrante_id, a.nombre)
-                               return (
-                                 <span
-                                   key={a.integrante_id}
-                                   title={a.nombre}
-                                   style={{
-                                     width: '14px',
-                                     height: '14px',
-                                     borderRadius: '50%',
-                                     background: `color-mix(in srgb, ${c} 35%, transparent)`,
-                                     border: `1px solid ${c}`,
-                                     color: `color-mix(in oklab, ${c} 60%, white)`,
-                                     fontSize: '8px',
-                                     fontWeight: 700,
-                                     lineHeight: 1,
-                                     display: 'inline-flex',
-                                     alignItems: 'center',
-                                     justifyContent: 'center',
-                                     flexShrink: 0,
-                                   }}
-                                 >
-                                   {getInitials(a.nombre)}
-                                 </span>
-                               )
-                             })}
-                             {item.ev.asistentes.length > 3 && (
-                               <span
-                                 style={{
-                                   fontSize: '9px',
-                                   fontWeight: 600,
-                                   color: 'var(--tx-ink-muted)',
-                                   lineHeight: 1,
-                                 }}
-                               >
-                                 +{item.ev.asistentes.length - 3}
-                               </span>
-                             )}
-                           </div>
-                         )}
-                       </div>
-                     )
-                   })}
+                      </div>
+                    )
+                  })}
 
                   {/* Drag ghost with live time label */}
                   {dragGhost && dragGhost.dayIdx === dayIdx && (
@@ -1565,8 +1562,10 @@ export function CalendarioSemana() {
                         style={{
                           position: 'absolute',
                           top: `${top - 7}px`,
-                          left: '2px',
-                          maxWidth: 'calc(100% - 6px)',
+                          // Mismo margen que los eventos: sin esto, la marca
+                          // de tarea pisaba las líneas de disponibilidad.
+                          left: '34px',
+                          maxWidth: 'calc(100% - 38px)',
                           height: '15px',
                           display: 'flex',
                           alignItems: 'center',
@@ -1577,7 +1576,9 @@ export function CalendarioSemana() {
                           boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${c} 55%, transparent)`,
                           fontSize: '9.5px',
                           fontWeight: 500,
-                          color: `color-mix(in oklab, ${c} 45%, white)`,
+                          // Antes: color-mix(c, blanco) — con un color de
+                          // responsable claro quedaba casi invisible.
+                          color: 'var(--tx-ink-primary)',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',

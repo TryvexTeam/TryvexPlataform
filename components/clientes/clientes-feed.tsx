@@ -151,9 +151,14 @@ export function ClientesFeed({ clientes, proyectos, ventas, selectedId, onSelect
                 color: 'var(--tx-ink-secondary)',
               }}
             >
-              <option value="todos">Todos los nichos</option>
+              {/* La lista desplegable de un <select> nativo la pinta el sistema
+                  operativo en blanco pase lo que pase con el `color` del
+                  control cerrado — sin un color propio en cada <option>, el
+                  gris claro pensado para fondo oscuro queda casi invisible
+                  sobre esa lista blanca. */}
+              <option value="todos" className="text-neutral-900">Todos los nichos</option>
               {nichos.map((n) => (
-                <option key={n} value={n}>
+                <option key={n} value={n} className="text-neutral-900">
                   {n}
                 </option>
               ))}
