@@ -70,7 +70,7 @@ export function DashReader({ item, stats }: DashReaderProps) {
             <span
               className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider"
               style={{
-                color: 'color-mix(in oklab, var(--tx-accent) 85%, white)',
+                color: 'var(--tx-ink-primary)',
                 backgroundColor: 'color-mix(in oklab, var(--tx-accent) 12%, transparent)',
                 border: '1px solid color-mix(in oklab, var(--tx-accent) 20%, transparent)',
               }}
@@ -97,7 +97,7 @@ export function DashReader({ item, stats }: DashReaderProps) {
             badgeStyle={{
               backgroundColor: 'color-mix(in oklab, var(--tx-accent) 25%, transparent)',
               border: '1px solid color-mix(in oklab, var(--tx-accent) 35%, transparent)',
-              color: 'color-mix(in oklab, var(--tx-accent) 80%, white)',
+              color: 'var(--tx-ink-primary)',
             }}
           />
           <KpiCard
@@ -208,7 +208,7 @@ export function DashReader({ item, stats }: DashReaderProps) {
                 <span
                   className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
                   style={{
-                    color: 'color-mix(in oklab, var(--tx-accent) 85%, white)',
+                    color: 'var(--tx-ink-primary)',
                     backgroundColor: 'color-mix(in oklab, var(--tx-accent) 12%, transparent)',
                     border: '1px solid color-mix(in oklab, var(--tx-accent) 20%, transparent)',
                   }}

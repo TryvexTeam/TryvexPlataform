@@ -84,7 +84,7 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
 
   return (
     <div>
-      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 mb-6">
+      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] mb-6">
         <ArrowLeft size={14} /> Volver
       </button>
 
@@ -120,27 +120,27 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
       {/* Info */}
       <div className="grid grid-cols-2 gap-2 mb-6 text-sm">
         {lead.telefono && (
-          <span className="flex items-center gap-1.5 text-neutral-600"><Phone size={13} />{lead.telefono}</span>
+          <span className="flex items-center gap-1.5 text-[var(--tx-ink-secondary)]"><Phone size={13} />{lead.telefono}</span>
         )}
         {lead.localidad && (
-          <span className="flex items-center gap-1.5 text-neutral-600"><MapPin size={13} />{lead.localidad}</span>
+          <span className="flex items-center gap-1.5 text-[var(--tx-ink-secondary)]"><MapPin size={13} />{lead.localidad}</span>
         )}
         {lead.nicho && (
-          <span className="text-neutral-600">Nicho: <strong>{lead.nicho}</strong></span>
+          <span className="text-[var(--tx-ink-secondary)]">Nicho: <strong>{lead.nicho}</strong></span>
         )}
         {lead.url_web && (
-          <a href={lead.url_web} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-blue-600 hover:underline">
+          <a href={lead.url_web} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-blue-400 hover:underline">
             <Globe size={13} /> Ver web
           </a>
         )}
-        <span className="text-neutral-500 capitalize">Origen: {lead.origen}</span>
-        <span className="text-neutral-500">
+        <span className="text-[var(--tx-ink-muted)] capitalize">Origen: {lead.origen}</span>
+        <span className="text-[var(--tx-ink-muted)]">
           Creado: {format(new Date(lead.created_at), 'd MMM yyyy', { locale: es })}
         </span>
       </div>
 
       {lead.notas && (
-        <div className="bg-neutral-50 rounded-lg p-3 mb-6 text-sm text-neutral-600">{lead.notas}</div>
+        <div className="bg-[var(--tx-surface-1)] rounded-lg p-3 mb-6 text-sm text-[var(--tx-ink-secondary)]">{lead.notas}</div>
       )}
 
       <Separator className="mb-6" />
@@ -152,7 +152,7 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
 
       {/* Registrar interacción */}
       <div className="mb-6">
-        <h2 className="text-sm font-semibold text-neutral-700 mb-3">Registrar interacción</h2>
+        <h2 className="text-sm font-semibold text-[var(--tx-ink-primary)] mb-3">Registrar interacción</h2>
         <div className="flex gap-2 mb-2">
           <Select value={tipoInteraccion} onValueChange={(v) => setTipoInteraccion(v ?? 'nota')}>
             <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
@@ -180,27 +180,27 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
 
       {/* Timeline interacciones */}
       <div>
-        <h2 className="text-sm font-semibold text-neutral-700 mb-4">
+        <h2 className="text-sm font-semibold text-[var(--tx-ink-primary)] mb-4">
           Historial ({interacciones.length})
         </h2>
         {interacciones.length === 0 && (
-          <p className="text-sm text-neutral-400 text-center py-6">Sin interacciones aún</p>
+          <p className="text-sm text-[var(--tx-ink-muted)] text-center py-6">Sin interacciones aún</p>
         )}
         <div className="space-y-3">
           {interacciones.map((i) => (
             <div key={i.id} className="flex gap-3">
               <div className="flex flex-col items-center">
                 <span className="text-lg leading-none">{tipoIcono[i.tipo]}</span>
-                <div className="w-px flex-1 bg-neutral-100 mt-1" />
+                <div className="w-px flex-1 bg-[var(--tx-border)] mt-1" />
               </div>
               <div className="flex-1 pb-3">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-xs font-medium capitalize text-neutral-700">{i.tipo}</span>
-                  <span className="text-xs text-neutral-400">
+                  <span className="text-xs font-medium capitalize text-[var(--tx-ink-primary)]">{i.tipo}</span>
+                  <span className="text-xs text-[var(--tx-ink-muted)]">
                     {format(new Date(i.created_at), 'd MMM HH:mm', { locale: es })}
                   </span>
                 </div>
-                {i.contenido && <p className="text-sm text-neutral-600">{i.contenido}</p>}
+                {i.contenido && <p className="text-sm text-[var(--tx-ink-secondary)]">{i.contenido}</p>}
               </div>
             </div>
           ))}

@@ -79,7 +79,7 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">Leads</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{leads.length} leads en total</p>
+          <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">{leads.length} leads en total</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant={vista === 'kanban' ? 'default' : 'outline'} size="sm" onClick={() => setVista('kanban')}>
@@ -99,7 +99,7 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
 
       {/* Search */}
       <div className="relative mb-6 max-w-sm">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--tx-ink-muted)]" />
         <Input
           className="pl-8"
           placeholder="Buscar negocio..."
@@ -131,37 +131,37 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
 
 function TablaLeads({ leads, onRowClick }: { leads: Lead[]; onRowClick: (id: string) => void }) {
   return (
-    <div className="rounded-lg border border-neutral-200 overflow-x-auto">
+    <div className="rounded-lg border border-[var(--tx-border)] overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="bg-neutral-50 border-b border-neutral-200">
+        <thead className="bg-[var(--tx-surface-1)] border-b border-[var(--tx-border)]">
           <tr>
-            <th className="text-left px-4 py-3 font-medium text-neutral-600">Negocio</th>
-            <th className="text-left px-4 py-3 font-medium text-neutral-600 hidden md:table-cell">Nicho</th>
-            <th className="text-left px-4 py-3 font-medium text-neutral-600 hidden md:table-cell">Localidad</th>
-            <th className="text-left px-4 py-3 font-medium text-neutral-600">Estado</th>
-            <th className="text-left px-4 py-3 font-medium text-neutral-600 hidden lg:table-cell">Origen</th>
-            <th className="text-left px-4 py-3 font-medium text-neutral-600 hidden lg:table-cell">Score</th>
+            <th className="text-left px-4 py-3 font-medium text-[var(--tx-ink-secondary)]">Negocio</th>
+            <th className="text-left px-4 py-3 font-medium text-[var(--tx-ink-secondary)] hidden md:table-cell">Nicho</th>
+            <th className="text-left px-4 py-3 font-medium text-[var(--tx-ink-secondary)] hidden md:table-cell">Localidad</th>
+            <th className="text-left px-4 py-3 font-medium text-[var(--tx-ink-secondary)]">Estado</th>
+            <th className="text-left px-4 py-3 font-medium text-[var(--tx-ink-secondary)] hidden lg:table-cell">Origen</th>
+            <th className="text-left px-4 py-3 font-medium text-[var(--tx-ink-secondary)] hidden lg:table-cell">Score</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-100">
+        <tbody className="divide-y divide-[var(--tx-border)]">
           {leads.length === 0 && (
-            <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-400">Sin leads</td></tr>
+            <tr><td colSpan={6} className="px-4 py-8 text-center text-[var(--tx-ink-muted)]">Sin leads</td></tr>
           )}
           {leads.map((l) => {
             const estadoConf = ESTADOS_LEAD.find((e) => e.id === l.estado)
             return (
-              <tr key={l.id} onClick={() => onRowClick(l.id)} className="hover:bg-neutral-50 cursor-pointer transition-colors">
-                <td className="px-4 py-3 font-medium text-neutral-800">{l.nombre_negocio}</td>
-                <td className="px-4 py-3 text-neutral-500 hidden md:table-cell">{l.nicho ?? '—'}</td>
-                <td className="px-4 py-3 text-neutral-500 hidden md:table-cell">{l.localidad ?? '—'}</td>
+              <tr key={l.id} onClick={() => onRowClick(l.id)} className="hover:bg-[var(--tx-surface-1)] cursor-pointer transition-colors">
+                <td className="px-4 py-3 font-medium text-[var(--tx-ink-primary)]">{l.nombre_negocio}</td>
+                <td className="px-4 py-3 text-[var(--tx-ink-muted)] hidden md:table-cell">{l.nicho ?? '—'}</td>
+                <td className="px-4 py-3 text-[var(--tx-ink-muted)] hidden md:table-cell">{l.localidad ?? '—'}</td>
                 <td className="px-4 py-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--tx-ink-primary)]">
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: estadoConf?.color }} />
                     {estadoConf?.label}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-neutral-500 hidden lg:table-cell capitalize">{l.origen}</td>
-                <td className="px-4 py-3 text-neutral-500 hidden lg:table-cell">{l.score ?? '—'}</td>
+                <td className="px-4 py-3 text-[var(--tx-ink-muted)] hidden lg:table-cell capitalize">{l.origen}</td>
+                <td className="px-4 py-3 text-[var(--tx-ink-muted)] hidden lg:table-cell">{l.score ?? '—'}</td>
               </tr>
             )
           })}

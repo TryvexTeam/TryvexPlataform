@@ -88,7 +88,7 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
 
   return (
     <div className="mb-6">
-      <h2 className="text-sm font-semibold text-neutral-700 mb-3 flex items-center gap-1.5">
+      <h2 className="text-sm font-semibold text-[var(--tx-ink-primary)] mb-3 flex items-center gap-1.5">
         <MessageCircle size={14} className="text-emerald-600" /> WhatsApp
       </h2>
 
@@ -114,15 +114,15 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
       </div>
 
       {/* Template preview */}
-      <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 mb-4 text-xs text-neutral-600 whitespace-pre-wrap">
+      <div className="bg-[var(--tx-surface-1)] border border-[var(--tx-border)] rounded-lg p-3 mb-4 text-xs text-[var(--tx-ink-secondary)] whitespace-pre-wrap">
         {template}
       </div>
 
       {/* Hilo */}
       <div className="space-y-2">
-        {cargando && <p className="text-xs text-neutral-400">Cargando hilo...</p>}
+        {cargando && <p className="text-xs text-[var(--tx-ink-muted)]">Cargando hilo...</p>}
         {!cargando && mensajes.length === 0 && (
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-[var(--tx-ink-muted)]">
             Sin mensajes todavía. Aparecerán acá cuando se envíe o llegue una respuesta.
           </p>
         )}
@@ -155,14 +155,14 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
                   'max-w-[75%] rounded-lg px-3 py-2 text-sm',
                   saliente
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-neutral-100 text-neutral-800'
+                    : 'bg-[var(--tx-surface-1)] text-[var(--tx-ink-primary)]'
                 )}
               >
                 <p className="whitespace-pre-wrap">{m.texto}</p>
                 <div
                   className={cn(
                     'mt-1 flex items-center gap-1 text-[10px]',
-                    saliente ? 'text-emerald-100' : 'text-neutral-400'
+                    saliente ? 'text-emerald-100' : 'text-[var(--tx-ink-muted)]'
                   )}
                 >
                   {saliente && m.es_bot && <Bot size={10} />}

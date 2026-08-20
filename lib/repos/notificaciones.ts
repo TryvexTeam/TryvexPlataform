@@ -103,7 +103,7 @@ export class NotificacionesRepository {
         .map((p) => p.id)
       if (habilitados.length === 0) return
 
-      await this.sb.from('notificaciones').insert(
+      const { error: errorInsert } = await this.sb.from('notificaciones').insert(
         habilitados.map((integrante_id) => ({
           integrante_id,
           tipo: input.tipo,
@@ -112,6 +112,17 @@ export class NotificacionesRepository {
           link: input.link ?? null,
         }))
       )
+      // No se relanza: `notificar` es best-effort y no debe romper la operación
+      // principal. Pero antes ni se miraba: un INSERT rechazado (RLS, columna
+      // faltante, etc.) desaparecía sin dejar rastro y "no me llegó la campanita"
+      // era indiagnosticable.
+      if (errorInsert) {
+        console.error('[notificar] no se pudo insertar la notificación', {
+          tipo: input.tipo,
+          destinatarios: habilitados.length,
+          error: errorInsert.message,
+        })
+      }
 
       // Misma notificación al celular / PC vía Web Push. Best-effort: si falla,
       // la campanita in-app ya quedó guardada arriba.

@@ -714,7 +714,7 @@ export function ThemePanel() {
         style={{
           background: open ? 'color-mix(in oklab, var(--tx-accent) 15%, transparent)' : 'rgba(255,255,255,.04)',
           border: `1px solid ${open ? 'color-mix(in oklab, var(--tx-accent) 35%, transparent)' : 'rgba(255,255,255,.07)'}`,
-          color: open ? 'color-mix(in oklab, var(--tx-accent) 85%, white)' : 'rgba(255,255,255,.55)',
+          color: open ? 'var(--tx-ink-primary)' : 'rgba(255,255,255,.55)',
           boxShadow: open ? '0 0 0 1px color-mix(in oklab, var(--tx-accent) 20%, transparent), 0 4px 12px color-mix(in oklab, var(--tx-accent) 15%, transparent)' : 'none',
         }}
         whileHover={{ scale: 1.02, y: -0.5 }}
