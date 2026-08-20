@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import type { ReaccionAgrupada } from '@/lib/types/chat'
 
 interface ReaccionesMensajeProps {
@@ -13,29 +14,62 @@ interface ReaccionesMensajeProps {
  * Cada una es un interruptor. La propia se pinta con el color de acento y borde
  * marcado, porque en un chat de equipo importa saber de un vistazo si ya reaccionaste
  * — sin eso uno vuelve a hacer clic y termina quitando su propia reacción.
+ *
+ * El `title` de siempre solo se ve con el mouse encima, y en el teléfono -donde
+ * de verdad se usan las reacciones- no hay hover. Por eso el clic hace las dos
+ * cosas: alterna la reacción Y muestra por un momento quién más la puso, sin
+ * agregar un botón nuevo ni cambiar el tamaño de la píldora.
  */
 export function ReaccionesMensaje({ reacciones, onAlternar }: ReaccionesMensajeProps) {
+  const [emojiMostrado, setEmojiMostrado] = useState<string | null>(null)
+  const cierreRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (cierreRef.current) clearTimeout(cierreRef.current)
+  }, [])
+
   if (reacciones.length === 0) return null
+
+  const manejarClic = (r: ReaccionAgrupada) => {
+    onAlternar(r.emoji)
+    setEmojiMostrado(r.emoji)
+    if (cierreRef.current) clearTimeout(cierreRef.current)
+    cierreRef.current = setTimeout(() => setEmojiMostrado(null), 2500)
+  }
 
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
       {reacciones.map((r) => (
-        <button
-          key={r.emoji}
-          onClick={() => onAlternar(r.emoji)}
-          title={tituloDe(r)}
-          aria-label={tituloDe(r)}
-          aria-pressed={r.mia}
-          className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] leading-5 transition-colors"
-          style={{
-            background: r.mia ? 'var(--tx-accent-soft, oklch(62% 0.19 255 / 18%))' : 'oklch(100% 0 0 / 6%)',
-            border: `1px solid ${r.mia ? 'var(--tx-accent, oklch(62% 0.19 255))' : 'transparent'}`,
-            color: 'var(--tx-ink-primary)',
-          }}
-        >
-          <span aria-hidden>{r.emoji}</span>
-          <span className="tabular-nums">{r.cuenta}</span>
-        </button>
+        <div key={r.emoji} className="relative">
+          {emojiMostrado === r.emoji && (
+            <div
+              role="tooltip"
+              className="absolute bottom-full left-1/2 z-10 mb-1 w-max max-w-[220px] -translate-x-1/2 rounded-md px-2 py-1 text-[11px] leading-4 shadow-lg"
+              style={{
+                background: 'var(--tx-surface-2, oklch(22% 0.01 255))',
+                color: 'var(--tx-ink-primary)',
+                border: '1px solid var(--tx-border, oklch(100% 0 0 / 12%))',
+              }}
+            >
+              {tituloDe(r)}
+            </div>
+          )}
+          <button
+            onClick={() => manejarClic(r)}
+            title={tituloDe(r)}
+            aria-label={tituloDe(r)}
+            aria-pressed={r.mia}
+            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] leading-5 transition-colors"
+            style={{
+              background: r.mia ? 'var(--tx-accent-soft, oklch(62% 0.19 255 / 18%))' : 'oklch(100% 0 0 / 6%)',
+              border: `1px solid ${r.mia ? 'var(--tx-accent, oklch(62% 0.19 255))' : 'transparent'}`,
+              color: 'var(--tx-ink-primary)',
+            }}
+          >
+            <span aria-hidden>{r.emoji}</span>
+            <span className="tabular-nums">{r.cuenta}</span>
+          </button>
+        </div>
       ))}
     </div>
   )
