@@ -18,10 +18,10 @@ import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
 import { cn } from '@/lib/utils'
 
 const estadoPagoConfig = {
-  pendiente: 'bg-yellow-100 text-yellow-700',
-  pagado: 'bg-green-100 text-green-700',
-  atrasado: 'bg-red-100 text-red-700',
-  cancelado: 'bg-neutral-100 text-neutral-500',
+  pendiente: 'bg-yellow-500/15 text-yellow-500',
+  pagado: 'bg-green-500/15 text-green-500',
+  atrasado: 'bg-red-500/15 text-red-500',
+  cancelado: 'bg-[var(--tx-surface-2)] text-[var(--tx-ink-muted)]',
 }
 
 interface ClienteDetalleProps {
@@ -105,7 +105,7 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
 
   return (
     <div>
-      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 mb-6">
+      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] mb-6">
         <ArrowLeft size={14} /> Volver
       </button>
 
@@ -114,13 +114,13 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
         <div>
           <h1 className="text-xl font-bold text-[var(--tx-ink-primary)]">{nombreCliente(cliente)}</h1>
           {(cliente.nombre_negocio || cliente.nicho) && (
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm text-[var(--tx-ink-muted)]">
               {[cliente.nombre_negocio, cliente.nicho].filter(Boolean).join(' · ')}
             </p>
           )}
           <span className={cn('inline-block text-xs font-medium px-2 py-0.5 rounded-full mt-1',
-            cliente.estado === 'activo' ? 'bg-green-100 text-green-700' :
-            cliente.estado === 'pausado' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+            cliente.estado === 'activo' ? 'bg-green-500/15 text-green-500' :
+            cliente.estado === 'pausado' ? 'bg-yellow-500/15 text-yellow-500' : 'bg-red-500/15 text-red-500'
           )}>
             {cliente.estado}
           </span>
@@ -140,10 +140,10 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
 
       {/* Info */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6 text-sm">
-        {cliente.telefono && <span className="flex items-center gap-1.5 text-neutral-600"><Phone size={13} />{cliente.telefono}</span>}
-        {cliente.email && <span className="flex items-center gap-1.5 text-neutral-600"><Mail size={13} />{cliente.email}</span>}
-        {cliente.localidad && <span className="flex items-center gap-1.5 text-neutral-600"><MapPin size={13} />{cliente.localidad}</span>}
-        {cliente.fecha_cierre && <span className="text-neutral-500">Cierre: {format(new Date(cliente.fecha_cierre), 'd MMM yyyy', { locale: es })}</span>}
+        {cliente.telefono && <span className="flex items-center gap-1.5 text-[var(--tx-ink-secondary)]"><Phone size={13} />{cliente.telefono}</span>}
+        {cliente.email && <span className="flex items-center gap-1.5 text-[var(--tx-ink-secondary)]"><Mail size={13} />{cliente.email}</span>}
+        {cliente.localidad && <span className="flex items-center gap-1.5 text-[var(--tx-ink-secondary)]"><MapPin size={13} />{cliente.localidad}</span>}
+        {cliente.fecha_cierre && <span className="text-[var(--tx-ink-muted)]">Cierre: {format(new Date(cliente.fecha_cierre), 'd MMM yyyy', { locale: es })}</span>}
       </div>
 
       {/* Finanzas */}
@@ -155,9 +155,9 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
           { label: 'MRR', value: cliente.mantencion_mensual_usd ? `$${cliente.mantencion_mensual_usd}/mes` : '—' },
           { label: 'Valor inicial', value: cliente.valor_inicial_usd ? `$${cliente.valor_inicial_usd.toLocaleString()}` : '—' },
         ].map((item) => (
-          <div key={item.label} className={cn('rounded-lg p-3 text-center', item.alerta ? 'bg-red-50' : 'bg-neutral-50')}>
-            <p className="text-xs text-neutral-500 mb-1">{item.label}</p>
-            <p className={cn('text-sm font-semibold', item.alerta ? 'text-red-600' : 'text-neutral-800')}>{item.value}</p>
+          <div key={item.label} className={cn('rounded-lg p-3 text-center', item.alerta ? 'bg-red-500/10' : 'bg-[var(--tx-surface-2)]')}>
+            <p className="text-xs text-[var(--tx-ink-muted)] mb-1">{item.label}</p>
+            <p className={cn('text-sm font-semibold', item.alerta ? 'text-red-500' : 'text-[var(--tx-ink-primary)]')}>{item.value}</p>
           </div>
         ))}
       </div>
@@ -165,10 +165,10 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
       {/* Saldo inicial arrastrado: sin este interruptor el aviso de "nos debe" no se
           apaga nunca aunque se anulen todos los pagos pendientes. */}
       {mostrarSaldoInicial && (
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 p-3">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--tx-border)] p-3">
           <div className="text-sm">
-            <p className="font-medium text-neutral-800">Saldo del valor inicial</p>
-            <p className="text-xs text-neutral-500">
+            <p className="font-medium text-[var(--tx-ink-primary)]">Saldo del valor inicial</p>
+            <p className="text-xs text-[var(--tx-ink-muted)]">
               {cliente.saldo_inicial_saldado
                 ? `Dado por saldado. El valor acordado ($${(cliente.valor_inicial_usd ?? 0).toLocaleString()}) se conserva para reportes.`
                 : `Quedan $${saldoArrastrado.toLocaleString()} del valor acordado sin cobrar.`}
@@ -187,7 +187,7 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
       )}
 
       {cliente.notas && (
-        <div className="bg-neutral-50 rounded-lg p-3 mb-6 text-sm text-neutral-600">{cliente.notas}</div>
+        <div className="bg-[var(--tx-surface-2)] rounded-lg p-3 mb-6 text-sm text-[var(--tx-ink-secondary)]">{cliente.notas}</div>
       )}
 
       <Separator className="mb-6" />
@@ -195,13 +195,13 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
       {/* Proyectos */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-neutral-700">Proyectos ({proyectos.length})</h2>
+          <h2 className="text-sm font-semibold text-[var(--tx-ink-secondary)]">Proyectos ({proyectos.length})</h2>
           <Button size="sm" variant="outline" onClick={() => router.push('/proyectos')}>
             <FolderKanban size={13} className="mr-1.5" /> Ver todos
           </Button>
         </div>
         {proyectos.length === 0 ? (
-          <p className="text-sm text-neutral-400 py-4 text-center">Sin proyectos</p>
+          <p className="text-sm text-[var(--tx-ink-muted)] py-4 text-center">Sin proyectos</p>
         ) : (
           <div className="space-y-2">
             {proyectos.map((p) => {
@@ -210,11 +210,11 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
                 <div
                   key={p.id}
                   onClick={() => router.push(`/proyectos/${p.id}`)}
-                  className="flex items-center justify-between p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 cursor-pointer"
+                  className="flex items-center justify-between p-3 rounded-lg border border-[var(--tx-border)] hover:bg-[var(--tx-surface-2)] cursor-pointer"
                 >
                   <div>
-                    <p className="text-sm font-medium text-neutral-800">{p.nombre}</p>
-                    <p className="text-xs text-neutral-400 capitalize">{p.tipo}</p>
+                    <p className="text-sm font-medium text-[var(--tx-ink-primary)]">{p.nombre}</p>
+                    <p className="text-xs text-[var(--tx-ink-muted)] capitalize">{p.tipo}</p>
                   </div>
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium">
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: estadoConf?.color }} />
@@ -232,40 +232,40 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
       {/* Historial de pagos */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-neutral-700">Pagos ({ventas.length})</h2>
+          <h2 className="text-sm font-semibold text-[var(--tx-ink-secondary)]">Pagos ({ventas.length})</h2>
           <Button size="sm" onClick={() => setPagoOpen(true)}>
             <Plus size={13} className="mr-1.5" /> Registrar pago
           </Button>
         </div>
         {ventas.length === 0 ? (
-          <p className="text-sm text-neutral-400 py-4 text-center">Sin pagos registrados</p>
+          <p className="text-sm text-[var(--tx-ink-muted)] py-4 text-center">Sin pagos registrados</p>
         ) : (
-          <div className="rounded-lg border border-neutral-200 overflow-x-auto">
+          <div className="rounded-lg border border-[var(--tx-border)] overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 border-b border-neutral-200">
+              <thead className="bg-[var(--tx-surface-2)] border-b border-[var(--tx-border)]">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium text-neutral-600">Tipo</th>
-                  <th className="text-left px-3 py-2 font-medium text-neutral-600">Monto</th>
-                  <th className="text-left px-3 py-2 font-medium text-neutral-600">Estado</th>
-                  <th className="text-left px-3 py-2 font-medium text-neutral-600 hidden md:table-cell">Cobro</th>
+                  <th className="text-left px-3 py-2 font-medium text-[var(--tx-ink-secondary)]">Tipo</th>
+                  <th className="text-left px-3 py-2 font-medium text-[var(--tx-ink-secondary)]">Monto</th>
+                  <th className="text-left px-3 py-2 font-medium text-[var(--tx-ink-secondary)]">Estado</th>
+                  <th className="text-left px-3 py-2 font-medium text-[var(--tx-ink-secondary)] hidden md:table-cell">Cobro</th>
                   <th className="px-3 py-2" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
+              <tbody className="divide-y divide-[var(--tx-border)]">
                 {ventas.map((v) => (
                   // Los cancelados no se esconden: se descartan, no se borran.
                   <tr key={v.id} className={cn(v.estado_pago === 'cancelado' && 'opacity-60 line-through')}>
-                    <td className="px-3 py-2 capitalize text-neutral-700">
+                    <td className="px-3 py-2 capitalize text-[var(--tx-ink-secondary)]">
                       {v.tipo}
-                      {v.descripcion && <span className="block text-xs text-neutral-400 normal-case">{v.descripcion}</span>}
+                      {v.descripcion && <span className="block text-xs text-[var(--tx-ink-muted)] normal-case">{v.descripcion}</span>}
                     </td>
-                    <td className="px-3 py-2 font-medium text-neutral-800">{v.monto_usd ? `$${v.monto_usd.toLocaleString()}` : '—'}</td>
+                    <td className="px-3 py-2 font-medium text-[var(--tx-ink-primary)]">{v.monto_usd ? `$${v.monto_usd.toLocaleString()}` : '—'}</td>
                     <td className="px-3 py-2">
                       <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', estadoPagoConfig[v.estado_pago])}>
                         {v.estado_pago}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-neutral-500 hidden md:table-cell">
+                    <td className="px-3 py-2 text-[var(--tx-ink-muted)] hidden md:table-cell">
                       {(v.fecha_vencimiento ?? v.fecha_emision)
                         ? format(new Date((v.fecha_vencimiento ?? v.fecha_emision)!), 'd MMM yyyy', { locale: es })
                         : '—'}
