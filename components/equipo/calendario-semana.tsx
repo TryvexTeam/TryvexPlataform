@@ -839,6 +839,37 @@ export function CalendarioSemana() {
           </p>
         </div>
 
+        {/* "Hoy" y las flechas van en un mismo contenedor, no como dos ítems
+            sueltos del flex de arriba: con flex-wrap, dos ítems separados
+            pueden partirse en líneas distintas cada uno (en el teléfono
+            "Hoy" quedaba solo en su línea y las flechas se iban arriba,
+            pegadas a la fecha). Agrupados, saltan de línea juntos o no
+            saltan, nunca separados. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* "Hoy" no se deshabilita cuando ya estás en la semana actual: se
+            marca como activo. Un botón apagado obliga a mirarlo para deducir
+            en qué semana estás; uno encendido lo dice de frente. */}
+        <button
+          type="button"
+          className="h-10 px-4 text-[13px] md:h-11 md:px-5 md:text-sm"
+          style={{
+            ...chip,
+            ...(todayBtnDisabled
+              ? { background: '#ffffff', borderColor: '#ffffff', color: 'var(--tx-bg-primary)', cursor: 'default' }
+              : {}),
+          }}
+          onClick={goToday}
+          aria-current={todayBtnDisabled ? 'date' : undefined}
+          onMouseEnter={(e) => {
+            if (!todayBtnDisabled) e.currentTarget.style.color = 'var(--tx-ink-primary)'
+          }}
+          onMouseLeave={(e) => {
+            if (!todayBtnDisabled) e.currentTarget.style.color = 'var(--tx-ink-secondary)'
+          }}
+        >
+          Hoy
+        </button>
+
         <div style={grupoNav}>
           <button
             type="button"
@@ -875,30 +906,7 @@ export function CalendarioSemana() {
             <ChevronRightIcon size={17} aria-hidden="true" />
           </button>
         </div>
-
-        {/* "Hoy" no se deshabilita cuando ya estás en la semana actual: se
-            marca como activo. Un botón apagado obliga a mirarlo para deducir
-            en qué semana estás; uno encendido lo dice de frente. */}
-        <button
-          type="button"
-          className="h-10 px-4 text-[13px] md:h-11 md:px-5 md:text-sm"
-          style={{
-            ...chip,
-            ...(todayBtnDisabled
-              ? { background: '#ffffff', borderColor: '#ffffff', color: 'var(--tx-bg-primary)', cursor: 'default' }
-              : {}),
-          }}
-          onClick={goToday}
-          aria-current={todayBtnDisabled ? 'date' : undefined}
-          onMouseEnter={(e) => {
-            if (!todayBtnDisabled) e.currentTarget.style.color = 'var(--tx-ink-primary)'
-          }}
-          onMouseLeave={(e) => {
-            if (!todayBtnDisabled) e.currentTarget.style.color = 'var(--tx-ink-secondary)'
-          }}
-        >
-          Hoy
-        </button>
+        </div>
 
         {/* Aviso de atajos de teclado (solo desktop). Cada tecla en su propia
             "cápsula" — igual que un atajo de menú — separada de la frase que
