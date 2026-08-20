@@ -26,6 +26,13 @@ interface SelectorHoraProps {
   placeholder?: string
   disabled?: boolean
   id?: string
+  /**
+   * Ancho del campo de texto. 'compacto' es solo para usos donde SIEMPRE hay
+   * una hora cargada (nunca se ve el placeholder): ajusta al ancho real de
+   * "HH:MM" en vez de dejar hueco muerto antes del botón de quitar. El
+   * default sigue siendo lo bastante ancho para "Sin hora".
+   */
+  ancho?: 'normal' | 'compacto'
 }
 
 const HORA_DESDE = 8
@@ -57,6 +64,7 @@ export function SelectorHora({
   placeholder = 'Sin hora',
   disabled = false,
   id,
+  ancho = 'normal',
 }: SelectorHoraProps) {
   const [abierto, setAbierto] = useState(false)
   const lista = useMemo(() => franjas(), [])
@@ -139,8 +147,9 @@ export function SelectorHora({
             }
           }}
           onFocus={() => setAbierto(true)}
-          className="w-[68px] bg-transparent text-[13px] tabular-nums text-[var(--tx-ink-primary)]
-            outline-none placeholder:text-[var(--tx-ink-muted)] disabled:cursor-not-allowed"
+          className={`${ancho === 'compacto' ? 'w-9' : 'w-[68px]'} bg-transparent text-[13px] tabular-nums
+            text-[var(--tx-ink-primary)] outline-none placeholder:text-[var(--tx-ink-muted)]
+            disabled:cursor-not-allowed`}
         />
 
         {value && !disabled && (
