@@ -150,6 +150,9 @@ export function ProyectosKanban({ initialProyectos, clientes, integrantes = [] }
 
   async function handleDragEnd(itemId: string, _from: string, toCol: string) {
     const estado = toCol as Proyecto['estado']
+    // Revertir a `initialProyectos` entero pisaba cambios de OTRAS tarjetas ya
+    // confirmados en el servidor mientras esta petición estaba en vuelo.
+    const anterior = proyectos.find((pr) => pr.id === itemId)
     setProyectos((p) => p.map((pr) => pr.id === itemId ? { ...pr, estado } : pr))
 
     const res = await fetch(`/api/proyectos/${itemId}/estado`, {
@@ -159,7 +162,12 @@ export function ProyectosKanban({ initialProyectos, clientes, integrantes = [] }
     })
     if (!res.ok) {
       toast.error('Error al mover el proyecto')
-      setProyectos(initialProyectos)
+      // Solo revierte si sigue en el estado optimista de ESTA llamada: dos
+      // drags rápidos sobre el mismo proyecto no deben dejar que el fallo del
+      // primero pise el resultado ya confirmado del segundo.
+      if (anterior) {
+        setProyectos((p) => p.map((pr) => (pr.id === itemId && pr.estado === estado ? anterior : pr)))
+      }
     }
   }
 

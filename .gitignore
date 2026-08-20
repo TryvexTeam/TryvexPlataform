@@ -67,3 +67,6 @@ workspace/
 # Espacios de trabajo temporales de agentes. Son clones del repo: si entran
 # aca, git los toma como submodulos y el clon siguiente queda roto.
 .claude/worktrees/
+
+# Cache local de la Supabase CLI (project ref, versiones de servicios).
+supabase/.temp/

@@ -75,10 +75,16 @@ export class LeadsRepository {
     if (data.estado === 'ganado') await this.convertirEnCliente(id)
   }
 
-  async cambiarEstado(id: string, estado: Lead['estado']): Promise<void> {
+  async cambiarEstado(id: string, estado: Lead['estado'], razonPerdida?: Lead['razon_perdida']): Promise<void> {
     const { error } = await this.sb
       .from('fact_leads')
-      .update({ estado, updated_at: new Date().toISOString() })
+      .update({
+        estado,
+        // El drag&drop del kanban también manda a "perdido": sin esto la razón
+        // que ya validaba la ruta se descartaba en silencio.
+        razon_perdida: estado === 'perdido' ? razonPerdida ?? null : null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id)
 
     if (error) throw new Error(error.message)

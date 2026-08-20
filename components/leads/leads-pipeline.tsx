@@ -47,18 +47,45 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
     items: leadsFiltrados.filter((l) => l.estado === e.id),
   }))
 
-  async function handleDragEnd(itemId: string, _from: string, toCol: string) {
-    const estado = toCol as Lead['estado']
-    setLeads((p) => p.map((l) => l.id === itemId ? { ...l, estado } : l))
-
+  async function patchEstado(
+    itemId: string,
+    estado: Lead['estado'],
+    anterior: Lead | undefined,
+    razonPerdida?: string,
+  ) {
     const res = await fetch(`/api/leads/${itemId}/estado`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado }),
+      body: JSON.stringify({ estado, razon_perdida: razonPerdida }),
     })
     if (!res.ok) {
       toast.error('Error al mover el lead')
-      setLeads(initialLeads)
+      // Revertir solo ESTA tarjeta, y solo si sigue en el estado optimista que
+      // puso esta llamada: `setLeads(initialLeads)` pisaba cambios de OTROS
+      // leads ya confirmados en el servidor mientras esta petición volaba.
+      if (anterior) {
+        setLeads((p) => p.map((l) => (l.id === itemId && l.estado === estado ? anterior : l)))
+      }
+    }
+  }
+
+  async function handleDragEnd(itemId: string, _from: string, toCol: string) {
+    const estado = toCol as Lead['estado']
+    const anterior = leads.find((l) => l.id === itemId)
+    setLeads((p) => p.map((l) => l.id === itemId ? { ...l, estado } : l))
+
+    await patchEstado(itemId, estado, anterior)
+
+    // El toast de sileo solo tiene un botón (ver lib/toast.ts), así que no
+    // alcanza para el selector completo de RAZONES_PERDIDA que ya tiene la
+    // ficha (lead-panel.tsx). En vez de duplicar esa lista acá, se manda a
+    // abrirla ahí: sin esto, arrastrar la tarjeta era la única vía de
+    // leads.cambiarEstado que nunca guardaba razon_perdida.
+    if (estado === 'perdido') {
+      toast('Lead marcado como perdido', {
+        description: 'Registrá el motivo en la ficha del lead',
+        action: { label: 'Abrir ficha', onClick: () => router.push(`/leads/${itemId}`) },
+      })
     }
   }
 
