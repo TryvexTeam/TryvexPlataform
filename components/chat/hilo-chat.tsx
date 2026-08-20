@@ -291,9 +291,19 @@ export function HiloChat({
 
         return {
           ...m,
-          reacciones: actuales.map((r) =>
-            r.emoji === emoji ? { ...r, cuenta: r.cuenta + suma, mia: !r.mia } : r,
-          ),
+          reacciones: actuales.map((r) => {
+            if (r.emoji !== emoji) return r
+            const yoAhora = !r.mia
+            return {
+              ...r,
+              cuenta: r.cuenta + suma,
+              mia: yoAhora,
+              // El contador solo no alcanza: si "Tú" entra o sale, la lista de
+              // nombres del popover tiene que moverse con él o queda mintiendo
+              // sobre quién reaccionó.
+              quienes: yoAhora ? [...r.quienes, 'Tú'] : r.quienes.filter((n) => n !== 'Tú'),
+            }
+          }),
         }
       })
 
