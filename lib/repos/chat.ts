@@ -341,31 +341,32 @@ export class ChatRepository {
   }
 
   /**
-   * Borra el mensaje de verdad: la fila desaparece de la base.
-   *
-   * Consecuencias que vienen de las claves foráneas de la 026, y son deliberadas:
-   *   · `responder_a` es ON DELETE SET NULL → la respuesta que lo citaba sobrevive
-   *     y muestra "Mensaje eliminado" en la cita.
-   *   · `hilo_padre` es ON DELETE CASCADE → borrar el mensaje que abrió un hilo
-   *     se lleva todas sus respuestas. Un hilo sin su origen no se entiende.
+   * Borrado suave, como documenta la 026: marca `eliminado_at` y vacía el
+   * texto. La fila queda — si abrió un hilo, sus respuestas siguen existiendo
+   * (nunca hubo CASCADE que dispare acá, porque nunca se llega al DELETE) y si
+   * era una respuesta citada, la cita sigue apuntando a algo real en vez de a
+   * un hueco. `contenido` no puede quedar vacío (CHECK de la 019), así que se
+   * reemplaza por un placeholder — la UI ya decide qué mostrar mirando
+   * `eliminado_at`, no el texto.
    */
   async eliminar(mensajeId: string): Promise<void> {
-    const { error } = await this.sb.from('mensajes').delete().eq('id', mensajeId)
+    const { error } = await this.sb
+      .from('mensajes')
+      .update({ eliminado_at: new Date().toISOString(), contenido: '[mensaje eliminado]' })
+      .eq('id', mensajeId)
     if (error) throw new Error(error.message)
+
+    await this.sb.from('mensaje_adjuntos').delete().eq('mensaje_id', mensajeId)
   }
 
   /**
-   * Las rutas de storage de un mensaje y de todo lo que caiga con él.
-   *
-   * Se piden ANTES de borrar: una vez que la fila se va, el CASCADE se lleva las
-   * de `mensaje_adjuntos` y ya no hay forma de saber qué archivos quedaron
-   * colgados en el bucket. Nadie los ve, pero siguen ocupando espacio.
+   * Rutas de storage de los adjuntos de ESTE mensaje (no de sus hijos de hilo:
+   * con borrado suave el hilo sigue vivo, así que sus adjuntos no se tocan).
+   * Se piden antes de eliminar() para poder limpiar el bucket después de que
+   * la fila de `mensaje_adjuntos` ya no exista.
    */
   async rutasAdjuntosDe(mensajeId: string): Promise<string[]> {
-    const { data: hijos } = await this.sb.from('mensajes').select('id').eq('hilo_padre', mensajeId)
-    const ids = [mensajeId, ...((hijos ?? []) as { id: string }[]).map((h) => h.id)]
-
-    const { data } = await this.sb.from('mensaje_adjuntos').select('ruta').in('mensaje_id', ids)
+    const { data } = await this.sb.from('mensaje_adjuntos').select('ruta').eq('mensaje_id', mensajeId)
     return ((data ?? []) as { ruta: string }[]).map((a) => a.ruta)
   }
 
