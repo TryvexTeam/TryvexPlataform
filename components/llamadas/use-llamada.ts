@@ -955,6 +955,10 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       await fetch(`/api/llamadas/${llamadaId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        // `keepalive` deja que el request termine aunque la pestaña se esté
+        // cerrando en ese mismo instante (ej. se dispara desde `pagehide`
+        // más abajo): sin esto el navegador puede abortarlo a mitad de vuelo.
+        keepalive: true,
         body: JSON.stringify({
           accion: 'salir',
           // El navegador es el unico que sabe por donde fue el trafico. Si esto
@@ -970,6 +974,19 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     }
     onTerminada?.()
   }, [llamadaId, onTerminada])
+
+  // Cerrar la pestaña o navegar afuera no dispara ningún cleanup que avise al
+  // servidor -- sin esto la fila queda "en_llamada" hasta que el barrido de
+  // zombis la limpia, horas después. `pagehide` es más confiable que
+  // `beforeunload` para esto (sigue funcionando con bfcache).
+  const colgarRef = useRef(colgar)
+  colgarRef.current = colgar
+  useEffect(() => {
+    if (!llamadaId) return
+    const alSalir = () => void colgarRef.current()
+    window.addEventListener('pagehide', alSalir)
+    return () => window.removeEventListener('pagehide', alSalir)
+  }, [llamadaId])
 
   return {
     participantes,
