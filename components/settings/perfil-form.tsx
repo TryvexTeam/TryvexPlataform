@@ -42,7 +42,7 @@ function horarioInicial(guardado: HorarioDia[] | null): HorarioDia[] {
 export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
   const router = useRouter()
   const [nombre, setNombre] = useState(perfil.nombre)
-  const [especialidad, setEspecialidad] = useState(perfil.especialidad ?? '')
+  const [rolPrincipal, setRolPrincipal] = useState(perfil.rol_principal ?? '')
   const [telefono, setTelefono] = useState(perfil.telefono ?? '')
   const [color, setColor] = useState<string | null>(perfil.color)
   const [horario, setHorario] = useState<HorarioDia[]>(horarioInicial(perfil.horario))
@@ -84,7 +84,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre,
-          especialidad: especialidad || null,
+          rol_principal: rolPrincipal || null,
           telefono: telefono || null,
           color,
           horario,
@@ -134,7 +134,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="perfil-especialidad">Especialidad / rol</Label>
-              <Input id="perfil-especialidad" value={especialidad} onChange={(e) => setEspecialidad(e.target.value)} placeholder="Ej: Frontend, Ventas" />
+              <Input id="perfil-especialidad" value={rolPrincipal} onChange={(e) => setRolPrincipal(e.target.value)} placeholder="Ej: Frontend, Ventas" />
             </div>
           </div>
           <div className="grid md:grid-cols-2 gap-3">

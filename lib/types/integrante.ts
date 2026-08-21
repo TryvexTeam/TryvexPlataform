@@ -95,12 +95,16 @@ export const CATEGORIAS_EQUIPO = ['core', 'engineering'] as const
 
 export const PerfilUpdateSchema = z.object({
   nombre: z.string().min(1, 'El nombre es requerido').optional(),
-  especialidad: z.string().nullable().optional(),
   telefono: TelefonoSchema.optional(),
   color: z.enum(COLORES_HEX).nullable().optional(),
   horario: z.array(HorarioDiaSchema).nullable().optional(),
   notificaciones: NotificacionesSchema.partial().nullable().optional(),
-  // Estos cinco solo alimentan la ficha pública en tryvex.tech (ver v_equipo_publico).
+  // Estos seis solo alimentan la ficha pública en tryvex.tech (ver v_equipo_publico).
+  // El campo de UI dice "Especialidad / rol" pero antes guardaba en `especialidad`
+  // (columna que nada más lee ni muestra en ningún lado) en vez de `rol_principal`
+  // (la que de verdad lee la vista pública) — por eso el "rol" nunca se
+  // actualizaba en tryvex.tech/team por más que se guardara en /settings.
+  rol_principal: z.string().nullable().optional(),
   bio_corta: z.string().max(160, 'Máximo 160 caracteres').nullable().optional(),
   bio: z.string().max(2000, 'Máximo 2000 caracteres').nullable().optional(),
   linkedin: UrlOpcionalSchema,
