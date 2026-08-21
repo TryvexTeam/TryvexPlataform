@@ -547,7 +547,7 @@ export function HiloChat({
           <p className="text-[12px] text-[var(--tx-ink-muted)]">
             {conversacion.tipo !== 'dm'
               ? `${conversacion.miembros.length} integrantes`
-              : (detallePresencia(presenciaOtro) ??
+              : (detallePresencia(presenciaOtro, otro ? enLinea.has(otro.integrante_id) : false) ??
                  (estadoOtro ? PRESENCIA_LABEL[estadoOtro] : 'Sin datos'))}
           </p>
         </div>
