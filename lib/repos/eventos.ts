@@ -113,22 +113,30 @@ export class EventosRepository {
     return porIntegrante
   }
 
+  /**
+   * Crea el evento y sus asistentes en un solo paso atómico.
+   *
+   * Antes eran dos llamadas separadas de PostgREST (insert en `eventos` +
+   * insert en `eventos_asistentes`): si la segunda fallaba, el evento quedaba
+   * creado sin nadie asignado y sin forma de deshacerlo. `crear_evento_con_asistentes`
+   * (migración 068) hace ambas dentro de la misma transacción SQL.
+   */
   async create(input: EventoInsert, creadoPorId: string): Promise<string> {
     // invitados_externos viaja a Google/email, no a la tabla eventos
     const { asistentes_ids, invitados_externos: _externos, ...evento } = input
-    const { data, error } = await this.sb
-      .from('eventos')
-      .insert({ ...evento, creado_por: creadoPorId })
-      .select('id')
-      .single()
+    const { data, error } = await this.sb.rpc('crear_evento_con_asistentes', {
+      p_titulo: evento.titulo,
+      p_tipo: evento.tipo,
+      p_inicio: evento.inicio,
+      p_fin: evento.fin,
+      p_lead_id: evento.lead_id ?? null,
+      p_cliente_id: evento.cliente_id ?? null,
+      p_notas: evento.notas ?? null,
+      p_creado_por: creadoPorId,
+      p_asistentes_ids: asistentes_ids,
+    })
     if (error) throw new Error(error.message)
-
-    const ids = asistentes_ids.length > 0 ? asistentes_ids : [creadoPorId]
-    const { error: aError } = await this.sb.from('eventos_asistentes').insert(
-      ids.map((integrante_id) => ({ evento_id: data.id, integrante_id }))
-    )
-    if (aError) throw new Error(aError.message)
-    return data.id
+    return data as string
   }
 
   /** Upsert idempotente desde Google Calendar. Si el evento nació en el CRM
