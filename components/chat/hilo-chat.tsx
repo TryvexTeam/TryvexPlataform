@@ -8,6 +8,8 @@ import { copiarTexto } from '@/lib/utils/copiar-texto'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
 import { avatarConversacion, pesoLegible, tituloConversacion } from '@/lib/types/chat'
+import { MAX_ARCHIVOS, validarArchivos } from '@/lib/types/adjuntos'
+import { subirAdjuntos, leerJSON, type AdjuntoSubido } from '@/lib/chat/subir-adjuntos'
 import {
   PRESENCIA_LABEL,
   detallePresencia,
@@ -38,7 +40,6 @@ interface HiloChatProps {
   onVolver?: () => void
 }
 
-const MAX_ARCHIVOS = 10
 
 const HORA = new Intl.DateTimeFormat('es-CL', {
   hour: '2-digit',
@@ -59,6 +60,9 @@ export function HiloChat({
   const [mensajes, setMensajes] = useState<Mensaje[]>([])
   const [borrador, setBorrador] = useState('')
   const [enviando, setEnviando] = useState(false)
+  // Cuántos adjuntos van subidos. Sin esto, mandar un archivo grande se ve
+  // igual que mandar texto: la persona no sabe si está pasando algo o se colgó.
+  const [subiendo, setSubiendo] = useState<{ hechos: number; total: number } | null>(null)
   const [porEnviar, setPorEnviar] = useState<File[]>([])
   const [citando, setCitando] = useState<Mensaje | null>(null)
   const [hiloAbierto, setHiloAbierto] = useState<Mensaje | null>(null)
@@ -273,30 +277,31 @@ export function HiloChat({
 
     setEnviando(true)
     try {
-      // Con archivos va como formulario, para que texto y adjuntos entren en un
-      // solo viaje y no quede una subida huérfana si el mensaje falla.
-      let res: Response
+      // Los archivos suben DIRECTO a Storage y después se manda el mensaje con
+      // las rutas. Antes iban dentro del propio POST como FormData, y eso los
+      // hacía pasar por la función de Vercel, que corta a los 4,5 MB: el chat
+      // parecía roto cuando en realidad estaba topando un límite invisible.
+      let adjuntos: AdjuntoSubido[] = []
       if (porEnviar.length > 0) {
-        const cuerpo = new FormData()
-        cuerpo.append('conversacion_id', conversacion.id)
-        if (contenido) cuerpo.append('contenido', contenido)
-        if (citando) cuerpo.append('responder_a', citando.id)
-        for (const f of porEnviar) cuerpo.append('archivos', f)
-        res = await fetch('/api/chat/mensajes', { method: 'POST', body: cuerpo })
-      } else {
-        res = await fetch('/api/chat/mensajes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            conversacion_id: conversacion.id,
-            contenido,
-            responder_a: citando?.id,
-          }),
-        })
+        setSubiendo({ hechos: 0, total: porEnviar.length })
+        adjuntos = await subirAdjuntos(conversacion.id, porEnviar, (hechos, total) =>
+          setSubiendo({ hechos, total }),
+        )
       }
 
-      const json = await res.json()
-      if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo enviar')
+      const res = await fetch('/api/chat/mensajes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversacion_id: conversacion.id,
+          contenido: contenido || undefined,
+          responder_a: citando?.id,
+          adjuntos: adjuntos.length > 0 ? adjuntos : undefined,
+        }),
+      })
+
+      const json = await leerJSON(res)
+      if (!res.ok || !json?.success) throw new Error(json?.error ?? 'No se pudo enviar')
 
       const mensaje = json.data as Mensaje
       setMensajes((previos) => (previos.some((m) => m.id === mensaje.id) ? previos : [...previos, mensaje]))
@@ -308,6 +313,7 @@ export function HiloChat({
       toast.error(err instanceof Error ? err.message : 'Error enviando el mensaje')
     } finally {
       setEnviando(false)
+      setSubiendo(null)
     }
   }
 
@@ -486,7 +492,18 @@ export function HiloChat({
 
   const sumarArchivos = (nuevos: FileList | null) => {
     if (!nuevos?.length) return
-    setPorEnviar((previos) => [...previos, ...Array.from(nuevos)].slice(0, MAX_ARCHIVOS))
+    // Se avisa ACA, no al enviar: hasta el 21-ago-2026 el limite solo existia
+    // en el servidor, asi que la pantalla aceptaba un archivo de 20 MB sin
+    // decir nada y el error llegaba despues de que la persona ya esperaba.
+    const candidatos = Array.from(nuevos)
+    const problema = validarArchivos(
+      [...porEnviar, ...candidatos].map((f) => ({ nombre: f.name, bytes: f.size })),
+    )
+    if (problema) {
+      toast.error(problema)
+      return
+    }
+    setPorEnviar((previos) => [...previos, ...candidatos].slice(0, MAX_ARCHIVOS))
   }
 
   return (
@@ -859,6 +876,13 @@ export function HiloChat({
               const archivos = Array.from(e.clipboardData.files)
               if (archivos.length === 0) return
               e.preventDefault()
+              const problema = validarArchivos(
+                [...porEnviar, ...archivos].map((f) => ({ nombre: f.name, bytes: f.size })),
+              )
+              if (problema) {
+                toast.error(problema)
+                return
+              }
               setPorEnviar((previos) => [...previos, ...archivos].slice(0, MAX_ARCHIVOS))
             }}
             rows={1}
@@ -874,9 +898,23 @@ export function HiloChat({
             aria-label="Enviar mensaje"
             className="shrink-0 disabled:opacity-40 text-[var(--tx-accent)]"
           >
-            <SendIcon className="size-5" />
+            {enviando ? (
+              <Loader2Icon className="size-5 animate-spin" />
+            ) : (
+              <SendIcon className="size-5" />
+            )}
           </button>
         </div>
+
+        {/* Subir un archivo grande tarda. Sin esto la pantalla se ve igual que
+            cuando se manda solo texto, y no se sabe si está pasando algo. */}
+        {subiendo && (
+          <p className="px-4 pt-1.5 text-[12px] text-[var(--tx-ink-muted)]" aria-live="polite">
+            {subiendo.total === 1
+              ? 'Subiendo el archivo…'
+              : `Subiendo archivos… ${subiendo.hechos} de ${subiendo.total}`}
+          </p>
+        )}
       </div>
     </div>
 
