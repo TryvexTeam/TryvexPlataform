@@ -344,9 +344,15 @@ export function PanelLlamada({
    * quien prefiera la grilla.
    */
   const compartiendoAhora = participantes.find((p) => p.compartiendo)?.integranteId ?? null
-  useEffect(() => {
+  // Ajuste de estado durante el render (no en un efecto): comparar contra el
+  // valor anterior y llamar a setState de forma condicionada es el patrón que
+  // React recomienda para esto, evita el render en cascada extra de hacerlo
+  // en un efecto.
+  const [previoCompartiendoAhora, setPrevioCompartiendoAhora] = useState(compartiendoAhora)
+  if (compartiendoAhora !== previoCompartiendoAhora) {
+    setPrevioCompartiendoAhora(compartiendoAhora)
     if (compartiendoAhora) setDestacado(compartiendoAhora)
-  }, [compartiendoAhora])
+  }
 
   /**
    * El audio de la llamada, separado de los recuadros.
@@ -933,7 +939,6 @@ function Recuadro({
     // pista ya venía destapada antes de montar, no habrá ningún evento después y
     // sin esto el recuadro se queda en el avatar para siempre. Es justo el bug
     // que este efecto arregla.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     revisar()
 
     pistaVideo.addEventListener('unmute', revisar)

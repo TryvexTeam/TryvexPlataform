@@ -39,12 +39,11 @@ export function useHablando(fuentes: Fuente[]): Set<string> {
     .sort()
     .join(',')
 
+  const hayAudio = fuentes.some((f) => f.stream && f.stream.getAudioTracks().length > 0)
+
   useEffect(() => {
     const conAudio = fuentes.filter((f) => f.stream && f.stream.getAudioTracks().length > 0)
-    if (conAudio.length === 0) {
-      setHablando(new Set())
-      return
-    }
+    if (conAudio.length === 0) return
 
     let ctx: AudioContext
     try {
@@ -121,5 +120,8 @@ export function useHablando(fuentes: Fuente[]): Set<string> {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clave])
 
-  return hablando
+  // Sin nadie con audio no hay nada que decidir: se devuelve vacío directo en
+  // vez de sincronizarlo con setState en el efecto de arriba, que es lo que
+  // disparaba el render en cascada.
+  return hayAudio ? hablando : new Set()
 }
