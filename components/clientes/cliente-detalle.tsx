@@ -15,7 +15,7 @@ import { ConfirmarDialog } from './confirmar-dialog'
 import { MovimientoForm, type VentaACobrar } from '@/components/finanzas/movimiento-form'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
-import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
+import { ESTADOS_PROYECTO, resumenFinanciero, saldoInicialArrastrado } from '@/lib/types/proyecto'
 import { cn } from '@/lib/utils'
 
 const estadoPagoConfig = {
@@ -96,11 +96,11 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
     cliente.saldo_inicial_saldado,
   )
 
-  // Saldo del valor inicial que aún se arrastra: lo acordado menos lo cobrado como inicial.
-  const cobradoInicial = ventas
-    .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
-    .reduce((s, v) => s + (v.monto_usd ?? 0), 0)
-  const saldoArrastrado = Math.max(0, (cliente.valor_inicial_usd ?? 0) - cobradoInicial)
+  const saldoArrastrado = saldoInicialArrastrado(
+    ventas,
+    cliente.valor_inicial_usd,
+    cliente.saldo_inicial_saldado,
+  )
   const mostrarSaldoInicial = saldoArrastrado > 0 || cliente.saldo_inicial_saldado
 
   return (
