@@ -96,6 +96,19 @@ export function esTexto(adjunto: AdjuntoMensaje): boolean {
   return EXTENSIONES_TEXTO.test(adjunto.nombre)
 }
 
+/**
+ * PDFs: se miran dentro del chat, sin bajarlos.
+ *
+ * Es el caso más común de archivo que no es imagen ni texto — una cotización,
+ * un informe — y hasta ahora había que descargarlo para saber si era el que uno
+ * buscaba. Igual que con el texto, la extensión también cuenta: un PDF subido
+ * desde Windows puede llegar como `application/octet-stream`.
+ */
+export function esPdf(adjunto: AdjuntoMensaje): boolean {
+  if (adjunto.tipo_mime === 'application/pdf') return true
+  return /\.pdf$/i.test(adjunto.nombre)
+}
+
 /** Un preview no puede traerse un log de 20MB al navegador. */
 export const MAX_BYTES_PREVIEW = 256 * 1024
 
