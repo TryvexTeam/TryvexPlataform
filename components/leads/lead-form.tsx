@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
-import { LeadInsertSchema, type Lead, type LeadInsert } from '@/lib/types/lead'
+import { LeadInsertSchema, RAZONES_PERDIDA, type Lead, type LeadInsert } from '@/lib/types/lead'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,6 +41,7 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
     estado: (lead?.estado ?? defaults.estado) as string,
     origen: (lead?.origen ?? defaults.origen) as string,
     score: lead?.score?.toString() ?? '',
+    razon_perdida: (lead?.razon_perdida ?? '') as string,
   })
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -56,6 +57,14 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
     e.preventDefault()
     setErrors({})
 
+    // Perdido sin razón deja un lead caído sin forma de saber por qué. El
+    // drag&drop del kanban ya obliga a elegir una (leads-pipeline.tsx); este
+    // formulario es la otra ruta hacia "perdido" y no puede quedar más suelta.
+    if (form.estado === 'perdido' && !form.razon_perdida) {
+      setErrors({ razon_perdida: 'Elegí por qué se perdió' })
+      return
+    }
+
     const result = LeadInsertSchema.safeParse({
       ...form,
       telefono: form.telefono || null,
@@ -64,6 +73,9 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
       url_web: form.url_web || null,
       notas: form.notas || null,
       score: form.score ? Number(form.score) : null,
+      // Se limpia sola al reabrir: si no está perdido, no puede quedar una
+      // razón vieja colgando de un estado anterior.
+      razon_perdida: form.estado === 'perdido' ? form.razon_perdida : null,
     })
 
     if (!result.success) {
@@ -77,7 +89,7 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
     try {
       await onSubmit(result.data)
       onOpenChange(false)
-      setForm({ ...defaults, score: '', estado: 'sin_contactar', origen: 'manual', tiene_web: null })
+      setForm({ ...defaults, score: '', estado: 'sin_contactar', origen: 'manual', tiene_web: null, razon_perdida: '' })
     } catch {
       toast.error('Error al guardar el lead')
     } finally {
@@ -99,7 +111,7 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
             {errors.nombre_negocio && <p className="text-xs text-red-500">{errors.nombre_negocio}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="lead-telefono">Teléfono</Label>
               <Input id="lead-telefono" value={form.telefono ?? ''} onChange={(e) => set('telefono', e.target.value)} placeholder="+56 9..." />
@@ -110,7 +122,7 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="lead-nicho">Nicho</Label>
               <Input id="lead-nicho" value={form.nicho ?? ''} onChange={(e) => set('nicho', e.target.value)} placeholder="Ej: Restaurante" />
@@ -121,7 +133,7 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="lead-estado">Estado</Label>
               <Select value={form.estado} onValueChange={(v) => set('estado', v ?? 'sin_contactar')}>
@@ -149,6 +161,21 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
               </Select>
             </div>
           </div>
+
+          {form.estado === 'perdido' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="lead-razon-perdida">Razón *</Label>
+              <Select value={form.razon_perdida} onValueChange={(v) => set('razon_perdida', v ?? '')}>
+                <SelectTrigger id="lead-razon-perdida"><SelectValue placeholder="¿Por qué se perdió?" /></SelectTrigger>
+                <SelectContent>
+                  {RAZONES_PERDIDA.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.razon_perdida && <p className="text-xs text-red-500">{errors.razon_perdida}</p>}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="lead-tiene-web">¿Tiene web?</Label>
