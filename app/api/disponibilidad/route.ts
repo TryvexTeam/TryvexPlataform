@@ -20,7 +20,7 @@ export async function PUT(req: Request) {
 
   const result = DisponibilidadPutSchema.safeParse(await req.json())
   if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ success: false, error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   const repo = new DisponibilidadRepository(supabase)

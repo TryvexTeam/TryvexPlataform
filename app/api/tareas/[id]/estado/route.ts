@@ -25,7 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = await req.json()
   const result = EstadoSchema.safeParse(body)
   if (!result.success) {
-    return NextResponse.json({ error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   const repo = new TareasRepository(supabase)

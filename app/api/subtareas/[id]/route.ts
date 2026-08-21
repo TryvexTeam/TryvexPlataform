@@ -13,7 +13,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params
   const body = await req.json()
   const result = PatchSchema.safeParse(body)
-  if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const repo = new TareasRepository(supabase)
   await repo.toggleSubtarea(id, result.data.completada)

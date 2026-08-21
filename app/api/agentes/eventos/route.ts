@@ -80,7 +80,7 @@ export async function POST(req: Request) {
 
   const result = EventoInsertSchema.safeParse(cuerpo)
   if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ success: false, error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   // Un agente no es integrante: el evento se atribuye a quien lo dio de alta.

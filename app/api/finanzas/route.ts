@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     categoria: searchParams.get('categoria') ?? undefined,
   })
   if (!filtro.success) {
-    return NextResponse.json({ success: false, error: filtro.error.issues }, { status: 400 })
+    return NextResponse.json({ success: false, error: filtro.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   const movimientos = await new FinanzasRepository(supabase).list(filtro.data)
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
   const result = MovimientoInsertSchema.safeParse(await req.json())
   if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ success: false, error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   const id = await new FinanzasRepository(supabase).create(result.data, perfil!.id)

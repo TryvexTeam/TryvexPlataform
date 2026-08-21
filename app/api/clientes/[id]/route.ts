@@ -10,7 +10,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { id } = await params
   const result = ClienteUpdateSchema.safeParse(await req.json())
-  if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const repo = new ClientesRepository(supabase)
   await repo.update(id, result.data)

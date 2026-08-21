@@ -14,7 +14,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { id } = await params
   const result = Schema.safeParse(await req.json())
-  if (!result.success) return NextResponse.json({ error: result.error.issues }, { status: 400 })
+  if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   await new ProyectosRepository(supabase).cambiarEstado(id, result.data.estado)
   return NextResponse.json({ ok: true })
