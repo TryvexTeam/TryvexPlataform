@@ -191,11 +191,11 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Tipo *</Label>
+              <Label htmlFor="mov-tipo">Tipo *</Label>
               <Select value={form.tipo} onValueChange={(v) => cambiarTipo(v ?? 'egreso')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="mov-tipo"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ingreso">Ingreso</SelectItem>
                   <SelectItem value="egreso">Egreso</SelectItem>
@@ -204,9 +204,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
               {errors.tipo && <p className="text-xs text-red-500">{errors.tipo}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label>Categoría *</Label>
+              <Label htmlFor="mov-categoria">Categoría *</Label>
               <Select value={form.categoria} onValueChange={(v) => set('categoria', v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Elegir" /></SelectTrigger>
+                <SelectTrigger id="mov-categoria"><SelectValue placeholder="Elegir" /></SelectTrigger>
                 <SelectContent>
                   {categorias.map((c) => (
                     <SelectItem key={c} value={c}>{CATEGORIA_LABELS[c] ?? c}</SelectItem>
@@ -218,8 +218,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
           </div>
 
           <div className="space-y-1.5">
-            <Label>Descripción *</Label>
+            <Label htmlFor="mov-descripcion">Descripción *</Label>
             <Input
+              id="mov-descripcion"
               value={form.descripcion}
               onChange={(e) => set('descripcion', e.target.value)}
               placeholder="Ej: hosting Vercel de agosto"
@@ -227,10 +228,11 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
             {errors.descripcion && <p className="text-xs text-red-500">{errors.descripcion}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Monto (CLP) *</Label>
+              <Label htmlFor="mov-monto">Monto (CLP) *</Label>
               <Input
+                id="mov-monto"
                 type="number"
                 step="1"
                 min="0"
@@ -241,17 +243,17 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
               {errors.monto_clp && <p className="text-xs text-red-500">{errors.monto_clp}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label>Fecha *</Label>
+              <Label htmlFor="mov-fecha">Fecha *</Label>
               <SelectorFecha value={form.fecha} onChange={(v) => set('fecha', v)} />
               {errors.fecha && <p className="text-xs text-red-500">{errors.fecha}</p>}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Método de pago</Label>
+              <Label htmlFor="mov-metodo-pago">Método de pago</Label>
               <Select value={form.metodo_pago} onValueChange={(v) => set('metodo_pago', v ?? NINGUNO)}>
-                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectTrigger id="mov-metodo-pago"><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NINGUNO}>Sin especificar</SelectItem>
                   {METODOS_PAGO.map((m) => (
@@ -261,8 +263,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Contraparte</Label>
+              <Label htmlFor="mov-contraparte">Contraparte</Label>
               <Input
+                id="mov-contraparte"
                 value={form.contraparte}
                 onChange={(e) => set('contraparte', e.target.value)}
                 placeholder="A quién / de quién"
@@ -273,9 +276,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
 
           {clientes.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Cliente asociado</Label>
+              <Label htmlFor="mov-cliente">Cliente asociado</Label>
               <Select value={form.cliente_id} onValueChange={(v) => set('cliente_id', v ?? NINGUNO)}>
-                <SelectTrigger><SelectValue placeholder="Sin cliente" /></SelectTrigger>
+                <SelectTrigger id="mov-cliente"><SelectValue placeholder="Sin cliente" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NINGUNO}>Sin cliente</SelectItem>
                   {clientes.map((c) => (
@@ -302,8 +305,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
           </div>
 
           <div className="space-y-1.5">
-            <Label>Notas</Label>
+            <Label htmlFor="mov-notas">Notas</Label>
             <Textarea
+              id="mov-notas"
               value={form.notas}
               onChange={(e) => set('notas', e.target.value)}
               rows={2}

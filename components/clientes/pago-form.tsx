@@ -175,16 +175,16 @@ export function PagoForm({
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Monto (USD) *</Label>
-              <Input type="number" step="0.01" value={form.monto_usd} onChange={(e) => set('monto_usd', e.target.value)} placeholder="0" />
+              <Label htmlFor="pago-monto">Monto (USD) *</Label>
+              <Input id="pago-monto" type="number" step="0.01" value={form.monto_usd} onChange={(e) => set('monto_usd', e.target.value)} placeholder="0" />
               {errors.monto_usd && <p className="text-xs text-red-500">{errors.monto_usd}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label>Tipo</Label>
+              <Label htmlFor="pago-tipo">Tipo</Label>
               <Select value={form.tipo} onValueChange={(v) => set('tipo', v ?? 'inicial')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="pago-tipo"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="inicial">Inicial</SelectItem>
                   <SelectItem value="mantencion">Mantención</SelectItem>
@@ -194,11 +194,11 @@ export function PagoForm({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Estado</Label>
+              <Label htmlFor="pago-estado">Estado</Label>
               <Select value={form.estado_pago} onValueChange={(v) => set('estado_pago', v ?? 'pendiente')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="pago-estado"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pendiente">Pendiente</SelectItem>
                   <SelectItem value="pagado">Pagado</SelectItem>
@@ -207,9 +207,9 @@ export function PagoForm({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Método</Label>
+              <Label htmlFor="pago-metodo">Método</Label>
               <Select value={form.metodo_pago} onValueChange={(v) => set('metodo_pago', v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectTrigger id="pago-metodo"><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="transferencia">Transferencia</SelectItem>
                   <SelectItem value="mercadopago">MercadoPago</SelectItem>
@@ -221,9 +221,9 @@ export function PagoForm({
 
           {proyectos.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Proyecto asociado</Label>
+              <Label htmlFor="pago-proyecto">Proyecto asociado</Label>
               <Select value={form.proyecto_id} onValueChange={(v) => set('proyecto_id', v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Sin proyecto" /></SelectTrigger>
+                <SelectTrigger id="pago-proyecto"><SelectValue placeholder="Sin proyecto" /></SelectTrigger>
                 <SelectContent>
                   {proyectos.map((p) => (
                     <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
@@ -233,27 +233,27 @@ export function PagoForm({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Fecha emisión</Label>
+              <Label htmlFor="pago-fecha-emision">Fecha emisión</Label>
               <SelectorFecha value={form.fecha_emision} onChange={(v) => set('fecha_emision', v)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Fecha de cobro</Label>
+              <Label htmlFor="pago-fecha-cobro">Fecha de cobro</Label>
               <SelectorFecha value={form.fecha_vencimiento} onChange={(v) => set('fecha_vencimiento', v)} />
             </div>
           </div>
 
           {form.estado_pago === 'pagado' && (
             <div className="space-y-1.5">
-              <Label>Fecha de pago</Label>
+              <Label htmlFor="pago-fecha-pago">Fecha de pago</Label>
               <SelectorFecha value={form.fecha_pago} onChange={(v) => set('fecha_pago', v)} />
             </div>
           )}
 
           <div className="space-y-1.5">
-            <Label>Descripción</Label>
-            <Input value={form.descripcion} onChange={(e) => set('descripcion', e.target.value)} placeholder="Ej: 2da cuota landing" />
+            <Label htmlFor="pago-descripcion">Descripción</Label>
+            <Input id="pago-descripcion" value={form.descripcion} onChange={(e) => set('descripcion', e.target.value)} placeholder="Ej: 2da cuota landing" />
           </div>
 
           <DialogFooter>

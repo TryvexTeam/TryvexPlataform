@@ -94,38 +94,38 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Negocio *</Label>
-            <Input value={form.nombre_negocio} onChange={(e) => set('nombre_negocio', e.target.value)} placeholder="Nombre del negocio" />
+            <Label htmlFor="lead-negocio">Negocio *</Label>
+            <Input id="lead-negocio" value={form.nombre_negocio} onChange={(e) => set('nombre_negocio', e.target.value)} placeholder="Nombre del negocio" />
             {errors.nombre_negocio && <p className="text-xs text-red-500">{errors.nombre_negocio}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Teléfono</Label>
-              <Input value={form.telefono ?? ''} onChange={(e) => set('telefono', e.target.value)} placeholder="+56 9..." />
+              <Label htmlFor="lead-telefono">Teléfono</Label>
+              <Input id="lead-telefono" value={form.telefono ?? ''} onChange={(e) => set('telefono', e.target.value)} placeholder="+56 9..." />
             </div>
             <div className="space-y-1.5">
-              <Label>Score (1-10)</Label>
-              <Input type="number" min={1} max={10} value={form.score} onChange={(e) => set('score', e.target.value)} placeholder="—" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Nicho</Label>
-              <Input value={form.nicho ?? ''} onChange={(e) => set('nicho', e.target.value)} placeholder="Ej: Restaurante" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Localidad</Label>
-              <Input value={form.localidad ?? ''} onChange={(e) => set('localidad', e.target.value)} placeholder="Ej: Santiago" />
+              <Label htmlFor="lead-score">Score (1-10)</Label>
+              <Input id="lead-score" type="number" min={1} max={10} value={form.score} onChange={(e) => set('score', e.target.value)} placeholder="—" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Estado</Label>
+              <Label htmlFor="lead-nicho">Nicho</Label>
+              <Input id="lead-nicho" value={form.nicho ?? ''} onChange={(e) => set('nicho', e.target.value)} placeholder="Ej: Restaurante" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="lead-localidad">Localidad</Label>
+              <Input id="lead-localidad" value={form.localidad ?? ''} onChange={(e) => set('localidad', e.target.value)} placeholder="Ej: Santiago" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="lead-estado">Estado</Label>
               <Select value={form.estado} onValueChange={(v) => set('estado', v ?? 'sin_contactar')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="lead-estado"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="sin_contactar">Sin contactar</SelectItem>
                   <SelectItem value="contactado">Contactado</SelectItem>
@@ -138,9 +138,9 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Origen</Label>
+              <Label htmlFor="lead-origen">Origen</Label>
               <Select value={form.origen} onValueChange={(v) => set('origen', v ?? 'manual')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="lead-origen"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="manual">Manual</SelectItem>
                   <SelectItem value="scraper">Scraper</SelectItem>
@@ -151,12 +151,12 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
           </div>
 
           <div className="space-y-1.5">
-            <Label>¿Tiene web?</Label>
+            <Label htmlFor="lead-tiene-web">¿Tiene web?</Label>
             <Select
               value={form.tiene_web === null ? 'no_se' : form.tiene_web ? 'si' : 'no'}
               onValueChange={(v) => set('tiene_web', v === 'no_se' ? null : v === 'si')}
             >
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger id="lead-tiene-web"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="no_se">No sé</SelectItem>
                 <SelectItem value="si">Sí</SelectItem>
@@ -167,14 +167,14 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
 
           {form.tiene_web === true && (
             <div className="space-y-1.5">
-              <Label>URL web</Label>
-              <Input value={form.url_web ?? ''} onChange={(e) => set('url_web', e.target.value)} placeholder="https://..." />
+              <Label htmlFor="lead-url-web">URL web</Label>
+              <Input id="lead-url-web" value={form.url_web ?? ''} onChange={(e) => set('url_web', e.target.value)} placeholder="https://..." />
             </div>
           )}
 
           <div className="space-y-1.5">
-            <Label>Notas</Label>
-            <Textarea value={form.notas ?? ''} onChange={(e) => set('notas', e.target.value)} rows={2} placeholder="Observaciones..." />
+            <Label htmlFor="lead-notas">Notas</Label>
+            <Textarea id="lead-notas" value={form.notas ?? ''} onChange={(e) => set('notas', e.target.value)} rows={2} placeholder="Observaciones..." />
           </div>
 
           <DialogFooter>

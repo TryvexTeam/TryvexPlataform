@@ -126,21 +126,21 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Título *</Label>
-            <Input value={form.titulo} onChange={(e) => set('titulo', e.target.value)} placeholder="¿Qué hay que hacer?" />
+            <Label htmlFor="tarea-titulo">Título *</Label>
+            <Input id="tarea-titulo" value={form.titulo} onChange={(e) => set('titulo', e.target.value)} placeholder="¿Qué hay que hacer?" />
             {errors.titulo && <p className="text-xs text-red-500">{errors.titulo}</p>}
           </div>
 
           <div className="space-y-1.5">
-            <Label>Descripción</Label>
-            <Textarea value={form.descripcion ?? ''} onChange={(e) => set('descripcion', e.target.value)} rows={2} placeholder="Detalles opcionales..." />
+            <Label htmlFor="tarea-descripcion">Descripción</Label>
+            <Textarea id="tarea-descripcion" value={form.descripcion ?? ''} onChange={(e) => set('descripcion', e.target.value)} rows={2} placeholder="Detalles opcionales..." />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Tipo</Label>
+              <Label htmlFor="tarea-tipo">Tipo</Label>
               <Select value={form.tipo} onValueChange={(v) => set('tipo', v ?? '')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="tarea-tipo"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="general">General</SelectItem>
                   <SelectItem value="feature">Feature</SelectItem>
@@ -151,9 +151,9 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
             </div>
 
             <div className="space-y-1.5">
-              <Label>Estado</Label>
+              <Label htmlFor="tarea-estado">Estado</Label>
               <Select value={form.estado} onValueChange={(v) => set('estado', v ?? '')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="tarea-estado"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {ESTADOS_TAREA.map((e) => (
                     <SelectItem key={e.id} value={e.id}>
@@ -165,9 +165,9 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
             </div>
 
             <div className="space-y-1.5">
-              <Label>Prioridad</Label>
+              <Label htmlFor="tarea-prioridad">Prioridad</Label>
               <Select value={form.prioridad} onValueChange={(v) => set('prioridad', v ?? '')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="tarea-prioridad"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="alta">Alta</SelectItem>
                   <SelectItem value="media">Media</SelectItem>
@@ -177,9 +177,9 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
             </div>
 
             <div className="space-y-1.5">
-              <Label>Esfuerzo</Label>
+              <Label htmlFor="tarea-esfuerzo">Esfuerzo</Label>
               <Select value={form.esfuerzo} onValueChange={(v) => set('esfuerzo', v ?? '')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="tarea-esfuerzo"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pequeno">Pequeño (S)</SelectItem>
                   <SelectItem value="medio">Medio (M)</SelectItem>
@@ -230,8 +230,8 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
 
           {integrantes.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Responsables</Label>
-              <div className="flex flex-wrap gap-1.5">
+              <Label id="tarea-responsables-label">Responsables</Label>
+              <div role="group" aria-labelledby="tarea-responsables-label" className="flex flex-wrap gap-1.5">
                 {integrantes.map((m) => {
                   const selected = responsables.has(m.integrante_id)
                   const color = memberColor(m.integrante_id, m.nombre)

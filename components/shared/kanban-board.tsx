@@ -5,6 +5,7 @@ import {
   DragOverlay,
   MouseSensor,
   TouchSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -15,7 +16,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { SortableContext, verticalListSortingStrategy, useSortable, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
@@ -312,7 +313,8 @@ export function KanbanBoard<T extends { id: string }>({
   // (drag): hay que mantener 200ms sin moverse mas de 8px para que arranque.
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
   // Por defecto dnd-kit compara el RECTANGULO de la tarjeta arrastrada contra

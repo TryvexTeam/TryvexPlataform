@@ -51,6 +51,14 @@ function ProyectoCard({
   return (
     <div
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick?.()
+        }
+      }}
       className="rounded-xl p-3 cursor-pointer select-none transition-all duration-150"
       style={{
         background: vencido ? 'oklch(63% 0.21 22 / 6%)' : 'oklch(10% 0.004 240)',

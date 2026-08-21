@@ -147,8 +147,8 @@ export function ProyectoForm({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Nombre *</Label>
-            <Input value={form.nombre} onChange={(e) => set('nombre', e.target.value)} placeholder="Nombre del proyecto" />
+            <Label htmlFor="proyecto-nombre">Nombre *</Label>
+            <Input id="proyecto-nombre" value={form.nombre} onChange={(e) => set('nombre', e.target.value)} placeholder="Nombre del proyecto" />
           </div>
 
           {/* El servicio solo se elige al CREAR: cambiarlo después no tendría
@@ -160,8 +160,8 @@ export function ProyectoForm({
               después no tendría efecto, porque las tareas ya nacieron. */}
           {!proyecto && (
             <div className="space-y-2">
-              <Label>Servicios vendidos</Label>
-              <div className="flex flex-col gap-3 rounded-[20px] border border-white/[0.07] p-3.5">
+              <Label id="proyecto-servicios-label">Servicios vendidos</Label>
+              <div role="group" aria-labelledby="proyecto-servicios-label" className="flex flex-col gap-3 rounded-[20px] border border-white/[0.07] p-3.5">
                 {FAMILIAS_SERVICIO.map((familia) => (
                   <div key={familia}>
                     <p className="mb-2 text-[10.5px] font-medium uppercase tracking-[0.09em] text-[var(--tx-ink-muted)]">
@@ -209,12 +209,12 @@ export function ProyectoForm({
 
           {integrantes.length > 0 && (
             <div className="space-y-2">
-              <Label>Equipo</Label>
+              <Label id="proyecto-equipo-label">Equipo</Label>
               {/* Caras y no una lista de casillas: en un equipo de cinco se
                   reconoce antes a alguien por su foto que leyendo su nombre.
                   El elegido se marca con su propio color de perfil, que es como
                   ya se le distingue en el calendario y en las tareas. */}
-              <div className="flex flex-wrap gap-2">
+              <div role="group" aria-labelledby="proyecto-equipo-label" className="flex flex-wrap gap-2">
                 {integrantes.map((integrante) => {
                   const elegido = equipo.has(integrante.id)
                   return (
@@ -265,9 +265,9 @@ export function ProyectoForm({
                 servicios —o al editar— sigue eligiéndose a mano. */}
             {servicios.size === 0 && (
               <div className="space-y-1.5">
-                <Label>Tipo</Label>
+                <Label htmlFor="proyecto-tipo">Tipo</Label>
                 <Select value={form.tipo} onValueChange={(v) => set('tipo', v ?? 'otro')}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="proyecto-tipo"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="landing">Landing</SelectItem>
                     <SelectItem value="automatizacion">Automatización</SelectItem>
@@ -278,9 +278,9 @@ export function ProyectoForm({
               </div>
             )}
             <div className="space-y-1.5">
-              <Label>Estado</Label>
+              <Label htmlFor="proyecto-estado">Estado</Label>
               <Select value={form.estado} onValueChange={(v) => set('estado', v ?? 'brief')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="proyecto-estado"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="brief">Brief</SelectItem>
                   <SelectItem value="desarrollo">Desarrollo</SelectItem>
@@ -294,9 +294,9 @@ export function ProyectoForm({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Cliente</Label>
+            <Label htmlFor="proyecto-cliente">Cliente</Label>
             <Select value={form.cliente_id} onValueChange={(v) => set('cliente_id', v ?? '')}>
-              <SelectTrigger><SelectValue placeholder="Sin cliente" /></SelectTrigger>
+              <SelectTrigger id="proyecto-cliente"><SelectValue placeholder="Sin cliente" /></SelectTrigger>
               <SelectContent>
                 {clientes.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
@@ -307,39 +307,39 @@ export function ProyectoForm({
             </Select>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid md:grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label>Costo (USD)</Label>
-              <Input type="number" value={form.costo_total_usd} onChange={(e) => set('costo_total_usd', e.target.value)} placeholder="0" />
+              <Label htmlFor="proyecto-costo">Costo (USD)</Label>
+              <Input id="proyecto-costo" type="number" value={form.costo_total_usd} onChange={(e) => set('costo_total_usd', e.target.value)} placeholder="0" />
             </div>
             <div className="space-y-1.5">
-              <Label>Hs. estimadas</Label>
-              <Input type="number" value={form.horas_estimadas} onChange={(e) => set('horas_estimadas', e.target.value)} placeholder="0" />
+              <Label htmlFor="proyecto-horas-estimadas">Hs. estimadas</Label>
+              <Input id="proyecto-horas-estimadas" type="number" value={form.horas_estimadas} onChange={(e) => set('horas_estimadas', e.target.value)} placeholder="0" />
             </div>
             <div className="space-y-1.5">
-              <Label>Hs. reales</Label>
-              <Input type="number" value={form.horas_reales} onChange={(e) => set('horas_reales', e.target.value)} placeholder="0" />
+              <Label htmlFor="proyecto-horas-reales">Hs. reales</Label>
+              <Input id="proyecto-horas-reales" type="number" value={form.horas_reales} onChange={(e) => set('horas_reales', e.target.value)} placeholder="0" />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Inicio</Label>
+              <Label htmlFor="proyecto-fecha-inicio">Inicio</Label>
               <SelectorFecha value={form.fecha_inicio} onChange={(v) => set('fecha_inicio', v)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Entrega</Label>
+              <Label htmlFor="proyecto-fecha-entrega">Entrega</Label>
               <SelectorFecha value={form.fecha_entrega} onChange={(v) => set('fecha_entrega', v)} />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>URL deploy</Label>
-            <Input value={form.url_deploy} onChange={(e) => set('url_deploy', e.target.value)} placeholder="https://..." />
+            <Label htmlFor="proyecto-url-deploy">URL deploy</Label>
+            <Input id="proyecto-url-deploy" value={form.url_deploy} onChange={(e) => set('url_deploy', e.target.value)} placeholder="https://..." />
           </div>
           <div className="space-y-1.5">
-            <Label>Repo URL</Label>
-            <Input value={form.repo_url} onChange={(e) => set('repo_url', e.target.value)} placeholder="https://github.com/..." />
+            <Label htmlFor="proyecto-repo-url">Repo URL</Label>
+            <Input id="proyecto-repo-url" value={form.repo_url} onChange={(e) => set('repo_url', e.target.value)} placeholder="https://github.com/..." />
           </div>
 
           <DialogFooter>
