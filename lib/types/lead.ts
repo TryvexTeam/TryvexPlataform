@@ -74,7 +74,7 @@ export const LeadSchema = z.object({
   updated_at: z.string(),
 })
 
-export const LeadInsertSchema = z.object({
+const LeadBaseSchema = z.object({
   nombre_negocio: z.string().min(1, 'El nombre es requerido'),
   telefono: z.string().nullable().optional(),
   info_texto: z.string().nullable().optional(),
@@ -91,7 +91,22 @@ export const LeadInsertSchema = z.object({
   notas: z.string().nullable().optional(),
 })
 
-export const LeadUpdateSchema = LeadInsertSchema.partial()
+// Antes solo el form y el kanban obligaban la razón al marcar "perdido" —
+// cualquier otro caller de estas rutas (script, agente, curl) podía dejarla
+// en null. El refine lo mueve al schema para que sea imposible de saltear.
+function exigeRazonSiPerdido(data: { estado?: string; razon_perdida?: string | null }) {
+  return data.estado !== 'perdido' || !!data.razon_perdida
+}
+
+export const LeadInsertSchema = LeadBaseSchema.refine(exigeRazonSiPerdido, {
+  message: 'Los leads perdidos requieren una razón',
+  path: ['razon_perdida'],
+})
+
+export const LeadUpdateSchema = LeadBaseSchema.partial().refine(exigeRazonSiPerdido, {
+  message: 'Los leads perdidos requieren una razón',
+  path: ['razon_perdida'],
+})
 
 export const InteraccionInsertSchema = z.object({
   lead_id: z.string().uuid(),

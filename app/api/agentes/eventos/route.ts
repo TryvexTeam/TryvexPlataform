@@ -98,6 +98,11 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient() as SB
 
+  // El SELECT de eventoYaExiste es solo un atajo para el caso común (evita
+  // llamar a Google de nuevo en un reintento obvio); la garantía real contra
+  // la carrera TOCTOU es el unique (titulo, inicio) de la migración 071 — dos
+  // reintentos simultáneos pueden pasar este SELECT a la vez, pero solo uno
+  // de los dos INSERT de más abajo va a tener éxito.
   const yaExiste = await eventoYaExiste(admin, result.data.titulo, result.data.inicio)
   if (yaExiste) {
     return NextResponse.json({
@@ -112,6 +117,20 @@ export async function POST(req: Request) {
   try {
     id = await repo.create(result.data, creadoPor)
   } catch (error: unknown) {
+    // repo.create() envuelve el PostgrestError en un Error genérico y pierde
+    // el .code (lib/repos/eventos.ts), así que el duplicado se detecta por
+    // mensaje — mismo patrón que ya usa /api/vex/whatsapp/send.
+    const esDuplicado =
+      error instanceof Error && error.message.toLowerCase().includes('duplicate key')
+    if (esDuplicado) {
+      const duplicadoId = await eventoYaExiste(admin, result.data.titulo, result.data.inicio)
+      if (duplicadoId) {
+        return NextResponse.json({
+          success: true,
+          data: { id: duplicadoId, meet_link: null, google_sync: false, duplicado: true },
+        })
+      }
+    }
     const message = error instanceof Error ? error.message : 'Error creando el evento'
     return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
