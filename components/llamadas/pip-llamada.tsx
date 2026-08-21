@@ -198,6 +198,24 @@ export function PipLlamada({
     }
   }, [colocar])
 
+  // Si la posición guardada quedó fuera de pantalla tras achicar la ventana o
+  // rotar el dispositivo, no había forma de recuperarla salvo arrastrar a
+  // ciegas. Re-acotar contra el tamaño actual la trae de vuelta al viewport.
+  useEffect(() => {
+    const alRedimensionar = () => {
+      const el = caja.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      colocar(r.left, r.top)
+    }
+    window.addEventListener('resize', alRedimensionar)
+    window.addEventListener('orientationchange', alRedimensionar)
+    return () => {
+      window.removeEventListener('resize', alRedimensionar)
+      window.removeEventListener('orientationchange', alRedimensionar)
+    }
+  }, [colocar])
+
   function alBajar(e: React.PointerEvent<HTMLDivElement>) {
     if (!caja.current) return
     const r = caja.current.getBoundingClientRect()
