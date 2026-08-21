@@ -1,10 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { FileIcon, DownloadIcon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
+import {
+  FileIcon,
+  FileTextIcon,
+  DownloadIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  LinkIcon,
+} from 'lucide-react'
+import { copiarTexto } from '@/lib/utils/copiar-texto'
 import {
   MAX_BYTES_PREVIEW,
   esImagen,
+  esPdf,
   esTexto,
   pesoLegible,
   urlAdjunto,
@@ -12,8 +21,11 @@ import {
 } from '@/lib/types/chat'
 
 /**
- * Los archivos de un mensaje. Las imágenes se ven; el resto va como tarjeta con
- * su nombre y peso, que es lo que hace falta para decidir si abrirlo.
+ * Los archivos de un mensaje.
+ *
+ * La idea de fondo: **no debería hacer falta descargar algo para saber qué es.**
+ * Las imágenes se ven, los textos se despliegan, los PDF se abren acá mismo, y
+ * lo que no se puede mostrar al menos dice su nombre y su peso.
  */
 export function AdjuntosMensaje({ adjuntos }: { adjuntos: AdjuntoMensaje[] }) {
   if (adjuntos.length === 0) return null
@@ -53,22 +65,110 @@ export function AdjuntosMensaje({ adjuntos }: { adjuntos: AdjuntoMensaje[] }) {
       {archivos.map((a) =>
         esTexto(a) ? (
           <ArchivoDeTexto key={a.id} adjunto={a} />
+        ) : esPdf(a) ? (
+          <ArchivoPdf key={a.id} adjunto={a} />
         ) : (
-        <a
-          key={a.id}
-          href={urlAdjunto(a.id)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2.5 rounded-xl px-3 py-2 bg-black/20 hover:bg-black/30 transition-colors"
-        >
-          <FileIcon size={18} className="shrink-0 opacity-80" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px] truncate">{a.nombre}</span>
-            <span className="block text-[11px] opacity-70">{pesoLegible(a.bytes)}</span>
-          </span>
-          <DownloadIcon size={15} className="shrink-0 opacity-70" />
-        </a>
+          <div
+            key={a.id}
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 bg-black/20"
+          >
+            <FileIcon size={18} className="shrink-0 opacity-80" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] truncate">{a.nombre}</span>
+              <span className="block text-[11px] opacity-70">{pesoLegible(a.bytes)}</span>
+            </span>
+            <AccionesAdjunto adjunto={a} />
+          </div>
         ),
+      )}
+    </div>
+  )
+}
+
+/**
+ * Descargar y copiar el enlace, en todos los adjuntos por igual.
+ *
+ * El enlace copiado apunta al endpoint propio, no a una URL firmada: la firmada
+ * vence en 60 segundos, así que pegarla en otro chat entrega algo que ya no
+ * abre. Esta revalida el permiso en cada pedido y sirve mientras la persona
+ * siga siendo del equipo.
+ */
+function AccionesAdjunto({ adjunto }: { adjunto: AdjuntoMensaje }) {
+  const copiarEnlace = () => {
+    const base = typeof window === 'undefined' ? '' : window.location.origin
+    void copiarTexto(`${base}${urlAdjunto(adjunto.id)}`, 'Enlace copiado')
+  }
+
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      <button
+        onClick={copiarEnlace}
+        aria-label={`Copiar enlace de ${adjunto.nombre}`}
+        title="Copiar enlace"
+        className="p-1 opacity-70 hover:opacity-100"
+      >
+        <LinkIcon size={14} />
+      </button>
+      <a
+        href={urlAdjunto(adjunto.id)}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Descargar ${adjunto.nombre}`}
+        title="Descargar"
+        className="p-1 opacity-70 hover:opacity-100"
+      >
+        <DownloadIcon size={15} />
+      </a>
+    </span>
+  )
+}
+
+/**
+ * Un PDF se mira acá mismo, sin bajarlo.
+ *
+ * Es el archivo que más circula después de las imágenes —cotizaciones,
+ * informes— y hasta ahora había que descargarlo solo para saber si era el que
+ * uno buscaba.
+ *
+ * Va cerrado por defecto y el visor se monta recién al abrirlo: un `<iframe>`
+ * por cada PDF del historial le pediría al navegador cargar documentos que
+ * nadie va a mirar.
+ */
+function ArchivoPdf({ adjunto }: { adjunto: AdjuntoMensaje }) {
+  const [abierto, setAbierto] = useState(false)
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(0,0,0,0.2)' }}>
+      <div className="flex items-center gap-2.5 px-3 py-2">
+        <button
+          onClick={() => setAbierto((v) => !v)}
+          aria-expanded={abierto}
+          className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+        >
+          {abierto ? (
+            <ChevronDownIcon size={16} className="shrink-0 opacity-70" />
+          ) : (
+            <ChevronRightIcon size={16} className="shrink-0 opacity-70" />
+          )}
+          <FileTextIcon size={18} className="shrink-0 opacity-80" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] truncate">{adjunto.nombre}</span>
+            <span className="block text-[11px] opacity-70">
+              {pesoLegible(adjunto.bytes)} · {abierto ? 'ocultar' : 'ver acá'}
+            </span>
+          </span>
+        </button>
+        <AccionesAdjunto adjunto={adjunto} />
+      </div>
+
+      {abierto && (
+        <div className="border-t border-current/10">
+          <iframe
+            src={urlAdjunto(adjunto.id)}
+            title={adjunto.nombre}
+            className="w-full h-[420px] bg-white"
+          />
+        </div>
       )}
     </div>
   )
@@ -85,26 +185,28 @@ export function AdjuntosMensaje({ adjuntos }: { adjuntos: AdjuntoMensaje[] }) {
 function ArchivoDeTexto({ adjunto }: { adjunto: AdjuntoMensaje }) {
   const [abierto, setAbierto] = useState(false)
   const [texto, setTexto] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [errorAlLeer, setErrorAlLeer] = useState<string | null>(null)
+
+  // Que el archivo sea muy grande NO es estado: se sabe del propio adjunto
+  // antes de intentar nada. Estaba puesto con `setError` dentro del efecto, lo
+  // que dispara un render en cascada (y es lo que marcaba el lint). Derivarlo
+  // es además más honesto: no es algo que pasó, es algo que ya era así.
+  const demasiadoGrande = adjunto.bytes > MAX_BYTES_PREVIEW
+  const error = demasiadoGrande ? 'Muy grande para mostrarlo acá — descargalo' : errorAlLeer
 
   useEffect(() => {
-    if (!abierto || texto !== null || error) return
+    if (!abierto || demasiadoGrande || texto !== null || errorAlLeer) return
     let vigente = true
-
-    if (adjunto.bytes > MAX_BYTES_PREVIEW) {
-      setError('Muy grande para mostrarlo acá — descargalo')
-      return
-    }
 
     fetch(urlAdjunto(adjunto.id))
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error('No se pudo leer'))))
       .then((t) => vigente && setTexto(t))
-      .catch(() => vigente && setError('No se pudo leer el archivo'))
+      .catch(() => vigente && setErrorAlLeer('No se pudo leer el archivo'))
 
     return () => {
       vigente = false
     }
-  }, [abierto, adjunto.id, adjunto.bytes, texto, error])
+  }, [abierto, demasiadoGrande, adjunto.id, texto, errorAlLeer])
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(0,0,0,0.2)' }}>
@@ -124,15 +226,7 @@ function ArchivoDeTexto({ adjunto }: { adjunto: AdjuntoMensaje }) {
             <span className="block text-[11px] opacity-70">{pesoLegible(adjunto.bytes)}</span>
           </span>
         </button>
-        <a
-          href={urlAdjunto(adjunto.id)}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Descargar ${adjunto.nombre}`}
-          className="shrink-0 opacity-70 hover:opacity-100"
-        >
-          <DownloadIcon size={15} />
-        </a>
+        <AccionesAdjunto adjunto={adjunto} />
       </div>
 
       {abierto && (
