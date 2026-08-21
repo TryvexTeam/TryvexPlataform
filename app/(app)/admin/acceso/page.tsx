@@ -21,7 +21,7 @@ export default async function AdminAccesoPage() {
     return (
       <div className="p-6">
         <h1 className="mb-1 text-2xl font-bold text-[var(--tx-ink-primary)]">Acceso a la app</h1>
-        <p className="text-neutral-500">Solo el administrador de Tryvex puede quitar o devolver el acceso.</p>
+        <p className="text-[var(--tx-ink-muted)]">Solo el administrador de Tryvex puede quitar o devolver el acceso.</p>
       </div>
     )
   }
@@ -37,7 +37,7 @@ export default async function AdminAccesoPage() {
         <UserX className="h-6 w-6 text-neutral-700" />
         <div>
           <h1 className="text-xl font-semibold text-[var(--tx-ink-primary)]">Acceso a la app</h1>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-[var(--tx-ink-muted)]">
             Quitar el acceso cierra las sesiones abiertas de la persona e impide que vuelva a entrar
           </p>
         </div>

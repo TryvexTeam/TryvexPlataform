@@ -177,7 +177,19 @@ function TablaLeads({ leads, onRowClick }: { leads: Lead[]; onRowClick: (id: str
           {leads.map((l) => {
             const estadoConf = ESTADOS_LEAD.find((e) => e.id === l.estado)
             return (
-              <tr key={l.id} onClick={() => onRowClick(l.id)} className="hover:bg-[var(--tx-surface-1)] cursor-pointer transition-colors">
+              <tr
+                key={l.id}
+                onClick={() => onRowClick(l.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onRowClick(l.id)
+                  }
+                }}
+                className="hover:bg-[var(--tx-surface-1)] cursor-pointer transition-colors"
+              >
                 <td className="px-4 py-3 font-medium text-[var(--tx-ink-primary)]">{l.nombre_negocio}</td>
                 <td className="px-4 py-3 text-[var(--tx-ink-muted)] hidden md:table-cell">{l.nicho ?? '—'}</td>
                 <td className="px-4 py-3 text-[var(--tx-ink-muted)] hidden md:table-cell">{l.localidad ?? '—'}</td>

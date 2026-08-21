@@ -61,16 +61,35 @@ export class AsignacionesRepository {
       .select('*', { count: 'exact', head: true })
       .eq('lead_id', leadId)
 
-    const rol: RolAsignacion = (count ?? 0) === 0 ? 'owner' : 'colaborador'
+    let rol: RolAsignacion = (count ?? 0) === 0 ? 'owner' : 'colaborador'
 
     const { error } = await this.sb
       .from('lead_asignaciones')
       .insert({ lead_id: leadId, integrante_id: integranteId, rol, asignado_por: integranteId })
 
-    // Carrera: dos personas escribiendo a la vez al mismo lead. La PK compuesta
-    // lo impide en la base; aquí se absorbe sin romper el envío del mensaje.
     if (error) {
-      if (error.code === '23505') return null
+      // Dos carreras posibles, mismo código 23505 pero distinto significado:
+      // - PK (lead_id, integrante_id): este integrante ya estaba asignado
+      //   (otro request paralelo lo insertó primero) — no hay nada que hacer.
+      // - unique parcial (lead_id) WHERE rol='owner' (migración 072): OTRO
+      //   integrante ganó la carrera por "owner" entre el SELECT count y este
+      //   INSERT. En ese caso el rol calculado era incorrecto — reintentar
+      //   como 'colaborador' en vez de devolver null, que dejaría a este
+      //   integrante sin ninguna fila y "silenciosamente" desasignado.
+      if (error.code === '23505') {
+        if (rol === 'owner') {
+          rol = 'colaborador'
+          const reintento = await this.sb
+            .from('lead_asignaciones')
+            .insert({ lead_id: leadId, integrante_id: integranteId, rol, asignado_por: integranteId })
+          if (reintento.error) {
+            if (reintento.error.code === '23505') return null
+            throw new Error(reintento.error.message)
+          }
+          return rol
+        }
+        return null
+      }
       throw new Error(error.message)
     }
 

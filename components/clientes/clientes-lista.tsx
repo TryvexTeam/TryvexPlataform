@@ -77,6 +77,14 @@ export function ClientesLista({ initialClientes }: ClientesListaProps) {
               <tr
                 key={c.id}
                 onClick={() => router.push(`/clientes/${c.id}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    router.push(`/clientes/${c.id}`)
+                  }
+                }}
                 className="cursor-pointer transition-colors"
                 style={{ borderTop: '1px solid var(--tx-border)' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'oklch(100% 0 0 / 2%)'}

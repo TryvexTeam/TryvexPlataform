@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
+import { excedeLimite } from '@/lib/agentes/rate-limit'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -30,6 +31,14 @@ async function autenticar(req: Request): Promise<Agente | null> {
 export async function GET(req: Request) {
   const agente = await autenticar(req)
   if (!agente) return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })
+
+  const espera = excedeLimite(agente.id)
+  if (espera !== null) {
+    return NextResponse.json(
+      { success: false, error: 'Demasiadas solicitudes' },
+      { status: 429, headers: { 'Retry-After': String(espera) } },
+    )
+  }
 
   const { searchParams } = new URL(req.url)
   const telefonoRaw = searchParams.get('telefono')

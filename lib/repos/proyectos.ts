@@ -23,6 +23,9 @@ export class ProyectosRepository {
       .from('dim_proyectos')
       .select('*, dim_clientes ( nombre_negocio, nombre_contacto )')
       .order('created_at', { ascending: false })
+      // Mismo criterio que leads.list(): techo de seguridad, no paginación
+      // real — el kanban de proyectos también pinta la lista completa.
+      .limit(5000)
 
     if (filters?.cliente_id) query = query.eq('cliente_id', filters.cliente_id)
     if (filters?.estado) query = query.eq('estado', filters.estado)

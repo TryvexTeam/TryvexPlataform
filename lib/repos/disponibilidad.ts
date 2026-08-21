@@ -57,23 +57,19 @@ export class DisponibilidadRepository {
     }))
   }
 
-  /** Reemplaza por completo la disponibilidad del integrante (guardado idempotente desde la grilla) */
+  /**
+   * Reemplaza por completo la disponibilidad del integrante (guardado
+   * idempotente desde la grilla). Vía RPC (migración 073): delete+insert en
+   * una sola transacción, para no perder toda la disponibilidad guardada si
+   * el insert fallaba después del delete.
+   */
   async replaceOwn(integranteId: string, celdas: Celda[]): Promise<void> {
-    const { error: delError } = await this.sb
-      .from('disponibilidad')
-      .delete()
-      .eq('integrante_id', integranteId)
-    if (delError) throw new Error(delError.message)
-
-    if (celdas.length === 0) return
-
-    const rows = celdas.map((c) => ({
-      integrante_id: integranteId,
-      dia_semana: c.dia_semana,
-      hora: c.hora,
-    }))
-    const { error: insError } = await this.sb.from('disponibilidad').insert(rows)
-    if (insError) throw new Error(insError.message)
+    const { error } = await this.sb.rpc('reemplazar_disponibilidad', {
+      p_integrante_id: integranteId,
+      p_dias: celdas.map((c) => c.dia_semana),
+      p_horas: celdas.map((c) => c.hora),
+    })
+    if (error) throw new Error(error.message)
   }
 
   /** id del integrante asociado al usuario auth actual (null si no es integrante activo) */

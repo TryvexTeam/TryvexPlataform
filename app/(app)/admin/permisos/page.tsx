@@ -20,7 +20,7 @@ export default async function AdminPermisosPage() {
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)] mb-1">Accesos</h1>
-        <p className="text-neutral-500">Solo el administrador de Tryvex puede repartir accesos.</p>
+        <p className="text-[var(--tx-ink-muted)]">Solo el administrador de Tryvex puede repartir accesos.</p>
       </div>
     )
   }
@@ -33,7 +33,7 @@ export default async function AdminPermisosPage() {
         <KeyRound className="h-6 w-6 text-neutral-700" />
         <div>
           <h1 className="text-xl font-semibold text-[var(--tx-ink-primary)]">Accesos</h1>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-[var(--tx-ink-muted)]">
             Reparte visibilidad sin convertir a nadie en administrador
           </p>
         </div>
