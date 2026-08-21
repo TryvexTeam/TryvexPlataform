@@ -24,7 +24,6 @@ type SupabaseTarea = {
   created_by: string | null
   created_at: string
   updated_at: string
-  completed_at: string | null
   eliminado_at: string | null
   tarea_responsables: {
     integrante_id: string
@@ -294,10 +293,11 @@ export class TareasRepository {
   }
 
   async cambiarEstado(id: string, estado: EstadoTarea): Promise<void> {
+    // `completada_at` (columna real) la mantiene el disparador de la base
+    // (migración 060); acá solo se toca `updated_at`.
     const update: Record<string, string | null> = {
       estado,
       updated_at: new Date().toISOString(),
-      completed_at: estado === 'listo' ? new Date().toISOString() : null,
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (this.supabase as any).from('tareas').update(update).eq('id', id)
