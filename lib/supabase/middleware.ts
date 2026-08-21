@@ -55,7 +55,15 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/recuperar') ||          // pedir el link de contraseÃ±a nueva
     pathname.startsWith('/auth/confirmar') ||     // canje del token del correo
     pathname.startsWith('/api/auth/recuperar') ||
-    pathname.startsWith('/api/invitaciones/') ||  // validaciÃ³n de token no requiere sesiÃ³n
+    // Solo la validaciÃ³n del TOKEN (GET/PATCH /api/invitaciones/<token>) no
+    // requiere sesiÃ³n. `/pendientes` y `<id>/aprobar` viven bajo el mismo
+    // prefijo pero son del panel de aprobaciÃ³n (superadmin autenticado): sin
+    // estas dos exclusiones, la regla de "logueado en ruta pÃºblica â†’
+    // dashboard" de mÃ¡s abajo rebotaba a cualquier superadmin autenticado
+    // antes de que la ruta llegara a correr.
+    (pathname.startsWith('/api/invitaciones/') &&
+      pathname !== '/api/invitaciones/pendientes' &&
+      !pathname.endsWith('/aprobar')) ||
     // Se autentica con `Authorization: Bearer <token de agente>`, no con sesiÃ³n de
     // navegador: acÃ¡ entran Jarvis, Ariel y Spike, que corren como servicios. Sin
     // esta lÃ­nea el middleware los rebota a /login y la ruta NUNCA llega a ejecutarse

@@ -15,20 +15,35 @@ export function generarToken(): { raw: string; hash: string } {
 function calcularEstado(inv: Invitacion): InvitacionEstado {
   if (inv.used_at) return 'usado'
   if (new Date(inv.expires_at) < new Date()) return 'expirado'
+  if (!inv.aprobado_at) return 'pendiente_aprobacion'
   return 'pendiente'
 }
 
+/**
+ * Quien invita no es siempre quien aprueba: si quien crea la invitación ya
+ * es superadmin, se autoaprueba (no tiene sentido pedirle a él mismo que se
+ * apruebe). Cualquier otro integrante deja la invitación pendiente hasta
+ * que un superadmin la revise desde el panel de aprobación.
+ */
 export async function crearInvitacion(
   supabase: SupabaseClient,
   email: string,
-  invitadoPorId: string
+  invitadoPorId: string,
+  invitadorEsSuperadmin: boolean
 ): Promise<{ invitacion: Invitacion; tokenRaw: string }> {
   const { raw, hash } = generarToken()
   const expiresAt = new Date(Date.now() + EXPIRY_MINUTES * 60 * 1000).toISOString()
 
   const { data, error } = await supabase
     .from('invitaciones')
-    .insert({ email, token_hash: hash, invited_by_id: invitadoPorId, expires_at: expiresAt })
+    .insert({
+      email,
+      token_hash: hash,
+      invited_by_id: invitadoPorId,
+      expires_at: expiresAt,
+      aprobado_at: invitadorEsSuperadmin ? new Date().toISOString() : null,
+      aprobado_por: invitadorEsSuperadmin ? invitadoPorId : null,
+    })
     .select()
     .single()
 
@@ -54,8 +69,49 @@ export async function validarToken(
 
   if (inv.used_at) return { valido: false, error: 'Esta invitación ya fue utilizada' }
   if (new Date(inv.expires_at) < new Date()) return { valido: false, error: 'La invitación ha expirado' }
+  if (!inv.aprobado_at) return { valido: false, error: 'Esta invitación todavía no fue aprobada por un administrador' }
 
   return { valido: true, invitacion: inv }
+}
+
+/** Invitaciones de cualquiera esperando que un superadmin las apruebe. */
+export async function getPendientesDeAprobacion(
+  supabase: SupabaseClient
+): Promise<(InvitacionConEstado & { invitado_por_nombre: string })[]> {
+  const { data, error } = await supabase
+    .from('invitaciones')
+    .select('*, dim_integrantes!invitaciones_invited_by_id_fkey(nombre)')
+    .is('aprobado_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .is('used_at', null)
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+
+  return (data as (Invitacion & { dim_integrantes: { nombre: string } | null })[]).map((inv) => ({
+    ...inv,
+    estado: calcularEstado(inv),
+    invitado_por_nombre: inv.dim_integrantes?.nombre ?? 'Alguien',
+  }))
+}
+
+/** Aprueba una invitación pendiente. Quien llama ya se validó como superadmin en la ruta. */
+export async function aprobarInvitacion(
+  supabase: SupabaseClient,
+  invitacionId: string,
+  aprobadoPorId: string
+): Promise<Invitacion> {
+  const { data, error } = await supabase
+    .from('invitaciones')
+    .update({ aprobado_at: new Date().toISOString(), aprobado_por: aprobadoPorId })
+    .eq('id', invitacionId)
+    .is('aprobado_at', null)
+    .select()
+    .single()
+
+  if (error) throw error
+  if (!data) throw new Error('La invitación ya no existe o ya fue aprobada')
+  return data as Invitacion
 }
 
 export async function marcarUsado(

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { InvitacionForm } from '@/components/admin/invitacion-form'
 import { InvitacionesLista } from '@/components/admin/invitaciones-lista'
+import { InvitacionesPendientes } from '@/components/admin/invitaciones-pendientes'
 import { Mail } from 'lucide-react'
 
 export default function AdminInvitacionesPage() {
@@ -12,12 +13,14 @@ export default function AdminInvitacionesPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
       <div className="flex items-center gap-3">
-        <Mail className="h-6 w-6 text-neutral-700" />
+        <Mail className="h-6 w-6 text-[var(--tx-ink-secondary)]" />
         <div>
-          <h1 className="text-xl font-semibold">Invitaciones</h1>
-          <p className="text-sm text-neutral-500">Genera links de acceso de un solo uso</p>
+          <h1 className="text-xl font-semibold text-[var(--tx-ink-primary)]">Invitaciones</h1>
+          <p className="text-sm text-[var(--tx-ink-muted)]">Genera links de acceso de un solo uso</p>
         </div>
       </div>
+
+      <InvitacionesPendientes refreshKey={refreshKey} />
 
       <Card>
         <CardHeader>

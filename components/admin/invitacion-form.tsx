@@ -17,6 +17,7 @@ export function InvitacionForm({ onCreada }: InvitacionFormProps) {
   const [enviarEmail, setEnviarEmail] = useState(true)
   const [loading, setLoading] = useState(false)
   const [linkGenerado, setLinkGenerado] = useState<string | null>(null)
+  const [pendienteAprobacion, setPendienteAprobacion] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -39,10 +40,15 @@ export function InvitacionForm({ onCreada }: InvitacionFormProps) {
       }
 
       setLinkGenerado(json.data.link)
+      setPendienteAprobacion(Boolean(json.data.requiereAprobacion))
       setEmail('')
       onCreada()
 
-      if (enviarEmail) {
+      if (json.data.requiereAprobacion) {
+        toast('Invitación creada, pendiente de aprobación', {
+          description: 'Un superadmin tiene que aprobarla antes de que el link funcione',
+        })
+      } else if (enviarEmail) {
         toast.success(`Invitación enviada a ${email}`)
       } else {
         toast.success('Invitación generada')
@@ -92,7 +98,10 @@ export function InvitacionForm({ onCreada }: InvitacionFormProps) {
 
       {linkGenerado && (
         <div className="rounded-lg border border-[var(--tx-border)] bg-white/5 p-3 space-y-2">
-          <p className="text-xs text-[var(--tx-ink-muted)] font-medium">Link de invitación (válido 30 min)</p>
+          <p className="text-xs text-[var(--tx-ink-muted)] font-medium">
+            Link de invitación (válido 30 min)
+            {pendienteAprobacion && ' — todavía no funciona, esperando aprobación de un superadmin'}
+          </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 text-xs bg-white/5 border border-[var(--tx-border)] text-[var(--tx-ink-primary)] rounded px-2 py-1.5 truncate">
               {linkGenerado}

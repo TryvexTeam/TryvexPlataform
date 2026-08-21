@@ -7,6 +7,7 @@ import { es } from 'date-fns/locale/es'
 import type { InvitacionConEstado } from '@/lib/types/invitacion'
 
 const estadoBadge: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' }> = {
+  pendiente_aprobacion: { label: 'Esperando aprobación', variant: 'destructive' },
   pendiente: { label: 'Pendiente', variant: 'default' },
   usado: { label: 'Usado', variant: 'secondary' },
   expirado: { label: 'Expirado', variant: 'destructive' },
