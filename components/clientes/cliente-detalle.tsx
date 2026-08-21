@@ -210,6 +210,14 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
                 <div
                   key={p.id}
                   onClick={() => router.push(`/proyectos/${p.id}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      router.push(`/proyectos/${p.id}`)
+                    }
+                  }}
                   className="flex items-center justify-between p-3 rounded-lg border border-[var(--tx-border)] hover:bg-[var(--tx-surface-2)] cursor-pointer"
                 >
                   <div>

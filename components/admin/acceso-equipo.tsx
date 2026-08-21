@@ -80,7 +80,7 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
   }
 
   if (equipo.length === 0) {
-    return <p className="text-sm text-neutral-500">Todavía no hay integrantes.</p>
+    return <p className="text-sm text-[var(--tx-ink-muted)]">Todavía no hay integrantes.</p>
   }
 
   return (
@@ -91,26 +91,26 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
           return (
             <li
               key={integrante.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-neutral-200 p-4"
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[var(--tx-border)] p-4"
               style={{ opacity: integrante.activo ? 1 : 0.65 }}
             >
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 text-sm font-semibold text-[var(--tx-ink-primary)]">
                   <span className="truncate">{integrante.nombre}</span>
                   {integrante.es_superadmin && (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--tx-border-strong)] px-2 py-0.5 text-[11px] font-medium text-[var(--tx-ink-secondary)]">
                       <ShieldCheck size={11} /> Dueño
                     </span>
                   )}
                 </p>
-                <p className="truncate text-xs text-neutral-500">{integrante.email}</p>
+                <p className="truncate text-xs text-[var(--tx-ink-muted)]">{integrante.email}</p>
               </div>
 
               <span
                 className={
                   integrante.activo
-                    ? 'inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700'
-                    : 'inline-flex shrink-0 items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-medium text-neutral-600'
+                    ? 'inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400'
+                    : 'inline-flex shrink-0 items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-[var(--tx-ink-secondary)]'
                 }
               >
                 {integrante.activo ? <UserCheck size={12} /> : <ShieldOff size={12} />}
@@ -121,7 +121,7 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
                 <Button
                   variant="outline"
                   size="sm"
-                  className="shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
                   /* Uno no se revoca a sí mismo: dejaría la cuenta sin quien
                      pueda revertirlo. El endpoint lo rechaza igual. */
                   disabled={soyYo || enviando}

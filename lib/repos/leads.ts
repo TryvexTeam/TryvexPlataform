@@ -26,6 +26,12 @@ export class LeadsRepository {
       .from('fact_leads')
       .select('*')
       .order('created_at', { ascending: false })
+      // El kanban pinta la lista completa agrupada por estado — bajar este
+      // número truncaría columnas enteras sin avisar. Es un techo de
+      // seguridad (hoy hay ~550 leads), no paginación real; si esto se
+      // acerca, lo que hace falta es paginación de verdad en la UI, no subir
+      // el número.
+      .limit(5000)
 
     if (filters?.estado) query = query.eq('estado', filters.estado)
     if (filters?.nicho) query = query.eq('nicho', filters.nicho)
@@ -471,14 +477,32 @@ export class LeadsRepository {
     }
   }
 
+  /**
+   * Import masivo (webhook del scraper): antes insertaba de a uno, un
+   * round-trip por lead — con un CSV de cientos eran cientos de idas y
+   * vueltas secuenciales. Ahora inserta por lotes; si un lote entero falla
+   * (una fila mala aborta el `.insert()` en PostgREST), cae a insertar ESE
+   * lote de a uno para no perder los leads buenos que iban con el malo.
+   */
   async insertarMuchos(leads: LeadInsert[]): Promise<{ inserted: number; errors: string[] }> {
     const errors: string[] = []
     let inserted = 0
+    const LOTE = 100
 
-    for (const lead of leads) {
-      const { error } = await this.sb.from('fact_leads').insert(lead)
-      if (error) errors.push(`${lead.nombre_negocio}: ${error.message}`)
-      else inserted++
+    for (let i = 0; i < leads.length; i += LOTE) {
+      const lote = leads.slice(i, i + LOTE)
+      const { error } = await this.sb.from('fact_leads').insert(lote)
+
+      if (!error) {
+        inserted += lote.length
+        continue
+      }
+
+      for (const lead of lote) {
+        const { error: errorFila } = await this.sb.from('fact_leads').insert(lead)
+        if (errorFila) errors.push(`${lead.nombre_negocio}: ${errorFila.message}`)
+        else inserted++
+      }
     }
 
     return { inserted, errors }

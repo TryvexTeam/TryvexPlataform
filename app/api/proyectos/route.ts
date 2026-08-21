@@ -44,9 +44,32 @@ export async function POST(req: Request) {
     try {
       await repo.fijarEquipo(id, equipo.data)
     } catch (fijarEquipoError) {
-      await repo.eliminarCreacionParcial(id)
       const mensaje =
         fijarEquipoError instanceof Error ? fijarEquipoError.message : 'Error desconocido'
+      // El rollback mismo puede fallar (el mismo tipo de blip que hizo fallar
+      // fijarEquipo). Si eso pasa, el cliente no puede saber que el proyecto
+      // quedó a medias, y un reintento del POST lo duplicaría — el mensaje
+      // tiene que decirlo explícito en vez de devolver el error genérico de
+      // "no se creó" cuando en realidad sí quedó, sin equipo.
+      try {
+        await repo.eliminarCreacionParcial(id)
+      } catch (rollbackError) {
+        const mensajeRollback =
+          rollbackError instanceof Error ? rollbackError.message : 'Error desconocido'
+        console.error(
+          '[proyectos POST] rollback de eliminarCreacionParcial también falló, proyecto', id,
+          'quedó huérfano sin equipo:', mensajeRollback,
+        )
+        return NextResponse.json(
+          {
+            error:
+              `No se pudo asignar el equipo (${mensaje}) y tampoco se pudo deshacer el proyecto ` +
+              `(${mensajeRollback}). El proyecto ${id} quedó creado sin equipo — no reintentes, ` +
+              'pedile a alguien que lo revise a mano antes de crear uno nuevo.',
+          },
+          { status: 500 },
+        )
+      }
       return NextResponse.json(
         { error: `No se pudo asignar el equipo, el proyecto no se creó: ${mensaje}` },
         { status: 500 },

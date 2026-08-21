@@ -129,22 +129,22 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
 
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Nombre</Label>
-              <Input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+              <Label htmlFor="perfil-nombre">Nombre</Label>
+              <Input id="perfil-nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Especialidad / rol</Label>
-              <Input value={especialidad} onChange={(e) => setEspecialidad(e.target.value)} placeholder="Ej: Frontend, Ventas" />
+              <Label htmlFor="perfil-especialidad">Especialidad / rol</Label>
+              <Input id="perfil-especialidad" value={especialidad} onChange={(e) => setEspecialidad(e.target.value)} placeholder="Ej: Frontend, Ventas" />
             </div>
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Teléfono</Label>
-              <Input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="+56 9..." />
+              <Label htmlFor="perfil-telefono">Teléfono</Label>
+              <Input id="perfil-telefono" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="+56 9..." />
             </div>
             <div className="space-y-1.5">
-              <Label>Email</Label>
-              <Input value={perfil.email} readOnly className="opacity-60 cursor-not-allowed" />
+              <Label htmlFor="perfil-email">Email</Label>
+              <Input id="perfil-email" value={perfil.email} readOnly className="opacity-60 cursor-not-allowed" />
             </div>
           </div>
         </CardContent>
@@ -280,27 +280,27 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
             <FotoLandingUploader fotoInicial={perfil.foto_landing_url} avatarUrl={perfil.avatar_url} />
           </div>
           <div className="space-y-1.5">
-            <Label>Bio corta (una línea, máx. 160)</Label>
-            <Input value={bioCorta} onChange={(e) => setBioCorta(e.target.value)} maxLength={160} placeholder="Ej: Construye la parte que se ve" />
+            <Label htmlFor="perfil-bio-corta">Bio corta (una línea, máx. 160)</Label>
+            <Input id="perfil-bio-corta" value={bioCorta} onChange={(e) => setBioCorta(e.target.value)} maxLength={160} placeholder="Ej: Construye la parte que se ve" />
           </div>
           <div className="space-y-1.5">
-            <Label>Bio</Label>
-            <Textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={2000} rows={4} placeholder="Un par de párrafos sobre vos" />
+            <Label htmlFor="perfil-bio">Bio</Label>
+            <Textarea id="perfil-bio" value={bio} onChange={(e) => setBio(e.target.value)} maxLength={2000} rows={4} placeholder="Un par de párrafos sobre vos" />
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>LinkedIn</Label>
-              <Input value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/..." />
+              <Label htmlFor="perfil-linkedin">LinkedIn</Label>
+              <Input id="perfil-linkedin" value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/..." />
             </div>
             <div className="space-y-1.5">
-              <Label>Portfolio</Label>
-              <Input value={portfolio} onChange={(e) => setPortfolio(e.target.value)} placeholder="https://..." />
+              <Label htmlFor="perfil-portfolio">Portfolio</Label>
+              <Input id="perfil-portfolio" value={portfolio} onChange={(e) => setPortfolio(e.target.value)} placeholder="https://..." />
             </div>
           </div>
           <div className="space-y-1.5 max-w-[220px]">
-            <Label>Categoría</Label>
+            <Label htmlFor="perfil-categoria">Categoría</Label>
             <Select value={category} onValueChange={(v) => setCategory(v as typeof category)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger id="perfil-categoria"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {CATEGORIAS_EQUIPO.map((c) => (
                   <SelectItem key={c} value={c}>{c === 'core' ? 'Core' : 'Engineering'}</SelectItem>

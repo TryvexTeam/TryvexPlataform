@@ -287,6 +287,7 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
         <button
           type="button"
           title="Eliminar lead"
+          aria-label="Eliminar lead"
           onClick={deleteLead}
           disabled={loading}
           className="ml-3 flex h-9 w-9 items-center justify-center rounded-full border
@@ -352,7 +353,7 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           </header>
           <div className="msg__to">Canal: {origenLabels[lead.origen]}</div>
           <div className="msg__body space-y-2 mt-2">
-            <div className="grid grid-cols-2 gap-3 text-[12px] bg-black/15 p-3 rounded-xl border border-white/[0.04]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px] bg-black/15 p-3 rounded-xl border border-white/[0.04]">
               {lead.telefono && (
                 <div className="flex items-center gap-2">
                   <Phone size={12} className="text-[var(--tx-ink-muted)]" />

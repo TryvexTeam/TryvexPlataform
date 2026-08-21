@@ -18,6 +18,10 @@ export class MensajesWaRepository {
       .select('*')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: true })
+      // Techo de seguridad: un hilo con miles de mensajes no debería poder
+      // colgar esta vista. 2000 cubre con margen cualquier conversación real
+      // de hoy sin cambiar el comportamiento actual.
+      .limit(2000)
 
     if (error) throw new Error(error.message)
     return (data ?? []) as MensajeWa[]

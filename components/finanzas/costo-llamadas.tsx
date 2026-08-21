@@ -52,7 +52,7 @@ export function CostoLlamadas({ consumo }: CostoLlamadasProps) {
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
         <Dato valor={consumo?.llamadas ?? 0} etiqueta="llamadas" />
         <Dato valor={horas.toFixed(1)} etiqueta="horas habladas" />
         <Dato valor={horasRelay.toFixed(1)} etiqueta="por relay" />

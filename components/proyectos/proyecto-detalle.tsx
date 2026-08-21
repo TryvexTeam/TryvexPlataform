@@ -17,10 +17,10 @@ import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
 import { cn } from '@/lib/utils'
 
 const estadoPagoColor: Record<string, string> = {
-  pendiente: 'bg-yellow-100 text-yellow-700',
-  pagado: 'bg-green-100 text-green-700',
-  atrasado: 'bg-red-100 text-red-700',
-  cancelado: 'bg-neutral-100 text-neutral-500',
+  pendiente: 'bg-yellow-500/10 text-yellow-400',
+  pagado: 'bg-green-500/10 text-green-400',
+  atrasado: 'bg-red-500/10 text-red-400',
+  cancelado: 'bg-white/5 text-[var(--tx-ink-muted)]',
 }
 
 const prioridadColor: Record<string, string> = {
@@ -78,7 +78,7 @@ export function ProyectoDetalle({
 
   return (
     <div>
-      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 mb-6">
+      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] mb-6">
         <ArrowLeft size={14} /> Volver
       </button>
 
@@ -90,9 +90,9 @@ export function ProyectoDetalle({
               <span className="h-2 w-2 rounded-full" style={{ background: estadoConf?.color }} />
               {estadoConf?.label}
             </span>
-            <span className="text-xs text-neutral-400 capitalize">{proyecto.tipo}</span>
+            <span className="text-xs text-[var(--tx-ink-muted)] capitalize">{proyecto.tipo}</span>
             {proyecto.cliente && (
-              <span className="text-xs text-neutral-400">
+              <span className="text-xs text-[var(--tx-ink-muted)]">
                 · {proyecto.cliente.nombre_contacto ?? proyecto.cliente.nombre_negocio}
                 {proyecto.cliente.nombre_contacto && proyecto.cliente.nombre_negocio ? ` (${proyecto.cliente.nombre_negocio})` : ''}
               </span>
@@ -103,7 +103,7 @@ export function ProyectoDetalle({
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil size={13} className="mr-1.5" /> Editar
           </Button>
-          <Button variant="outline" size="sm" onClick={handleDelete} className="text-red-600">
+          <Button variant="outline" size="sm" onClick={handleDelete} className="text-red-600" aria-label="Eliminar proyecto">
             <Trash2 size={13} />
           </Button>
         </div>
@@ -118,19 +118,19 @@ export function ProyectoDetalle({
           { label: 'Tareas', value: `${tareasCompletadas}/${tareas.length}` },
         ].map((item) => (
           <div key={item.label} className="bg-neutral-50 rounded-lg p-3 text-center">
-            <p className="text-xs text-neutral-500 mb-1">{item.label}</p>
-            <p className="text-sm font-semibold text-neutral-800">{item.value}</p>
+            <p className="text-xs text-[var(--tx-ink-muted)] mb-1">{item.label}</p>
+            <p className="text-sm font-semibold text-[var(--tx-ink-primary)]">{item.value}</p>
           </div>
         ))}
       </div>
 
       {progreso !== null && (
         <div className="mb-6">
-          <div className="flex justify-between text-xs text-neutral-500 mb-1">
+          <div className="flex justify-between text-xs text-[var(--tx-ink-muted)] mb-1">
             <span>Progreso de horas</span>
             <span>{progreso}%</span>
           </div>
-          <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+          <div className="h-2 bg-white/8 rounded-full overflow-hidden">
             <div
               className={cn('h-full rounded-full', progreso > 100 ? 'bg-red-400' : 'bg-blue-400')}
               style={{ width: `${Math.min(progreso, 100)}%` }}
@@ -152,7 +152,7 @@ export function ProyectoDetalle({
         )}
       </div>
 
-      <div className="flex gap-4 text-sm text-neutral-500 mb-6">
+      <div className="flex gap-4 text-sm text-[var(--tx-ink-muted)] mb-6">
         {proyecto.fecha_inicio && <span>Inicio: {format(new Date(proyecto.fecha_inicio), 'd MMM yyyy', { locale: es })}</span>}
         {proyecto.fecha_entrega && <span>Entrega: {format(new Date(proyecto.fecha_entrega), 'd MMM yyyy', { locale: es })}</span>}
       </div>

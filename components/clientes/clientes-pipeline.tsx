@@ -57,6 +57,14 @@ function ClienteKanbanCard({
   return (
     <div
       onClick={() => !isDragging && onSelect(cliente.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && !isDragging) {
+          e.preventDefault()
+          onSelect(cliente.id)
+        }
+      }}
       className="rounded-[14px] p-3 cursor-pointer select-none"
       style={{
         background: isSelected

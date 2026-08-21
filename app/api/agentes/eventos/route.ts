@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
+import { excedeLimite } from '@/lib/agentes/rate-limit'
 import { EventosRepository } from '@/lib/repos/eventos'
 import { EventoInsertSchema } from '@/lib/types/evento'
 import { crearEventoEnGoogle } from '@/lib/google/calendar-write'
@@ -75,6 +76,14 @@ async function eventoYaExiste(admin: SB, titulo: string, inicio: string): Promis
 export async function POST(req: Request) {
   const agente = await autenticar(req)
   if (!agente) return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })
+
+  const espera = excedeLimite(agente.id)
+  if (espera !== null) {
+    return NextResponse.json(
+      { success: false, error: 'Demasiadas solicitudes' },
+      { status: 429, headers: { 'Retry-After': String(espera) } },
+    )
+  }
 
   const cuerpo = await req.json().catch(() => null)
   if (!cuerpo) return NextResponse.json({ success: false, error: 'Cuerpo inválido' }, { status: 400 })

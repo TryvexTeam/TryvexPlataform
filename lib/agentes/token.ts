@@ -16,13 +16,11 @@ const PREFIJO = 'txa_'
  * los tokens no expiraban nunca. 90 días fuerza una rotación periódica sin
  * exigir que alguien se acuerde de hacerlo a mano.
  *
- * TODO (pendiente, fuera de alcance de este fix): rate limiting por agente en
- * las rutas de `/api/agentes/*`. Approach recomendado: contador en Redis/Upstash
- * (o una tabla `agentes_rate_limit` con ventana fija en Postgres si no se quiere
- * sumar infra) keyed por `agente.id`, ventana deslizante corta (ej. 60 req/min),
- * 429 con Retry-After al superarla. No se improvisa acá porque agregar una
- * dependencia nueva o una tabla con su propio índice/limpieza no es un cambio
- * chico y merece su propio PR revisado aparte.
+ * Rate limiting: ver `lib/agentes/rate-limit.ts` — versión mínima en memoria
+ * del propio proceso (60 req/min por agente), ya conectada en las 4 rutas de
+ * `/api/agentes/*`. TODO pendiente si esto crece a más de un proceso/región:
+ * mover a Redis/Upstash o una tabla Postgres con ventana propia — la versión
+ * en memoria no coordina entre procesos ni sobrevive un restart.
  */
 export const TTL_DIAS_AGENTE = 90
 

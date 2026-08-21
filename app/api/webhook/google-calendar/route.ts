@@ -1,14 +1,31 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { EventosRepository } from '@/lib/repos/eventos'
 import { GoogleSyncRepository } from '@/lib/repos/google-sync'
 import { syncIncremental } from '@/lib/google/calendar-sync'
 
+/**
+ * Compara el token recibido contra el esperado sin filtrar por timing.
+ * Mismo patrón que `secretValido` en app/api/webhook/scraper/route.ts:
+ * `!==` corta en el primer byte distinto y deja medir por timing cuántos
+ * caracteres acertó un atacante; `timingSafeEqual` explota si los buffers
+ * tienen largo distinto, así que ese caso se descarta antes sin comparar.
+ */
+function tokenValido(recibido: string | null): boolean {
+  const esperado = process.env.GOOGLE_WEBHOOK_TOKEN
+  if (!recibido || !esperado) return false
+  const bufRecibido = Buffer.from(recibido)
+  const bufEsperado = Buffer.from(esperado)
+  if (bufRecibido.length !== bufEsperado.length) return false
+  return timingSafeEqual(bufRecibido, bufEsperado)
+}
+
 // Push notifications de Google Calendar (events.watch).
 // Google NO manda el evento en el body — la notificación solo gatilla el sync incremental.
 export async function POST(req: Request) {
   const token = req.headers.get('x-goog-channel-token')
-  if (!token || token !== process.env.GOOGLE_WEBHOOK_TOKEN) {
+  if (!tokenValido(token)) {
     return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
   }
 

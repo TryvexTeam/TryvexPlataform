@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
+import { excedeLimite } from '@/lib/agentes/rate-limit'
 import {
   LoteMensajesAgenteSchema,
   MensajeAgenteSchema,
@@ -67,6 +68,14 @@ export async function GET(req: Request) {
   const agente = await autenticar(req)
   if (!agente) return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })
 
+  const espera = excedeLimite(agente.id)
+  if (espera !== null) {
+    return NextResponse.json(
+      { success: false, error: 'Demasiadas solicitudes' },
+      { status: 429, headers: { 'Retry-After': String(espera) } },
+    )
+  }
+
   const admin = createAdminClient() as SB
   const hilo = await hiloDeAgentes(admin, new URL(req.url).searchParams.get('hilo') ?? undefined)
   if (!hilo) return NextResponse.json({ success: false, error: 'No existe ese canal' }, { status: 404 })
@@ -102,6 +111,14 @@ async function refsYaIngestados(admin: SB, refs: string[]): Promise<Set<string>>
 export async function POST(req: Request) {
   const agente = await autenticar(req)
   if (!agente) return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })
+
+  const espera = excedeLimite(agente.id)
+  if (espera !== null) {
+    return NextResponse.json(
+      { success: false, error: 'Demasiadas solicitudes' },
+      { status: 429, headers: { 'Retry-After': String(espera) } },
+    )
+  }
 
   const cuerpo = await req.json().catch(() => null)
   if (!cuerpo) return NextResponse.json({ success: false, error: 'Cuerpo inválido' }, { status: 400 })

@@ -336,7 +336,7 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
 
         {/* KPI Strip */}
         <div
-          className="shrink-0 grid grid-cols-4 gap-px"
+          className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-px"
           style={{ background: 'oklch(100% 0 0 / 5%)', borderBottom: '1px solid oklch(100% 0 0 / 6%)' }}
         >
           {kpis.map((k) => (
@@ -602,6 +602,14 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
                           background: 'oklch(100% 0 0 / 4%)',
                           border: '1px solid oklch(100% 0 0 / 8%)',
                           transition: 'background 150ms, border-color 150ms',
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            window.open(`/proyectos/${p.id}`, '_blank')
+                          }
                         }}
                         onClick={() => window.open(`/proyectos/${p.id}`, '_blank')}
                         onMouseEnter={(e) => {
