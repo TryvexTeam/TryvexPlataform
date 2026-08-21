@@ -108,24 +108,55 @@ export function HiloChat({
    * suele ser viejo —el link del deploy, el acuerdo de la semana pasada— y quedaría
    * fuera de los últimos 100 mensajes que carga el hilo. Justo lo que se quiere tener
    * a mano es lo que ya no está a la vista.
+   *
+   * Se saca a una función aparte (con `useRef`, no recreada en cada render) porque el
+   * canal de realtime de más abajo también necesita volver a pedirla cuando alguien
+   * fija o suelta un mensaje desde otra pestaña.
    */
-  useEffect(() => {
-    let vigente = true
-
+  const cargarFijados = useRef<() => void>(() => {})
+  cargarFijados.current = () => {
     fetch(`/api/chat/mensajes?conversacion=${conversacion.id}&fijados=1`)
       .then((r) => r.json())
       .then((json) => {
-        if (vigente && json.success) setFijados(json.data as Mensaje[])
+        if (json.success) setFijados(json.data as Mensaje[])
       })
       // Sin fijados el chat funciona igual: no vale un toast de error.
       .catch(() => {})
+  }
 
-    return () => {
-      vigente = false
-    }
+  useEffect(() => {
+    cargarFijados.current()
   }, [conversacion.id])
 
-  // Mensajes nuevos en vivo, sin recargar.
+  // IDs de los mensajes cargados, para que el canal de reacciones (que no puede
+  // filtrar por conversacion_id porque la tabla no tiene esa columna) sepa si un
+  // evento le importa sin tener que volver a pedir todo por las dudas.
+  const idsMensajesRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    idsMensajesRef.current = new Set(mensajes.map((m) => m.id))
+  }, [mensajes])
+
+  /**
+   * Trae de nuevo el historial completo (reacciones ya agrupadas y con nombres,
+   * como las arma el servidor) sin tocar `cargando`, para no parpadear el spinner
+   * por un cambio que llegó de otra pestaña o de otra persona.
+   */
+  const refrescarMensajes = useRef<() => void>(() => {})
+  refrescarMensajes.current = () => {
+    fetch(`/api/chat/mensajes?conversacion=${conversacion.id}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setMensajes(json.data as Mensaje[])
+      })
+      .catch(() => {})
+  }
+
+  // Mensajes nuevos, fijados/soltados y reacciones en vivo, sin recargar.
+  //
+  // `mensaje_reacciones` no tiene `conversacion_id`: filtrar por él en el canal no es
+  // posible, así que se escucha sin filtro y se descarta acá lo que no es de este
+  // hilo. `mensajes` publica la fila entera (REPLICA IDENTITY FULL, migración 023),
+  // así que un UPDATE trae también `fijado_at`/`fijado_por` ya resueltos.
   useEffect(() => {
     const supabase = createClient()
     const canal = supabase
@@ -142,6 +173,42 @@ export function HiloChat({
           const nuevo = payload.new as Mensaje
           // El propio ya se agregó al enviar: no duplicarlo.
           setMensajes((previos) => (previos.some((m) => m.id === nuevo.id) ? previos : [...previos, nuevo]))
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'mensajes',
+          filter: `conversacion_id=eq.${conversacion.id}`,
+        },
+        (payload) => {
+          const actualizado = payload.new as Mensaje
+          setMensajes((previos) =>
+            previos.map((m) =>
+              m.id === actualizado.id
+                ? { ...m, fijado_at: actualizado.fijado_at, fijado_por: actualizado.fijado_por }
+                : m,
+            ),
+          )
+          cargarFijados.current()
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'mensaje_reacciones' },
+        (payload) => {
+          const fila = payload.new as { mensaje_id: string }
+          if (idsMensajesRef.current.has(fila.mensaje_id)) refrescarMensajes.current()
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'mensaje_reacciones' },
+        (payload) => {
+          const fila = payload.old as { mensaje_id?: string }
+          if (fila.mensaje_id && idsMensajesRef.current.has(fila.mensaje_id)) refrescarMensajes.current()
         },
       )
       .subscribe()
