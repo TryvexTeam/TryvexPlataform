@@ -83,42 +83,42 @@ export function ClienteForm({ open, onOpenChange, cliente, onSubmit }: ClienteFo
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Nombre del cliente *</Label>
-            <Input value={form.nombre_contacto} onChange={(e) => set('nombre_contacto', e.target.value)} placeholder="Ej: Rodolfo" />
+            <Label htmlFor="cliente-nombre-contacto">Nombre del cliente *</Label>
+            <Input id="cliente-nombre-contacto" value={form.nombre_contacto} onChange={(e) => set('nombre_contacto', e.target.value)} placeholder="Ej: Rodolfo" />
             {errors.nombre_contacto && <p className="text-xs text-red-500">{errors.nombre_contacto}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Teléfono</Label>
-              <Input value={form.telefono} onChange={(e) => set('telefono', e.target.value)} placeholder="+56 9..." />
+              <Label htmlFor="cliente-telefono">Teléfono</Label>
+              <Input id="cliente-telefono" value={form.telefono} onChange={(e) => set('telefono', e.target.value)} placeholder="+56 9..." />
             </div>
             <div className="space-y-1.5">
-              <Label>Email</Label>
-              <Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="email@..." />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Negocio</Label>
-              <Input value={form.nombre_negocio} onChange={(e) => set('nombre_negocio', e.target.value)} placeholder="Ej: perrustingo" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Nicho</Label>
-              <Input value={form.nicho} onChange={(e) => set('nicho', e.target.value)} placeholder="Ej: Peluquería canina" />
+              <Label htmlFor="cliente-email">Email</Label>
+              <Input id="cliente-email" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="email@..." />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Localidad</Label>
-              <Input value={form.localidad} onChange={(e) => set('localidad', e.target.value)} placeholder="Santiago" />
+              <Label htmlFor="cliente-negocio">Negocio</Label>
+              <Input id="cliente-negocio" value={form.nombre_negocio} onChange={(e) => set('nombre_negocio', e.target.value)} placeholder="Ej: perrustingo" />
             </div>
             <div className="space-y-1.5">
-              <Label>Estado</Label>
+              <Label htmlFor="cliente-nicho">Nicho</Label>
+              <Input id="cliente-nicho" value={form.nicho} onChange={(e) => set('nicho', e.target.value)} placeholder="Ej: Peluquería canina" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="cliente-localidad">Localidad</Label>
+              <Input id="cliente-localidad" value={form.localidad} onChange={(e) => set('localidad', e.target.value)} placeholder="Santiago" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cliente-estado">Estado</Label>
               <Select value={form.estado} onValueChange={(v) => set('estado', v ?? 'activo')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="cliente-estado"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="activo">Activo</SelectItem>
                   <SelectItem value="pausado">Pausado</SelectItem>
@@ -130,23 +130,23 @@ export function ClienteForm({ open, onOpenChange, cliente, onSubmit }: ClienteFo
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Valor inicial (USD)</Label>
-              <Input type="number" value={form.valor_inicial_usd} onChange={(e) => set('valor_inicial_usd', e.target.value)} placeholder="0" />
+              <Label htmlFor="cliente-valor-inicial">Valor inicial (USD)</Label>
+              <Input id="cliente-valor-inicial" type="number" value={form.valor_inicial_usd} onChange={(e) => set('valor_inicial_usd', e.target.value)} placeholder="0" />
             </div>
             <div className="space-y-1.5">
-              <Label>Mantención/mes (USD)</Label>
-              <Input type="number" value={form.mantencion_mensual_usd} onChange={(e) => set('mantencion_mensual_usd', e.target.value)} placeholder="0" />
+              <Label htmlFor="cliente-mantencion">Mantención/mes (USD)</Label>
+              <Input id="cliente-mantencion" type="number" value={form.mantencion_mensual_usd} onChange={(e) => set('mantencion_mensual_usd', e.target.value)} placeholder="0" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Fecha cierre</Label>
+            <Label htmlFor="cliente-fecha-cierre">Fecha cierre</Label>
             <SelectorFecha value={form.fecha_cierre} onChange={(v) => set('fecha_cierre', v)} />
           </div>
 
           <div className="space-y-1.5">
-            <Label>Notas</Label>
-            <Textarea value={form.notas} onChange={(e) => set('notas', e.target.value)} rows={2} />
+            <Label htmlFor="cliente-notas">Notas</Label>
+            <Textarea id="cliente-notas" value={form.notas} onChange={(e) => set('notas', e.target.value)} rows={2} />
           </div>
 
           <DialogFooter>
