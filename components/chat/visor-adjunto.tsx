@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CodeIcon, DownloadIcon, EyeIcon, LinkIcon, XIcon } from 'lucide-react'
 import { copiarTexto } from '@/lib/utils/copiar-texto'
 import {
@@ -54,18 +55,37 @@ export function VisorAdjunto({
     return () => window.removeEventListener('keydown', alTeclear)
   }, [onCerrar])
 
+  // Mientras el visor está abierto, el chat de atrás no se mueve.
+  useEffect(() => {
+    const antes = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = antes
+    }
+  }, [])
+
+  // El portal necesita el DOM. Este visor solo se monta al hacer clic, así que
+  // en la práctica siempre existe; la guarda es por si alguien lo renderiza
+  // desde el servidor.
+  if (typeof document === 'undefined') return null
+
   const copiarEnlace = () => {
     const base = typeof window === 'undefined' ? '' : window.location.origin
     void copiarTexto(`${base}${urlAdjunto(adjunto.id)}`, 'Enlace copiado')
   }
 
-  return (
+  // Va al <body> por portal, NO dentro de la burbuja del mensaje.
+  // Un `position: fixed` deja de referirse a la pantalla si algún ancestro
+  // tiene transform/filter/contain — y el hilo del chat los tiene. Sin esto el
+  // visor quedaba encajado en una tira dentro del mensaje en vez de abrirse
+  // grande, que es justo lo que hacía inservible al HTML incrustado.
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={adjunto.nombre}
       onClick={onCerrar}
-      className="fixed inset-0 z-50 flex flex-col bg-black/80 backdrop-blur-sm p-2 sm:p-6"
+      className="fixed inset-0 z-[100] flex flex-col bg-black/80 backdrop-blur-sm p-2 sm:p-6"
     >
       {/* El clic en el fondo cierra; adentro no, o se cerraría al usarlo. */}
       <div
@@ -103,9 +123,7 @@ export function VisorAdjunto({
             <LinkIcon size={16} />
           </button>
           <a
-            href={urlAdjunto(adjunto.id)}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={`${urlAdjunto(adjunto.id)}?descargar=1`}
             aria-label="Descargar"
             title="Descargar"
             className="shrink-0 p-1.5 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
@@ -121,11 +139,12 @@ export function VisorAdjunto({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-black/20">
+        <div className="min-h-0 flex-1 flex flex-col overflow-auto bg-black/20">
           <Cuerpo adjunto={adjunto} modo={modo} />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -158,7 +177,7 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
 
   if (esImagen(adjunto)) {
     return (
-      <div className="flex h-full items-center justify-center p-2">
+      <div className="flex flex-1 min-h-0 items-center justify-center p-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={urlAdjunto(adjunto.id)}
@@ -178,7 +197,7 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
         // que funcionen, pero no puede tocar nada de la sesión del CRM. Las dos
         // juntas anularían el aislamiento del sandbox.
         sandbox="allow-scripts allow-popups allow-forms"
-        className="w-full h-full min-h-[70vh] bg-white"
+        className="w-full flex-1 min-h-0 bg-white"
       />
     )
   }
@@ -187,7 +206,7 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
     <iframe
       src={urlAdjunto(adjunto.id)}
       title={adjunto.nombre}
-      className="w-full h-full min-h-[70vh] bg-white"
+      className="w-full flex-1 min-h-0 bg-white"
     />
   )
 }
