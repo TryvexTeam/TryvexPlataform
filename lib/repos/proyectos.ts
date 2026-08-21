@@ -208,6 +208,22 @@ export class ProyectosRepository {
     if (error) throw new Error(error.message)
   }
 
+  /**
+   * Deshace una creación a medio camino: borra las tareas que `crearConPlantilla`
+   * ya haya insertado y el proyecto en sí.
+   *
+   * `tareas.proyecto_id` tiene `ON DELETE SET NULL` (no cascade) porque una tarea
+   * puede sobrevivir a su proyecto en el uso normal. Acá el caso es distinto: el
+   * proyecto nunca terminó de crearse, así que dejar las tareas huérfanas con
+   * `proyecto_id = NULL` sería peor que borrarlas — quedarían flotando sin
+   * contexto y sin forma fácil de encontrarlas.
+   */
+  async eliminarCreacionParcial(id: string): Promise<void> {
+    const { error: tareasError } = await this.sb.from('tareas').delete().eq('proyecto_id', id)
+    if (tareasError) throw new Error(tareasError.message)
+    await this.delete(id)
+  }
+
   async listVentas(clienteId?: string, proyectoId?: string): Promise<Venta[]> {
     let query = this.sb
       .from('fact_ventas')
