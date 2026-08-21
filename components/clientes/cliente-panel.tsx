@@ -31,7 +31,7 @@ import { toast } from '@/lib/toast'
 import { ClienteForm } from './cliente-form'
 import { PagoForm } from './pago-form'
 import { ConfirmarDialog } from './confirmar-dialog'
-import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
+import { ESTADOS_PROYECTO, resumenFinanciero, saldoInicialArrastrado } from '@/lib/types/proyecto'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 
@@ -85,11 +85,11 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
   )
   const pendientes = ventas.filter((v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado')
 
-  // Saldo del valor inicial que aún se arrastra: lo acordado menos lo cobrado como inicial.
-  const cobradoInicial = ventas
-    .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
-    .reduce((s, v) => s + (v.monto_usd ?? 0), 0)
-  const saldoArrastrado = Math.max(0, (cliente.valor_inicial_usd ?? 0) - cobradoInicial)
+  const saldoArrastrado = saldoInicialArrastrado(
+    ventas,
+    cliente.valor_inicial_usd,
+    cliente.saldo_inicial_saldado,
+  )
   const mostrarSaldoInicial = saldoArrastrado > 0 || cliente.saldo_inicial_saldado
   const hayAtrasados = ventas.some((v) => v.estado_pago === 'atrasado')
   const proyActivos = proyectos.filter((p) => p.estado !== 'cerrado' && p.estado !== 'entregado')
