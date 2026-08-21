@@ -21,7 +21,9 @@ export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        // Solo Enter: esta tarjeta se usa dentro de un kanban con dnd-kit
+        // (SortableCard), cuyo wrapper ya usa Espacio para levantar el drag.
+        if (e.key === 'Enter') {
           e.preventDefault()
           onClick?.()
         }

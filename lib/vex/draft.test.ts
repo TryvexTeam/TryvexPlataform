@@ -155,8 +155,11 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
       { direccion: 'in', texto: '   ' },
       { direccion: 'in', texto: 'hola' },
     ])
-    expect(espia.prompt()).toMatch(/El negocio: hola/)
-    expect(espia.prompt()).not.toMatch(/El negocio:\s*$/m)
+    // "El negocio: hola" ya no es literal desde que bloqueHistorial delimita
+    // cada turno del lead (fix de prompt injection, commit 2511830) — el
+    // mensaje real queda en la línea siguiente, entre los delimitadores.
+    expect(espia.prompt()).toMatch(/El negocio: <<<MENSAJE_DEL_LEAD>>>\s*\nhola/)
+    expect(espia.prompt()).not.toMatch(/El negocio: <<<MENSAJE_DEL_LEAD>>>\s*\n\s*\n/)
   })
 
   it('las estrellas y reseñas llegan explicadas, no crudas', async () => {

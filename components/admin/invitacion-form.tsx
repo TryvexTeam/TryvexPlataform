@@ -91,10 +91,10 @@ export function InvitacionForm({ onCreada }: InvitacionFormProps) {
       </form>
 
       {linkGenerado && (
-        <div className="rounded-lg border bg-neutral-50 p-3 space-y-2">
-          <p className="text-xs text-neutral-500 font-medium">Link de invitación (válido 30 min)</p>
+        <div className="rounded-lg border border-[var(--tx-border)] bg-white/5 p-3 space-y-2">
+          <p className="text-xs text-[var(--tx-ink-muted)] font-medium">Link de invitación (válido 30 min)</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-xs bg-white border rounded px-2 py-1.5 truncate">
+            <code className="flex-1 text-xs bg-white/5 border border-[var(--tx-border)] text-[var(--tx-ink-primary)] rounded px-2 py-1.5 truncate">
               {linkGenerado}
             </code>
             <Button size="sm" variant="outline" onClick={copiarLink} className="shrink-0 gap-1">
