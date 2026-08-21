@@ -110,9 +110,7 @@ function TarjetaArchivo({
         <LinkIcon size={14} />
       </button>
       <a
-        href={urlAdjunto(adjunto.id)}
-        target="_blank"
-        rel="noopener noreferrer"
+        href={`${urlAdjunto(adjunto.id)}?descargar=1`}
         aria-label={`Descargar ${adjunto.nombre}`}
         title="Descargar"
         className="shrink-0 p-1 opacity-70 hover:opacity-100"
