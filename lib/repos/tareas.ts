@@ -1,6 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import type { TareaInsert, TareaUpdate, TareaConResponsables, Subtarea, EstadoTarea } from '@/lib/types/tarea'
 
+/** La tarea padre de una subtarea no existe o está en la papelera. */
+export class TareaPadreInvalidaError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TareaPadreInvalidaError'
+  }
+}
+
 type SupabaseTarea = {
   id: string
   titulo: string
@@ -16,7 +24,6 @@ type SupabaseTarea = {
   created_by: string | null
   created_at: string
   updated_at: string
-  completed_at: string | null
   eliminado_at: string | null
   tarea_responsables: {
     integrante_id: string
@@ -286,10 +293,11 @@ export class TareasRepository {
   }
 
   async cambiarEstado(id: string, estado: EstadoTarea): Promise<void> {
+    // `completada_at` (columna real) la mantiene el disparador de la base
+    // (migración 060); acá solo se toca `updated_at`.
     const update: Record<string, string | null> = {
       estado,
       updated_at: new Date().toISOString(),
-      completed_at: estado === 'listo' ? new Date().toISOString() : null,
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (this.supabase as any).from('tareas').update(update).eq('id', id)
@@ -333,6 +341,22 @@ export class TareasRepository {
   }
 
   async createSubtarea(data: { tarea_id: string; descripcion: string; orden?: number }): Promise<Subtarea> {
+    // Sin esto, una subtarea puede quedar colgando de una tarea que no existe
+    // o que ya está en la papelera (borrado suave): el formulario no la vuelve
+    // a mostrar en ningún lado, pero la fila sigue viva en la base.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tarea, error: tareaError } = await (this.supabase as any)
+      .from('tareas')
+      .select('id, eliminado_at')
+      .eq('id', data.tarea_id)
+      .maybeSingle()
+
+    if (tareaError) throw new Error(tareaError.message)
+    if (!tarea) throw new TareaPadreInvalidaError('La tarea padre no existe')
+    if (tarea.eliminado_at !== null) {
+      throw new TareaPadreInvalidaError('La tarea padre está en la papelera')
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: row, error } = await (this.supabase as any)
       .from('subtareas')

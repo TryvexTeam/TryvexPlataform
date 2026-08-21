@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { TareasRepository } from '@/lib/repos/tareas'
+import { TareasRepository, TareaPadreInvalidaError } from '@/lib/repos/tareas'
 
 const Schema = z.object({
   tarea_id: z.string().uuid(),
@@ -19,6 +19,13 @@ export async function POST(req: Request) {
   if (!result.success) return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
 
   const repo = new TareasRepository(supabase)
-  const subtarea = await repo.createSubtarea(result.data)
-  return NextResponse.json(subtarea, { status: 201 })
+  try {
+    const subtarea = await repo.createSubtarea(result.data)
+    return NextResponse.json(subtarea, { status: 201 })
+  } catch (err) {
+    if (err instanceof TareaPadreInvalidaError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
+    throw err
+  }
 }

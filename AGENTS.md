@@ -8,7 +8,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 # Agentes del Proyecto — Tryvex App
 
 ## Stack
-Next.js 16 · React 19 · Supabase · shadcn/ui · TypeScript · @dnd-kit · Anthropic SDK · Zod · Sonner · Vaul
+Next.js 16 · React 19 · Supabase · shadcn/ui · TypeScript · @dnd-kit · groq-sdk (Vex) · Zod · Sonner · Vaul
 
 ## Skills Locales Activos
 

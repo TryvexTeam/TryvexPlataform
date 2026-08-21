@@ -15,7 +15,7 @@
 | UI | React 19 + shadcn/ui + Tailwind v4 |
 | DB + Auth | Supabase (PostgreSQL + SSR) |
 | Drag&Drop | @dnd-kit (kanban boards) |
-| IA | @anthropic-ai/sdk (score leads, mensajes, resúmenes) |
+| IA | groq-sdk (Vex: score leads, mensajes, resúmenes) |
 | Validación | Zod v4 |
 | Toast | Sonner |
 | Drawer | Vaul |

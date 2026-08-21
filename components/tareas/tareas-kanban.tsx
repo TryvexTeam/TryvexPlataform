@@ -11,6 +11,7 @@ import { TareaCard } from './tarea-card'
 import { TareaForm } from './tarea-form'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ConfirmarDialog } from '@/components/clientes/confirmar-dialog'
 import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 import {
   ESTADOS_TAREA,
@@ -73,6 +74,7 @@ export function TareasKanban({
   const [soloMias, setSoloMias] = useState(false)
   const [papeleraOpen, setPapeleraOpen] = useState(false)
   const [papeleraDropCount, setPapeleraDropCount] = useState(0)
+  const [eliminarDefinitivoId, setEliminarDefinitivoId] = useState<string | null>(null)
 
   // Realtime + red de seguridad al volver a la pestaña. Antes solo escuchaba
   // `tareas`, que no estaba publicada: el canal decía SUBSCRIBED y no llegaba nada.
@@ -184,7 +186,6 @@ export function TareasKanban({
   }
 
   async function handleEliminarDefinitivo(id: string) {
-    if (!confirm('¿Eliminar esta tarea para siempre? No se puede deshacer.')) return
     const anterior = tareas.find((t) => t.id === id)
     const indice = tareas.findIndex((t) => t.id === id)
     setTareas((prev) => prev.filter((t) => t.id !== id))
@@ -346,7 +347,7 @@ export function TareasKanban({
                       size="icon"
                       className="h-8 w-8 shrink-0 text-red-600 hover:text-red-700"
                       title="Eliminar para siempre"
-                      onClick={() => handleEliminarDefinitivo(tarea.id)}
+                      onClick={() => setEliminarDefinitivoId(tarea.id)}
                     >
                       <X size={13} />
                     </Button>
@@ -357,6 +358,18 @@ export function TareasKanban({
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmarDialog
+        open={eliminarDefinitivoId !== null}
+        onOpenChange={(o) => !o && setEliminarDefinitivoId(null)}
+        titulo="¿Eliminar esta tarea para siempre?"
+        descripcion="No se puede deshacer."
+        confirmar="Eliminar para siempre"
+        destructivo
+        onConfirmar={async () => {
+          if (eliminarDefinitivoId) await handleEliminarDefinitivo(eliminarDefinitivoId)
+        }}
+      />
     </div>
   )
 }
