@@ -60,7 +60,12 @@ function ClienteKanbanCard({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && !isDragging) {
+        // Solo Enter, no Espacio: esta tarjeta vive dentro de un SortableCard
+        // (dnd-kit) cuyo wrapper ya usa Espacio para levantar el drag. Si acá
+        // también reaccionara a Espacio, el evento dispararía onSelect Y,
+        // al burbujear, el "recoger para arrastrar" del wrapper — dos
+        // acciones a la vez con la misma tecla.
+        if (e.key === 'Enter' && !isDragging) {
           e.preventDefault()
           onSelect(cliente.id)
         }

@@ -54,7 +54,9 @@ function ProyectoCard({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        // Solo Enter: esta tarjeta vive dentro de un SortableCard (dnd-kit),
+        // cuyo wrapper ya usa Espacio para levantar el drag.
+        if (e.key === 'Enter') {
           e.preventDefault()
           onClick?.()
         }

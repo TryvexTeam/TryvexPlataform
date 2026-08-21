@@ -33,6 +33,15 @@ interface SelectorHoraProps {
    * default sigue siendo lo bastante ancho para "Sin hora".
    */
   ancho?: 'normal' | 'compacto'
+  /**
+   * Nombre accesible del campo para lectores de pantalla. Sin esto, el
+   * `placeholder` ("Sin hora") queda como nombre accesible por defecto y
+   * nunca cambia aunque el campo tenga un valor — con varios selectores en
+   * la misma pantalla (uno por día, inicio/fin) todos se anuncian igual.
+   * Pasar algo como "Hora de inicio, lunes" cuando haya más de uno en la
+   * misma vista.
+   */
+  ariaLabel?: string
 }
 
 const HORA_DESDE = 8
@@ -65,6 +74,7 @@ export function SelectorHora({
   disabled = false,
   id,
   ancho = 'normal',
+  ariaLabel,
 }: SelectorHoraProps) {
   const [abierto, setAbierto] = useState(false)
   const lista = useMemo(() => franjas(), [])
@@ -137,6 +147,7 @@ export function SelectorHora({
           disabled={disabled}
           value={texto}
           placeholder={placeholder}
+          aria-label={ariaLabel ?? placeholder}
           onChange={(e) => setBorrador(e.target.value)}
           onBlur={confirmarTexto}
           onKeyDown={(e) => {

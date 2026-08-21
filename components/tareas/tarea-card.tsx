@@ -39,7 +39,11 @@ export function TareaCard({ tarea, onClick, enPapelera }: TareaCardProps) {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        // Solo Enter: esta tarjeta vive dentro de un SortableCard (dnd-kit),
+        // cuyo wrapper ya usa Espacio para levantar el drag — si esta tarjeta
+        // también reaccionara a Espacio, dispararía onClick Y, al burbujear,
+        // el "recoger para arrastrar" del wrapper con la misma tecla.
+        if (e.key === 'Enter') {
           e.preventDefault()
           onClick?.()
         }

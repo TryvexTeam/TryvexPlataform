@@ -117,7 +117,7 @@ export function ProyectoDetalle({
           { label: 'Horas reales', value: proyecto.horas_reales ? `${proyecto.horas_reales}h` : '—' },
           { label: 'Tareas', value: `${tareasCompletadas}/${tareas.length}` },
         ].map((item) => (
-          <div key={item.label} className="bg-neutral-50 rounded-lg p-3 text-center">
+          <div key={item.label} className="bg-white/5 rounded-lg p-3 text-center">
             <p className="text-xs text-[var(--tx-ink-muted)] mb-1">{item.label}</p>
             <p className="text-sm font-semibold text-[var(--tx-ink-primary)]">{item.value}</p>
           </div>

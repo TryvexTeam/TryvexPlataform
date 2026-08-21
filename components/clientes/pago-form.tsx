@@ -168,7 +168,7 @@ export function PagoForm({
           )}
 
           {coincidencias.length === 0 && ventasPendientes.length > 0 && (
-            <p className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            <p className="rounded-md bg-white/5 px-3 py-2 text-xs text-[var(--tx-ink-secondary)]">
               Este cliente tiene {ventasPendientes.length}{' '}
               {ventasPendientes.length === 1 ? 'cobro pendiente' : 'cobros pendientes'}. Si estás
               registrando el pago de alguno, márcalo como pagado en vez de crear uno nuevo.

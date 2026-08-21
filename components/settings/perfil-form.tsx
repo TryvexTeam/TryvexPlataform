@@ -174,6 +174,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                   disabled={Boolean(dueno)}
                   onClick={() => setColor(seleccionado ? null : c.hex)}
                   title={dueno ? `${c.nombre} — lo usa ${dueno}` : c.nombre}
+                  aria-label={dueno ? `${c.nombre} — lo usa ${dueno}` : c.nombre}
                   className={cn(
                     'relative h-9 w-9 rounded-full flex items-center justify-center transition-transform',
                     dueno ? 'opacity-30 cursor-not-allowed' : 'hover:scale-110 cursor-pointer',
@@ -227,12 +228,14 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                       value={h.bloques[0]?.inicio ?? '10:00'}
                       onChange={(v) => setBloque(dia, 0, 'inicio', v)}
                       ancho="compacto"
+                      ariaLabel={`Hora de inicio, ${DIAS_SEMANA[dia]}`}
                     />
                     <span className="text-[var(--tx-ink-muted)]">—</span>
                     <SelectorHora
                       value={h.bloques[0]?.fin ?? '18:00'}
                       onChange={(v) => setBloque(dia, 0, 'fin', v)}
                       ancho="compacto"
+                      ariaLabel={`Hora de fin, ${DIAS_SEMANA[dia]}`}
                     />
                   </div>
                 ) : (
