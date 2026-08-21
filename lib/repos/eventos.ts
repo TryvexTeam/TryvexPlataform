@@ -119,7 +119,7 @@ export class EventosRepository {
    * Antes eran dos llamadas separadas de PostgREST (insert en `eventos` +
    * insert en `eventos_asistentes`): si la segunda fallaba, el evento quedaba
    * creado sin nadie asignado y sin forma de deshacerlo. `crear_evento_con_asistentes`
-   * (migración 068) hace ambas dentro de la misma transacción SQL.
+   * (migración 069) hace ambas dentro de la misma transacción SQL.
    */
   async create(input: EventoInsert, creadoPorId: string): Promise<string> {
     // invitados_externos viaja a Google/email, no a la tabla eventos
