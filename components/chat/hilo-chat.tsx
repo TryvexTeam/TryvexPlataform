@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeftIcon, Loader2Icon, PaperclipIcon, PhoneIcon, PinIcon, SendIcon, VideoIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { textoPlano } from '@/lib/markdown/mini'
@@ -109,12 +109,11 @@ export function HiloChat({
    * fuera de los últimos 100 mensajes que carga el hilo. Justo lo que se quiere tener
    * a mano es lo que ya no está a la vista.
    *
-   * Se saca a una función aparte (con `useRef`, no recreada en cada render) porque el
-   * canal de realtime de más abajo también necesita volver a pedirla cuando alguien
-   * fija o suelta un mensaje desde otra pestaña.
+   * Se saca a una función aparte (`useCallback`) porque el canal de realtime de más
+   * abajo también necesita volver a pedirla cuando alguien fija o suelta un mensaje
+   * desde otra pestaña.
    */
-  const cargarFijados = useRef<() => void>(() => {})
-  cargarFijados.current = () => {
+  const cargarFijados = useCallback(() => {
     fetch(`/api/chat/mensajes?conversacion=${conversacion.id}&fijados=1`)
       .then((r) => r.json())
       .then((json) => {
@@ -122,11 +121,11 @@ export function HiloChat({
       })
       // Sin fijados el chat funciona igual: no vale un toast de error.
       .catch(() => {})
-  }
+  }, [conversacion.id])
 
   useEffect(() => {
-    cargarFijados.current()
-  }, [conversacion.id])
+    cargarFijados()
+  }, [cargarFijados])
 
   // IDs de los mensajes cargados, para que el canal de reacciones (que no puede
   // filtrar por conversacion_id porque la tabla no tiene esa columna) sepa si un
@@ -141,15 +140,14 @@ export function HiloChat({
    * como las arma el servidor) sin tocar `cargando`, para no parpadear el spinner
    * por un cambio que llegó de otra pestaña o de otra persona.
    */
-  const refrescarMensajes = useRef<() => void>(() => {})
-  refrescarMensajes.current = () => {
+  const refrescarMensajes = useCallback(() => {
     fetch(`/api/chat/mensajes?conversacion=${conversacion.id}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setMensajes(json.data as Mensaje[])
       })
       .catch(() => {})
-  }
+  }, [conversacion.id])
 
   // Mensajes nuevos, fijados/soltados y reacciones en vivo, sin recargar.
   //
@@ -192,7 +190,7 @@ export function HiloChat({
                 : m,
             ),
           )
-          cargarFijados.current()
+          cargarFijados()
         },
       )
       .on(
@@ -200,7 +198,7 @@ export function HiloChat({
         { event: 'INSERT', schema: 'public', table: 'mensaje_reacciones' },
         (payload) => {
           const fila = payload.new as { mensaje_id: string }
-          if (idsMensajesRef.current.has(fila.mensaje_id)) refrescarMensajes.current()
+          if (idsMensajesRef.current.has(fila.mensaje_id)) refrescarMensajes()
         },
       )
       .on(
@@ -208,7 +206,7 @@ export function HiloChat({
         { event: 'DELETE', schema: 'public', table: 'mensaje_reacciones' },
         (payload) => {
           const fila = payload.old as { mensaje_id?: string }
-          if (fila.mensaje_id && idsMensajesRef.current.has(fila.mensaje_id)) refrescarMensajes.current()
+          if (fila.mensaje_id && idsMensajesRef.current.has(fila.mensaje_id)) refrescarMensajes()
         },
       )
       .subscribe()
@@ -216,7 +214,7 @@ export function HiloChat({
     return () => {
       supabase.removeChannel(canal)
     }
-  }, [conversacion.id])
+  }, [conversacion.id, cargarFijados, refrescarMensajes])
 
   // Qué mensajes deben animar de entrada: el historial completo no anima al
   // abrir el hilo (se vería como si el chat entero se desplegara mensaje por
