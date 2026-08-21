@@ -326,7 +326,9 @@ export function FinanzasWorkspace({
       {resumenMensual.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-[var(--tx-ink-primary)]">Últimos meses</h2>
-          <div className="overflow-x-auto rounded-xl border border-[var(--tx-border)]">
+
+          {/* Escritorio: tabla. El contenedor scrollea solo, nunca el body. */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-[var(--tx-border)]">
             <table className="w-full text-sm">
               <thead className="text-[var(--tx-ink-muted)]">
                 <tr>
@@ -354,6 +356,32 @@ export function FinanzasWorkspace({
               </tbody>
             </table>
           </div>
+
+          {/* Móvil: tarjetas apiladas, sin scroll lateral. */}
+          <ul className="md:hidden space-y-2">
+            {resumenMensual.map((r) => (
+              <li
+                key={r.mes}
+                className="rounded-xl border border-[var(--tx-border)] p-3 space-y-2"
+                style={{ background: 'rgba(255,255,255,0.03)' }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium capitalize text-[var(--tx-ink-primary)]">{formatearMes(r.mes)}</p>
+                  <span
+                    className={`text-sm font-medium tabular-nums ${
+                      Number(r.saldo_clp) >= 0 ? 'text-emerald-400' : 'text-red-400'
+                    }`}
+                  >
+                    {formatearCLP(Number(r.saldo_clp))}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-[var(--tx-ink-muted)]">
+                  <span className="tabular-nums text-emerald-400">Ingresos {formatearCLP(Number(r.ingresos_clp))}</span>
+                  <span className="tabular-nums text-red-400">Egresos {formatearCLP(Number(r.egresos_clp))}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
