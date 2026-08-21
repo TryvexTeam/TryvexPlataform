@@ -1,7 +1,24 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@supabase/supabase-js'
 import { LeadsRepository } from '@/lib/repos/leads'
+
+/**
+ * Compara el secret recibido contra el esperado sin filtrar por timing.
+ * `===` corta en el primer byte distinto, lo que deja medir por cuánto
+ * tiempo tarda la respuesta cuántos caracteres iniciales acertó un atacante.
+ * `timingSafeEqual` explota si los buffers tienen largo distinto, así que
+ * ese caso se descarta antes sin comparar.
+ */
+function secretValido(recibido: string | null): boolean {
+  const esperado = process.env.SCRAPER_WEBHOOK_SECRET
+  if (!recibido || !esperado) return false
+  const bufRecibido = Buffer.from(recibido)
+  const bufEsperado = Buffer.from(esperado)
+  if (bufRecibido.length !== bufEsperado.length) return false
+  return timingSafeEqual(bufRecibido, bufEsperado)
+}
 
 const LeadScraperSchema = z.object({
   nombre_negocio: z.string().min(1),
@@ -22,7 +39,7 @@ const PayloadSchema = z.object({
 
 export async function POST(req: Request) {
   const secret = req.headers.get('x-webhook-secret')
-  if (!secret || secret !== process.env.SCRAPER_WEBHOOK_SECRET) {
+  if (!secretValido(secret)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
