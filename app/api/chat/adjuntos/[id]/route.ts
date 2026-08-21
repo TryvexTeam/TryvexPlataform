@@ -56,37 +56,45 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.redirect(data.signedUrl)
   }
 
-  // Las páginas HTML se sirven DESDE ACÁ, no por redirección.
+  // Los archivos livianos se sirven DESDE ACÁ, no por redirección.
   //
-  // Por qué: Supabase entrega todo lo que huela a HTML como `text/plain` y
-  // encima con `X-Content-Type-Options: nosniff`. Es una protección suya
-  // deliberada —evita que alguien aloje una página que corra en su dominio— y
-  // no se puede desactivar. El efecto para nosotros era que la "vista previa"
-  // mostraba el código: el visor estaba bien, el archivo llegaba mal etiquetado.
+  // Dos motivos, los dos comprobados contra los archivos reales del chat:
   //
-  // Al servirlo acá se puede poner el `Content-Type` de verdad. El riesgo de
-  // hacerlo —HTML ajeno corriendo en nuestro dominio— se cierra con
-  // `Content-Security-Policy: sandbox`, que obliga al navegador a tratar la
-  // respuesta como origen opaco: sin cookies, sin sesión, sin acceso al CRM.
-  // Vale aunque alguien abra la URL suelta, fuera del iframe.
-  const esPagina =
-    adjunto.tipo_mime === 'text/html' || /\.html?$/i.test(nombre)
+  //  · **El HTML llegaba mal etiquetado.** Supabase entrega todo lo que huela a
+  //    HTML como `text/plain` y encima con `X-Content-Type-Options: nosniff`.
+  //    Es protección suya deliberada y no se desactiva, así que la vista previa
+  //    mostraba el código: el visor estaba bien, el archivo llegaba como texto.
+  //
+  //  · **El PDF sí llega bien etiquetado** (`application/pdf`), pero al llegar
+  //    por una redirección a otro dominio el navegador no lo dibuja dentro del
+  //    iframe: muestra un botón "Abrir" y hay que dar un clic de más. Sirviendo
+  //    desde el mismo origen y con `Content-Disposition: inline` se dibuja solo.
+  //
+  // El riesgo de servir HTML ajeno desde nuestro dominio se cierra con
+  // `Content-Security-Policy: sandbox`: el navegador lo trata como origen opaco
+  // —sin cookies, sin sesión, sin acceso al CRM— incluso si abren la URL suelta.
   const bytes = Number(adjunto.bytes ?? 0)
+  const esPagina = adjunto.tipo_mime === 'text/html' || /\.html?$/i.test(nombre)
+  const esPdf = adjunto.tipo_mime === 'application/pdf' || /\.pdf$/i.test(nombre)
 
-  // Solo si entra cómodo en la respuesta de la función. Una página más pesada
-  // que esto no existe en la práctica, pero si aparece va por el camino de
-  // siempre en vez de fallar.
-  if (esPagina && bytes > 0 && bytes < 3 * 1024 * 1024) {
+  // Solo lo que entra cómodo en la respuesta: el tope de 4,5 MB de Vercel vale
+  // para la RESPUESTA también, no solo para la petición. Lo más pesado sigue
+  // por redirección, que funciona igual aunque pida ese clic de más.
+  const CABE = 3 * 1024 * 1024
+
+  if ((esPagina || esPdf) && bytes > 0 && bytes < CABE) {
     const { data, error } = await almacen.download(ruta)
     if (!error && data) {
-      return new NextResponse(await data.arrayBuffer(), {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Content-Security-Policy': 'sandbox allow-scripts allow-popups allow-forms',
-          'X-Content-Type-Options': 'nosniff',
-          'Cache-Control': 'private, max-age=60',
-        },
-      })
+      const cabeceras: Record<string, string> = {
+        'Content-Type': esPagina ? 'text/html; charset=utf-8' : 'application/pdf',
+        'Content-Disposition': 'inline',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, max-age=60',
+      }
+      if (esPagina) {
+        cabeceras['Content-Security-Policy'] = 'sandbox allow-scripts allow-popups allow-forms'
+      }
+      return new NextResponse(await data.arrayBuffer(), { headers: cabeceras })
     }
   }
 

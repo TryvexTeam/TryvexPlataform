@@ -1,13 +1,23 @@
 'use client'
 
 import { useState } from 'react'
-import { FileIcon, FileTextIcon, FileCodeIcon, DownloadIcon, LinkIcon } from 'lucide-react'
+import {
+  FileIcon,
+  FileTextIcon,
+  FileCodeIcon,
+  FileSpreadsheetIcon,
+  PlayIcon,
+  DownloadIcon,
+  LinkIcon,
+} from 'lucide-react'
 import { copiarTexto } from '@/lib/utils/copiar-texto'
 import {
   esHtml,
   esImagen,
+  esOfimatica,
   esPdf,
   esTexto,
+  esVideo,
   pesoLegible,
   urlAdjunto,
   type AdjuntoMensaje,
@@ -76,8 +86,21 @@ function TarjetaArchivo({
   adjunto: AdjuntoMensaje
   onAbrir: () => void
 }) {
-  const Icono = esHtml(adjunto) ? FileCodeIcon : esPdf(adjunto) || esTexto(adjunto) ? FileTextIcon : FileIcon
-  const sePuedeVer = esHtml(adjunto) || esPdf(adjunto) || esTexto(adjunto)
+  const Icono = esVideo(adjunto)
+    ? PlayIcon
+    : esHtml(adjunto)
+      ? FileCodeIcon
+      : esOfimatica(adjunto)
+        ? FileSpreadsheetIcon
+        : esPdf(adjunto) || esTexto(adjunto)
+          ? FileTextIcon
+          : FileIcon
+
+  // La ofimática NO se puede dibujar en un navegador: se dice "descargar" y el
+  // clic descarga. Un botón que abre algo que no se ve es peor que no tenerlo.
+  const sePuedeVer =
+    esVideo(adjunto) || esHtml(adjunto) || esPdf(adjunto) || esTexto(adjunto)
+  const soloDescarga = esOfimatica(adjunto) || !sePuedeVer
 
   const copiarEnlace = () => {
     const base = typeof window === 'undefined' ? '' : window.location.origin
@@ -86,20 +109,33 @@ function TarjetaArchivo({
 
   return (
     <div className="flex items-center gap-2.5 rounded-xl px-3 py-2 bg-black/20">
-      <button
-        onClick={sePuedeVer ? onAbrir : undefined}
-        disabled={!sePuedeVer}
-        className="flex items-center gap-2.5 min-w-0 flex-1 text-left disabled:cursor-default"
-      >
-        <Icono size={18} className="shrink-0 opacity-80" />
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13px] truncate">{adjunto.nombre}</span>
-          <span className="block text-[11px] opacity-70">
-            {pesoLegible(adjunto.bytes)}
-            {sePuedeVer && ' · abrir'}
+      {soloDescarga ? (
+        <a
+          href={`${urlAdjunto(adjunto.id)}?descargar=1`}
+          className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+        >
+          <Icono size={18} className="shrink-0 opacity-80" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] truncate">{adjunto.nombre}</span>
+            <span className="block text-[11px] opacity-70">
+              {pesoLegible(adjunto.bytes)} · descargar
+            </span>
           </span>
-        </span>
-      </button>
+        </a>
+      ) : (
+        <button
+          onClick={onAbrir}
+          className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+        >
+          <Icono size={18} className="shrink-0 opacity-80" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] truncate">{adjunto.nombre}</span>
+            <span className="block text-[11px] opacity-70">
+              {pesoLegible(adjunto.bytes)} · {esVideo(adjunto) ? 'reproducir' : 'abrir'}
+            </span>
+          </span>
+        </button>
+      )}
 
       <button
         onClick={copiarEnlace}

@@ -175,6 +175,12 @@ export function HiloChat({
           const nuevo = payload.new as Mensaje
           // El propio ya se agregó al enviar: no duplicarlo.
           setMensajes((previos) => (previos.some((m) => m.id === nuevo.id) ? previos : [...previos, nuevo]))
+          // La fila de realtime NO trae los adjuntos: viven en otra tabla y el
+          // canal publica solo `mensajes`. Sin esto, un archivo que manda otra
+          // persona no se ve hasta recargar. Se vuelve a pedir el historial —un
+          // fetch por mensaje ajeno, que en un chat de equipo no es nada— en vez
+          // de inventar un endpoint nuevo solo para esto.
+          if (nuevo.autor_id !== miIntegranteId) refrescarMensajes()
         },
       )
       .on(
@@ -218,7 +224,7 @@ export function HiloChat({
     return () => {
       supabase.removeChannel(canal)
     }
-  }, [conversacion.id, cargarFijados, refrescarMensajes])
+  }, [conversacion.id, miIntegranteId, cargarFijados, refrescarMensajes])
 
   // Qué mensajes deben animar de entrada: el historial completo no anima al
   // abrir el hilo (se vería como si el chat entero se desplegara mensaje por
@@ -304,7 +310,17 @@ export function HiloChat({
       if (!res.ok || !json?.success) throw new Error(json?.error ?? 'No se pudo enviar')
 
       const mensaje = json.data as Mensaje
-      setMensajes((previos) => (previos.some((m) => m.id === mensaje.id) ? previos : [...previos, mensaje]))
+      // Se REEMPLAZA si ya está, no se descarta.
+      // El aviso de realtime suele llegar antes que la respuesta del POST, y esa
+      // fila viene sin adjuntos (`mensajes` y `mensaje_adjuntos` son tablas
+      // distintas). Con el `some(...) ? previos` de antes, la versión buena —la
+      // que sí trae los archivos— se tiraba, y el adjunto no aparecía hasta
+      // recargar la página.
+      setMensajes((previos) =>
+        previos.some((m) => m.id === mensaje.id)
+          ? previos.map((m) => (m.id === mensaje.id ? mensaje : m))
+          : [...previos, mensaje],
+      )
       setBorrador('')
       setPorEnviar([])
       setCitando(null)

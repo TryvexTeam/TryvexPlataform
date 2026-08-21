@@ -97,6 +97,31 @@ export function esTexto(adjunto: AdjuntoMensaje): boolean {
 }
 
 /**
+ * Videos: el navegador los reproduce solo, sin librerías.
+ *
+ * Se apoya en el tipo MIME y en la extensión, como el resto: un `.mp4` subido
+ * desde algunos teléfonos llega como `application/octet-stream`.
+ */
+export function esVideo(adjunto: AdjuntoMensaje): boolean {
+  if (adjunto.tipo_mime.startsWith('video/')) return true
+  return /\.(mp4|webm|ogv|mov|m4v)$/i.test(adjunto.nombre)
+}
+
+/**
+ * Word, Excel y PowerPoint: **ningún navegador los dibuja.**
+ *
+ * Los visores de Google y Microsoft podrían, pero exigen que el archivo esté en
+ * una URL pública, y este bucket es privado a propósito — son documentos
+ * internos del equipo. Así que no se promete una vista previa que no existe: se
+ * ofrece descargarlo, que es lo único honesto.
+ */
+export function esOfimatica(adjunto: AdjuntoMensaje): boolean {
+  if (/^application\/vnd\.(openxmlformats-officedocument|ms-)/.test(adjunto.tipo_mime)) return true
+  if (adjunto.tipo_mime === 'application/msword') return true
+  return /\.(docx?|xlsx?|pptx?|odt|ods|odp)$/i.test(adjunto.nombre)
+}
+
+/**
  * Páginas HTML: se dibujan, no se leen.
  *
  * Va ANTES que `esTexto` a propósito — un `.html` cumple las dos, y quien manda
