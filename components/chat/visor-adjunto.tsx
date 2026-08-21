@@ -8,8 +8,10 @@ import {
   MAX_BYTES_PREVIEW,
   esHtml,
   esImagen,
+  esOfimatica,
   esPdf,
   esTexto,
+  esVideo,
   pesoLegible,
   urlAdjunto,
   type AdjuntoMensaje,
@@ -41,9 +43,13 @@ export function VisorAdjunto({
 }) {
   // Los que se pueden mirar de dos formas empiezan por la dibujada: quien abre
   // un HTML quiere ver la página, y el código es la segunda intención.
-  const alternable = esHtml(adjunto) || esTexto(adjunto)
+  // Solo tiene sentido alternar donde hay algo que leer Y algo que dibujar.
+  // Un video o un .docx no tienen "código" que mostrar.
+  const alternable = (esHtml(adjunto) || esTexto(adjunto)) && !esOfimatica(adjunto)
   const [modo, setModo] = useState<'ver' | 'codigo'>(
-    esHtml(adjunto) || esImagen(adjunto) || esPdf(adjunto) ? 'ver' : 'codigo',
+    esHtml(adjunto) || esImagen(adjunto) || esPdf(adjunto) || esVideo(adjunto)
+      ? 'ver'
+      : 'codigo',
   )
 
   // Escape cierra: es lo que la mano hace sola cuando algo se abre encima.
@@ -184,6 +190,42 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
           alt={adjunto.nombre}
           className="max-h-full max-w-full object-contain"
         />
+      </div>
+    )
+  }
+
+  if (esVideo(adjunto)) {
+    return (
+      <div className="flex flex-1 min-h-0 items-center justify-center p-2">
+        {/* Sin `autoPlay`: un video que arranca solo en medio de una
+            conversación es una molestia, no una comodidad. */}
+        <video
+          src={urlAdjunto(adjunto.id)}
+          controls
+          preload="metadata"
+          className="max-h-full max-w-full"
+        />
+      </div>
+    )
+  }
+
+  if (esOfimatica(adjunto)) {
+    return (
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-[13px] text-[var(--tx-ink-primary)]">
+          Word, Excel y PowerPoint no se pueden ver dentro del navegador.
+        </p>
+        <p className="text-[12px] text-[var(--tx-ink-muted)] max-w-sm">
+          Descárgalo y ábrelo con tu programa de siempre. No se usa un visor
+          externo porque estos archivos son internos del equipo y habría que
+          hacerlos públicos para que otro servicio los muestre.
+        </p>
+        <a
+          href={`${urlAdjunto(adjunto.id)}?descargar=1`}
+          className="rounded-lg px-3 py-1.5 text-[13px] bg-[var(--tx-accent)] text-black"
+        >
+          Descargar {adjunto.nombre}
+        </a>
       </div>
     )
   }

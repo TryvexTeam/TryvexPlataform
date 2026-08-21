@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { esImagen, esTexto, esPdf, esHtml, type AdjuntoMensaje } from './chat'
+import { esImagen, esTexto, esPdf, esHtml, esVideo, esOfimatica, type AdjuntoMensaje } from './chat'
 
 const adj = (nombre: string, tipo_mime: string): AdjuntoMensaje => ({
   id: 'x',
@@ -59,5 +59,41 @@ describe('esHtml', () => {
     const pagina = adj('prueba.html', 'text/html')
     expect(esImagen(pagina)).toBe(false)
     expect(esPdf(pagina)).toBe(false)
+  })
+})
+
+describe('esVideo', () => {
+  it('reconoce por tipo MIME', () => expect(esVideo(adj('clip.mp4', 'video/mp4'))).toBe(true))
+  it('reconoce .mov aunque el MIME sea genérico', () =>
+    expect(esVideo(adj('GRABACION.MOV', 'application/octet-stream'))).toBe(true))
+  it('no confunde una imagen', () => expect(esVideo(adj('foto.png', 'image/png'))).toBe(false))
+})
+
+describe('esOfimatica', () => {
+  it('reconoce un .docx por su MIME largo', () =>
+    expect(
+      esOfimatica(
+        adj('informe.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+      ),
+    ).toBe(true))
+
+  it('reconoce un .pptx', () =>
+    expect(
+      esOfimatica(
+        adj('tarifa.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+      ),
+    ).toBe(true))
+
+  it('reconoce .doc viejo y .xls por extensión', () => {
+    expect(esOfimatica(adj('viejo.doc', 'application/msword'))).toBe(true)
+    expect(esOfimatica(adj('planilla.xls', 'application/octet-stream'))).toBe(true)
+  })
+
+  it('un PDF NO es ofimática: ese sí se puede ver', () =>
+    expect(esOfimatica(adj('doc.pdf', 'application/pdf'))).toBe(false))
+
+  it('no se confunde con texto ni HTML', () => {
+    expect(esOfimatica(adj('notas.md', 'text/markdown'))).toBe(false)
+    expect(esOfimatica(adj('pagina.html', 'text/html'))).toBe(false)
   })
 })
