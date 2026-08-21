@@ -68,6 +68,7 @@ const MovimientoCamposSchema = z.object({
     contraparte: z.string().trim().max(200).nullable().optional(),
     cliente_id: z.string().uuid().nullable().optional(),
     proyecto_id: z.string().uuid().nullable().optional(),
+    venta_id: z.string().uuid().nullable().optional(),
     voucher_path: z.string().max(500).nullable().optional(),
     voucher_nombre: z.string().max(300).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),

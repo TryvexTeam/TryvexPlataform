@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { ClienteForm } from './cliente-form'
 import { PagoForm } from './pago-form'
 import { ConfirmarDialog } from './confirmar-dialog'
+import { MovimientoForm, type VentaACobrar } from '@/components/finanzas/movimiento-form'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
@@ -37,6 +38,8 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
   // Id del pago que se está por descartar; null = diálogo cerrado.
   const [descartarId, setDescartarId] = useState<string | null>(null)
   const [saldoOpen, setSaldoOpen] = useState(false)
+  // Venta que se está cobrando: abre MovimientoForm en vez de marcar pagado directo.
+  const [cobrandoVenta, setCobrandoVenta] = useState<VentaACobrar | null>(null)
 
   async function handleEdit(data: ClienteInsert) {
     const res = await fetch(`/api/clientes/${cliente.id}`, {
@@ -56,15 +59,12 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
     router.push('/clientes')
   }
 
+  /** No marca pagado directo: abre el registro de caja, que recién marca la venta
+   *  pagada una vez que el movimiento de ingreso queda enlazado (venta_id). */
   async function handleMarcarPagado(ventaId: string) {
-    const res = await fetch(`/api/pagos/${ventaId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado_pago: 'pagado', fecha_pago: new Date().toISOString().slice(0, 10) }),
-    })
-    if (!res.ok) { toast.error('Error al actualizar el pago'); return }
-    toast.success('Pago marcado como pagado')
-    router.refresh()
+    const v = ventas.find((x) => x.id === ventaId)
+    if (!v) return
+    setCobrandoVenta({ id: v.id, cliente_id: cliente.id, descripcion: v.descripcion })
   }
 
   /** Descartar no borra: el pago queda 'cancelado' y visible tachado, para dejar rastro. */
@@ -330,6 +330,15 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
         )}
         onMarcarPagada={handleMarcarPagado}
       />
+      {cobrandoVenta && (
+        <MovimientoForm
+          open={!!cobrandoVenta}
+          onOpenChange={(o) => !o && setCobrandoVenta(null)}
+          venta={cobrandoVenta}
+          clientes={[{ id: cliente.id, nombre: nombreCliente(cliente) }]}
+          onSaved={() => { setCobrandoVenta(null); router.refresh() }}
+        />
+      )}
     </div>
   )
 }
