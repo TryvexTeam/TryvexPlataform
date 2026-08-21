@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { NotificacionesRepository } from '@/lib/repos/notificaciones'
 import { nombreCliente } from '@/lib/types/cliente'
+import { diaSantiago } from '@/lib/utils/fecha-santiago'
 
 /** Cron diario: entregas de proyecto próximas + cobros pendientes por vencer.
  *  El índice único de dedupe evita repetir el mismo aviso el mismo día. */
@@ -21,9 +22,13 @@ export async function GET(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = admin as any
   const repo = new NotificacionesRepository(admin)
-  const hoy = new Date().toISOString().slice(0, 10)
-  const en7dias = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10)
-  const en3dias = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10)
+  // "Hoy" se calcula en el calendario de Santiago, no en UTC: a las 20:00 de
+  // Santiago el UTC ya cambió de día, y `new Date().toISOString()` corría el
+  // cron un día antes o después de lo que un humano en Santiago llamaría
+  // "hoy". Mismo patrón que el resto del código (fecha-santiago.ts).
+  const hoy = diaSantiago(new Date())
+  const en7dias = diaSantiago(new Date(Date.now() + 7 * 86_400_000))
+  const en3dias = diaSantiago(new Date(Date.now() + 3 * 86_400_000))
   let enviadas = 0
 
   // Entregas de proyecto en <= 7 días (aviso al responsable; sin responsable → a todos)
