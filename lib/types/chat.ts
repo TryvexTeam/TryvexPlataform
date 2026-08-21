@@ -97,6 +97,17 @@ export function esTexto(adjunto: AdjuntoMensaje): boolean {
 }
 
 /**
+ * Páginas HTML: se dibujan, no se leen.
+ *
+ * Va ANTES que `esTexto` a propósito — un `.html` cumple las dos, y quien manda
+ * una página quiere ver la página. El código queda a un clic, no al revés.
+ */
+export function esHtml(adjunto: AdjuntoMensaje): boolean {
+  if (adjunto.tipo_mime === 'text/html') return true
+  return /\.html?$/i.test(adjunto.nombre)
+}
+
+/**
  * PDFs: se miran dentro del chat, sin bajarlos.
  *
  * Es el caso más común de archivo que no es imagen ni texto — una cotización,
