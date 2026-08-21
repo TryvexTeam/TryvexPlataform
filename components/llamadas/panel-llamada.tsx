@@ -695,7 +695,7 @@ export function PanelLlamada({
 
       {/* Lo mismo abajo: sin `pb-safe`, colgar y silenciar quedan sobre la barra
           de gestos, donde el deslizamiento del sistema se lleva el toque. */}
-      <footer className="flex items-center justify-center gap-3 px-4 py-5 shrink-0 pb-safe">
+      <footer className="flex items-center justify-center gap-1.5 px-2 py-5 shrink-0 pb-safe md:gap-3 md:px-4">
         <Boton
           activo={micro}
           onClick={alternarMicro}
@@ -752,10 +752,10 @@ export function PanelLlamada({
         <button
           onClick={terminar}
           aria-label="Colgar"
-          className="inline-flex size-14 items-center justify-center rounded-full transition-transform active:scale-95"
+          className="inline-flex size-12 md:size-14 items-center justify-center rounded-full transition-transform active:scale-95"
           style={{ background: 'oklch(55% 0.22 25)', color: 'white' }}
         >
-          <PhoneOffIcon className="size-6" />
+          <PhoneOffIcon className="size-5 md:size-6" />
         </button>
       </footer>
     </div>
@@ -829,7 +829,7 @@ function Boton({ activo, onClick, etiqueta, clase = '', children }: BotonProps) 
       aria-label={etiqueta}
       aria-pressed={activo}
       title={etiqueta}
-      className={`inline-flex size-14 items-center justify-center rounded-full transition-transform active:scale-95 ${clase}`}
+      className={`inline-flex size-12 md:size-14 items-center justify-center rounded-full transition-transform active:scale-95 ${clase}`}
       style={{
         background: activo ? 'oklch(100% 0 0 / 12%)' : 'oklch(100% 0 0 / 4%)',
         color: activo ? 'var(--tx-ink-primary)' : 'var(--tx-ink-muted)',
