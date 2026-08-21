@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
-import { generarToken, hashToken } from '@/lib/agentes/token'
+import { generarToken, hashToken, expiracionDesdeAhora } from '@/lib/agentes/token'
 
 /** Alta y listado de agentes. Crear uno reparte una llave: solo admin. */
 
@@ -16,7 +16,7 @@ export async function GET() {
   // El token nunca sale de la base: lo guardado es su hash y ni siquiera se pide.
   const { data, error } = await (supabase as SB)
     .from('agentes')
-    .select('id, nombre, descripcion, color, avatar_url, activo, ultimo_uso_at, created_at')
+    .select('id, nombre, descripcion, color, avatar_url, activo, ultimo_uso_at, expira_at, created_at')
     .order('nombre')
 
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
 
   const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
   if (!perfil) return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
-  if (!perfil.es_admin) {
+  if (!perfil.es_superadmin) {
     return NextResponse.json({ success: false, error: 'Solo un admin puede dar de alta agentes' }, { status: 403 })
   }
 
@@ -50,6 +50,7 @@ export async function POST(req: Request) {
       descripcion: cuerpo?.descripcion?.trim() || null,
       color: cuerpo?.color ?? null,
       token_hash: hashToken(token),
+      expira_at: expiracionDesdeAhora(),
       creado_por: perfil.id,
     })
     .select('id, nombre')

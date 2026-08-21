@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { tokenCoincide, tokenDeCabecera } from '@/lib/agentes/token'
+import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -10,6 +10,7 @@ interface Agente {
   nombre: string
   creado_por: string | null
   token_hash: string
+  expira_at: string | null
 }
 
 async function autenticar(req: Request): Promise<Agente | null> {
@@ -20,7 +21,7 @@ async function autenticar(req: Request): Promise<Agente | null> {
   const { data } = await admin.from('agentes').select('*').eq('activo', true)
 
   const agente = ((data ?? []) as Agente[]).find((a) => tokenCoincide(token, a.token_hash))
-  if (!agente) return null
+  if (!agente || tokenExpirado(agente.expira_at)) return null
 
   await admin.from('agentes').update({ ultimo_uso_at: new Date().toISOString() }).eq('id', agente.id)
   return agente

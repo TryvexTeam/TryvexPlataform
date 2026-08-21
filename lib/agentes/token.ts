@@ -11,6 +11,35 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 
 const PREFIJO = 'txa_'
 
+/**
+ * TTL por defecto de un token de agente. Hallazgo de auditoría (agosto 2026):
+ * los tokens no expiraban nunca. 90 días fuerza una rotación periódica sin
+ * exigir que alguien se acuerde de hacerlo a mano.
+ *
+ * TODO (pendiente, fuera de alcance de este fix): rate limiting por agente en
+ * las rutas de `/api/agentes/*`. Approach recomendado: contador en Redis/Upstash
+ * (o una tabla `agentes_rate_limit` con ventana fija en Postgres si no se quiere
+ * sumar infra) keyed por `agente.id`, ventana deslizante corta (ej. 60 req/min),
+ * 429 con Retry-After al superarla. No se improvisa acá porque agregar una
+ * dependencia nueva o una tabla con su propio índice/limpieza no es un cambio
+ * chico y merece su propio PR revisado aparte.
+ */
+export const TTL_DIAS_AGENTE = 90
+
+export function expiracionDesdeAhora(): string {
+  return new Date(Date.now() + TTL_DIAS_AGENTE * 24 * 60 * 60 * 1000).toISOString()
+}
+
+/**
+ * `null`/`undefined` en `expira_at` se trata como "no expira": son los agentes
+ * creados antes de esta migración, que no tienen fecha y no hay que romper de
+ * golpe. Los agentes nuevos siempre llevan `expira_at` (ver expiracionDesdeAhora).
+ */
+export function tokenExpirado(expiraAt: string | null | undefined): boolean {
+  if (!expiraAt) return false
+  return new Date(expiraAt).getTime() < Date.now()
+}
+
 /** Token nuevo en claro. Es la única vez que existe legible. */
 export function generarToken(): string {
   return PREFIJO + randomBytes(32).toString('base64url')
