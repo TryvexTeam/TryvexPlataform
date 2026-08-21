@@ -5,6 +5,7 @@ import {
   ActivityIcon,
   HeadphoneOffIcon,
   HeadphonesIcon,
+  Maximize2Icon,
   MessageSquareIcon,
   MicIcon,
   MicOffIcon,
@@ -999,6 +1000,26 @@ function Recuadro({
         {!micro && <MicOffIcon className="size-3.5 shrink-0 text-[oklch(75%_0.16_25)]" />}
         {compartiendo && <MonitorUpIcon className="size-3.5 shrink-0 text-[var(--tx-accent)]" />}
         <span className="flex-1 text-[12px] font-medium text-white truncate">{nombre}</span>
+
+        {/* Pantalla completa nativa del navegador, como en YouTube. Solo tiene
+            sentido en el recuadro destacado -- en la grilla el video ya es
+            chico a propósito. */}
+        {grande && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              videoRef.current?.requestFullscreen().catch(() => {
+                /* el navegador negó el pedido (ej. falta de gesto de usuario
+                   registrado); no hay nada que hacer salvo no romper el resto. */
+              })
+            }}
+            aria-label="Pantalla completa"
+            title="Pantalla completa"
+            className="shrink-0 p-1 text-white/70 hover:text-white"
+          >
+            <Maximize2Icon className="size-3.5" />
+          </button>
+        )}
 
         {/* Volumen de esta persona. El `stopPropagation` es necesario: sin él,
             tocar el control también destacaría el recuadro. */}
