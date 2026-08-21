@@ -402,19 +402,18 @@ export function HiloChat({
       : undefined
 
   const borrar = async (mensaje: Mensaje) => {
-    const conHilo = (mensaje.respuestas ?? 0) > 0
-    const aviso = conHilo
-      ? `Se elimina el mensaje y sus ${mensaje.respuestas} respuestas. No se puede deshacer.`
-      : 'Se elimina para todos y no se puede deshacer.'
-    if (!confirm(aviso)) return
+    if (!confirm('Se elimina para todos y no se puede deshacer.')) return
     try {
       const res = await fetch(`/api/chat/mensajes/${mensaje.id}`, { method: 'DELETE' })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo eliminar')
-      // Se va de la lista, no queda tachado: la fila ya no existe en la base.
-      // Si abrió un hilo, el CASCADE se llevó también sus respuestas.
-      setMensajes((previos) => previos.filter((m) => m.id !== mensaje.id && m.hilo_padre !== mensaje.id))
-      if (hiloAbierto?.id === mensaje.id) setHiloAbierto(null)
+      // Borrado suave: la fila sigue ahi (y sus respuestas de hilo tambien),
+      // solo se marca eliminado_at. Se refleja localmente sin esperar al realtime.
+      setMensajes((previos) =>
+        previos.map((m) =>
+          m.id === mensaje.id ? { ...m, eliminado_at: new Date().toISOString(), contenido: '[mensaje eliminado]' } : m,
+        ),
+      )
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error eliminando el mensaje')
     }
