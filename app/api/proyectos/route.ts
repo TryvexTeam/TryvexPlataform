@@ -36,9 +36,22 @@ export async function POST(req: Request) {
     yoIntegrante?.id ?? null,
   )
 
-  // Después de crear el proyecto: la tabla puente necesita su id.
+  // Después de crear el proyecto: la tabla puente necesita su id. Si esto
+  // falla, el proyecto (y sus tareas de plantilla) ya existen en la DB sin
+  // equipo asignado — en vez de dejarlo así, se deshace la creación entera y
+  // se devuelve un error claro para que el cliente reintente desde cero.
   if (equipo.data && equipo.data.length > 0) {
-    await repo.fijarEquipo(id, equipo.data)
+    try {
+      await repo.fijarEquipo(id, equipo.data)
+    } catch (fijarEquipoError) {
+      await repo.eliminarCreacionParcial(id)
+      const mensaje =
+        fijarEquipoError instanceof Error ? fijarEquipoError.message : 'Error desconocido'
+      return NextResponse.json(
+        { error: `No se pudo asignar el equipo, el proyecto no se creó: ${mensaje}` },
+        { status: 500 },
+      )
+    }
   }
 
   // Aviso: al responsable si existe; si no, a todo el equipo
