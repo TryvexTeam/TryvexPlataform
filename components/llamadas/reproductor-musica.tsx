@@ -145,7 +145,7 @@ function cargarApiYouTube(): Promise<YTApi> {
   if (window.YT?.Player) return Promise.resolve(window.YT)
   if (cargando) return cargando
 
-  cargando = new Promise<YTApi>((resolver, rechazar) => {
+  const promesa = new Promise<YTApi>((resolver, rechazar) => {
     const anterior = window.onYouTubeIframeAPIReady
     window.onYouTubeIframeAPIReady = () => {
       anterior?.()
@@ -160,7 +160,14 @@ function cargarApiYouTube(): Promise<YTApi> {
     document.head.appendChild(tag)
   })
 
-  return cargando
+  // Si falla (hipo de red, script bloqueado), hay que soltar la promesa
+  // cacheada: si no, un fallo transitorio deja la música rota para siempre
+  // en esta pestaña, porque la próxima llamada reusaría la misma promesa
+  // ya rechazada.
+  promesa.catch(() => { cargando = null })
+
+  cargando = promesa
+  return promesa
 }
 
 export function ReproductorMusica({
