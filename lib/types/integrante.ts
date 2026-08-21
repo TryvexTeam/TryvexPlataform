@@ -129,7 +129,9 @@ export type Integrante = {
    */
   foto_landing_url: string | null
   activo: boolean
+  /** @deprecated desde la migración 028 — usar es_superadmin. Se mantiene solo por compat de lectura. */
   es_admin: boolean
+  es_superadmin: boolean
   color: string | null
   telefono: string | null
   horario: HorarioDia[] | null
