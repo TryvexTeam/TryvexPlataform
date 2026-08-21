@@ -980,7 +980,9 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   // zombis la limpia, horas después. `pagehide` es más confiable que
   // `beforeunload` para esto (sigue funcionando con bfcache).
   const colgarRef = useRef(colgar)
-  colgarRef.current = colgar
+  useEffect(() => {
+    colgarRef.current = colgar
+  }, [colgar])
   useEffect(() => {
     if (!llamadaId) return
     const alSalir = () => void colgarRef.current()
