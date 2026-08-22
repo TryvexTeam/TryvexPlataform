@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
-import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor'
+import { NoiseGateWorkletNode, RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import {
@@ -313,6 +313,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const pistaMicCrudaRef = useRef<MediaStreamTrack | null>(null)
   const ctxRuidoRef = useRef<AudioContext | null>(null)
   const nodoRuidoRef = useRef<RnnoiseWorkletNode | null>(null)
+  /**
+   * Compuerta de ruido, encadenada DESPUÉS del RNNoise: sin esto, cualquier
+   * sonido de fondo por debajo del volumen de la voz -- un video sonando,
+   * música, la tele -- seguía viajando mientras el micrófono estuviera
+   * abierto, aunque uno no estuviera hablando. RNNoise limpia el timbre del
+   * ruido; la compuerta corta lo que quede cuando no hay voz.
+   */
+  const compuertaRuidoRef = useRef<NoiseGateWorkletNode | null>(null)
   const fuenteRuidoRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const destinoRuidoRef = useRef<MediaStreamAudioDestinationNode | null>(null)
   // Se leen dentro de callbacks que no se recrean; un ref evita reconectar la
@@ -326,6 +334,31 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     microRef.current = micro
     camaraRef.current = camara
   }, [micro, camara])
+
+  /** Desarma el grafo de Web Audio de la supresión de ruido, si hay uno. */
+  const limpiarPipelineRuido = useCallback(() => {
+    // A diferencia de RnnoiseWorkletNode, NoiseGateWorkletNode no tiene WASM
+    // que liberar -- es puro JS, alcanza con desconectarlo como cualquier
+    // AudioNode.
+    try {
+      compuertaRuidoRef.current?.disconnect()
+    } catch {
+      // Ya desconectado.
+    }
+    compuertaRuidoRef.current = null
+    nodoRuidoRef.current?.destroy()
+    nodoRuidoRef.current = null
+    try {
+      fuenteRuidoRef.current?.disconnect()
+      destinoRuidoRef.current?.disconnect()
+    } catch {
+      // Ya desconectado.
+    }
+    fuenteRuidoRef.current = null
+    destinoRuidoRef.current = null
+    void ctxRuidoRef.current?.close()
+    ctxRuidoRef.current = null
+  }, [])
 
   const actualizar = useCallback((id: string, cambio: Partial<ParticipanteVivo>) => {
     setParticipantes((previos) => {
@@ -880,18 +913,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       // del micrófono podía quedar encendida después de colgar.
       pistaMicCrudaRef.current?.stop()
       pistaMicCrudaRef.current = null
-      nodoRuidoRef.current?.destroy()
-      nodoRuidoRef.current = null
-      try {
-        fuenteRuidoRef.current?.disconnect()
-        destinoRuidoRef.current?.disconnect()
-      } catch {
-        // Ya desconectado.
-      }
-      fuenteRuidoRef.current = null
-      destinoRuidoRef.current = null
-      void ctxRuidoRef.current?.close()
-      ctxRuidoRef.current = null
+      limpiarPipelineRuido()
       local.current = null
       pantalla.current = null
       setStreamLocal(null)
@@ -944,18 +966,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           local.current.addTrack(cruda)
         }
       }
-      nodoRuidoRef.current?.destroy()
-      nodoRuidoRef.current = null
-      try {
-        fuenteRuidoRef.current?.disconnect()
-        destinoRuidoRef.current?.disconnect()
-      } catch {
-        // Ya desconectado.
-      }
-      fuenteRuidoRef.current = null
-      destinoRuidoRef.current = null
-      void ctxRuidoRef.current?.close()
-      ctxRuidoRef.current = null
+      limpiarPipelineRuido()
       setRuidoSuprimido(false)
       return
     }
@@ -966,15 +977,29 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       // en el que traiga el dispositivo por defecto.
       const ctx = new AudioContext({ sampleRate: 48000 })
       await ctx.audioWorklet.addModule('/audio/rnnoise-worklet.js')
+      await ctx.audioWorklet.addModule('/audio/noise-gate-worklet.js')
       const wasmBinary = await loadRnnoise({
         url: '/audio/rnnoise.wasm',
         simdUrl: '/audio/rnnoise-simd.wasm',
       })
       const nodo = new RnnoiseWorkletNode(ctx, { wasmBinary, maxChannels: 1 })
+      // Encadenada DESPUÉS de RNNoise: RNNoise limpia el timbre del ruido de
+      // fondo (ventilador, hum), pero no lo hace desaparecer del todo si es
+      // fuerte -- un video o música sonando cerca del micrófono seguía
+      // escuchándose por debajo. La compuerta corta lo que no es voz.
+      // Umbrales conservadores a propósito: cerrar de más recorta sílabas
+      // finales, que es peor que dejar pasar un poco de fondo.
+      const compuerta = new NoiseGateWorkletNode(ctx, {
+        openThreshold: -50,
+        closeThreshold: -60,
+        holdMs: 500,
+        maxChannels: 1,
+      })
       const fuente = ctx.createMediaStreamSource(new MediaStream([cruda]))
       const destino = ctx.createMediaStreamDestination()
       fuente.connect(nodo)
-      nodo.connect(destino)
+      nodo.connect(compuerta)
+      compuerta.connect(destino)
 
       const procesada = destino.stream.getAudioTracks()[0]
       if (!procesada) throw new Error('el nodo de salida no entregó ninguna pista')
@@ -982,6 +1007,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
 
       ctxRuidoRef.current = ctx
       nodoRuidoRef.current = nodo
+      compuertaRuidoRef.current = compuerta
       fuenteRuidoRef.current = fuente
       destinoRuidoRef.current = destino
 
@@ -1000,16 +1026,11 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       toast.error('No se pudo activar la supresión de ruido', {
         description: 'Seguís con el micrófono normal.',
       })
-      nodoRuidoRef.current?.destroy()
-      nodoRuidoRef.current = null
-      fuenteRuidoRef.current = null
-      destinoRuidoRef.current = null
-      void ctxRuidoRef.current?.close()
-      ctxRuidoRef.current = null
+      limpiarPipelineRuido()
     } finally {
       setCargandoSupresionRuido(false)
     }
-  }, [ruidoSuprimido])
+  }, [limpiarPipelineRuido, ruidoSuprimido])
 
   const alternarCamara = useCallback(async () => {
     const pista = local.current?.getVideoTracks()[0]
