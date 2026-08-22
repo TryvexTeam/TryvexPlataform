@@ -1,6 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import {
   ActivityIcon,
   HeadphoneOffIcon,
@@ -58,6 +66,32 @@ const SUFIJO_PANTALLA = ':pantalla'
 const idPantalla = (integranteId: string) => `${integranteId}${SUFIJO_PANTALLA}`
 
 /**
+ * En desktop, chat y música conviven lado a lado (fix de `min-w-0` más
+ * abajo); en mobile no entran los tres a la vez, así que abrir uno cierra
+ * al otro -- los mismos botones de la botonera hacen de pestañas ahí, sin
+ * agregar una barra aparte que repita lo mismo. `768px` es el breakpoint
+ * `md` de Tailwind en este proyecto.
+ *
+ * `useSyncExternalStore` y no `useState`+`useEffect`: el lint del repo
+ * (`react-hooks/set-state-in-effect`) rechaza el `setState` síncrono
+ * dentro de un efecto que necesitaría ese patrón para la lectura inicial
+ * de `matchMedia`. El tercer argumento (`getServerSnapshot`) evita el
+ * error de hidratación SSR -- en el server no hay `window`, así que el
+ * primer render asume desktop (`false`) hasta que el cliente confirma.
+ */
+function useEsMobile() {
+  return useSyncExternalStore(
+    (avisar) => {
+      const mq = window.matchMedia('(max-width: 767px)')
+      mq.addEventListener('change', avisar)
+      return () => mq.removeEventListener('change', avisar)
+    },
+    () => window.matchMedia('(max-width: 767px)').matches,
+    () => false,
+  )
+}
+
+/**
  * La llamada en pantalla. Va sobre todo lo demás y no se desmonta al navegar:
  * uno entra a una llamada para hablar mientras mira un lead, no para quedarse
  * mirando la llamada.
@@ -74,6 +108,7 @@ export function PanelLlamada({
   const [minimizado, setMinimizado] = useState(false)
   const [chatAbierto, setChatAbierto] = useState(false)
   const [musicaAbierta, setMusicaAbierta] = useState(false)
+  const esMobile = useEsMobile()
   /**
    * Atenuación general de las voces, de 0 a 1. Multiplica al volumen por persona
    * en vez de reemplazarlo: se puede bajar a todos para escuchar la música y
@@ -777,35 +812,6 @@ export function PanelLlamada({
         </div>
       )}
 
-      {/* Pestañas, solo mobile (`md:hidden`): en desktop video/chat/música
-          conviven lado a lado en la fila de abajo, no hace falta elegir. */}
-      <nav className="flex md:hidden items-center gap-1 px-4 pb-2 shrink-0" aria-label="Vista de la llamada">
-        {(
-          [
-            ['video', 'Video'],
-            ['chat', 'Chat'],
-            ['musica', 'Música'],
-          ] as const
-        ).map(([id, etiqueta]) => (
-          <button
-            key={id}
-            onClick={() => {
-              setChatAbierto(id === 'chat')
-              setMusicaAbierta(id === 'musica')
-            }}
-            aria-pressed={pestanaMobile === id}
-            className="flex-1 rounded-lg py-1.5 text-[13px] font-medium"
-            style={
-              pestanaMobile === id
-                ? { background: 'oklch(100% 0 0 / 10%)', color: 'var(--tx-ink-primary)' }
-                : { color: 'var(--tx-ink-muted)' }
-            }
-          >
-            {etiqueta}
-          </button>
-        ))}
-      </nav>
-
       {/* `min-w-0` en la fila y en el área de video: un `flex-1` sin esto no
           se achica más allá del tamaño de su contenido (acá, la grilla de
           recuadros/avatar centrado) -- con chat y/o música abiertos al
@@ -1012,7 +1018,16 @@ export function PanelLlamada({
 
         <Boton
           activo={chatAbierto}
-          onClick={() => setChatAbierto((v) => !v)}
+          onClick={() => {
+            // En mobile este mismo botón hace de pestaña: abrir chat cierra
+            // música (no entran los dos a la vez, ver `pestanaMobile`). En
+            // desktop no se toca música -- ahí conviven lado a lado.
+            setChatAbierto((v) => {
+              const siguiente = !v
+              if (esMobile && siguiente) setMusicaAbierta(false)
+              return siguiente
+            })
+          }}
           etiqueta={chatAbierto ? 'Cerrar el chat' : 'Abrir el chat'}
         >
           <MessageSquareIcon className="size-5" />
@@ -1022,7 +1037,13 @@ export function PanelLlamada({
             misma pista en la misma posición. Ver la migración 039. */}
         <Boton
           activo={musicaVisible}
-          onClick={() => setMusicaAbierta((v) => !v)}
+          onClick={() => {
+            setMusicaAbierta((v) => {
+              const siguiente = !v
+              if (esMobile && siguiente) setChatAbierto(false)
+              return siguiente
+            })
+          }}
           etiqueta={musicaVisible ? 'Cerrar la música' : 'Abrir la música'}
         >
           <MusicIcon className="size-5" />
@@ -1203,6 +1224,30 @@ function Recuadro({
         void document.exitFullscreen().catch(() => {})
       }
     }
+  }, [])
+
+  /**
+   * Pantalla negra al entrar a pantalla completa en el navegador del
+   * teléfono (reportado por Vicho, no reproducible en este entorno --
+   * Playwright corre Chromium de escritorio, no el motor real de
+   * Safari/Chrome de un iPhone/Android). Causa probable: el fullscreen es
+   * sobre el CONTENEDOR, no sobre el `<video>` (ver el comentario de
+   * `contenedorRef` más arriba) -- en varios navegadores móviles, mover un
+   * `<video>` al "top layer" de fullscreen mueve su nodo en el árbol de
+   * render y el decoder pausa la reproducción sin que nada dispare un
+   * evento que lo avise; con `autoPlay` ya cumplido una vez, no hay
+   * reintento automático. Se vuelve a pedir `play()` explícito al entrar,
+   * que es el arreglo estándar para este patrón -- pendiente de que Vicho
+   * confirme en su teléfono, no se pudo verificar acá.
+   */
+  useEffect(() => {
+    const el = contenedorRef.current
+    if (!el) return
+    const alCambiar = () => {
+      if (document.fullscreenElement === el) videoRef.current?.play().catch(() => {})
+    }
+    document.addEventListener('fullscreenchange', alCambiar)
+    return () => document.removeEventListener('fullscreenchange', alCambiar)
   }, [])
 
   /**
