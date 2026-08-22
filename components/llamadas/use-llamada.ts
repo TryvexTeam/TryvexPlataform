@@ -1084,7 +1084,16 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       // opcional en todo momento.
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 15 } },
-        audio: true,
+        // Sin echoCancellation acá, el audio de sistema capturaba lo que
+        // sale por los parlantes de quien comparte -- incluida la VOZ del
+        // resto de la llamada sonando ahí mismo -- y lo retransmitía como
+        // "audio de pantalla". El resultado: cada uno se escuchaba a sí
+        // mismo rebotado, con eco, en la transmisión del que compartía.
+        // Chrome aplica AEC contra la salida de audio actual también para
+        // captura de sistema, no solo para el micrófono -- mismo mecanismo,
+        // otra fuente. Si el navegador no lo soporta para esto, lo ignora
+        // en silencio (como con `audio: true` a secas).
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
       })
       const pista = stream.getVideoTracks()[0]
       pantalla.current = stream
