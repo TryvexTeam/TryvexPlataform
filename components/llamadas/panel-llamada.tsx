@@ -56,7 +56,6 @@ interface PanelLlamadaProps {
  */
 const SUFIJO_PANTALLA = ':pantalla'
 const idPantalla = (integranteId: string) => `${integranteId}${SUFIJO_PANTALLA}`
-const esTarjetaPantalla = (id: string) => id.endsWith(SUFIJO_PANTALLA)
 
 /**
  * La llamada en pantalla. Va sobre todo lo demás y no se desmonta al navegar:
@@ -301,7 +300,14 @@ export function PanelLlamada({
           {
             id: idPantalla(miIntegranteId),
             stream: streamPantalla,
-            nombre: yo?.nombre ? `Pantalla de ${yo.nombre}` : 'Tu pantalla',
+            // El navegador decide si `getDisplayMedia({ audio: true })` trae
+            // pista de audio de verdad -- una pestaña con "Compartir audio"
+            // tildado sí, una ventana o el escritorio completo normalmente
+            // no. Sin este aviso, "no se escucha" parece un bug en vez de
+            // una limitación real de qué se está compartiendo.
+            nombre:
+              (yo?.nombre ? `Pantalla de ${yo.nombre}` : 'Tu pantalla') +
+              (streamPantalla.getAudioTracks().length === 0 ? ' (sin audio)' : ''),
             avatarUrl: yo?.avatar_url ?? null,
             color: yo?.color ?? null,
             micro: true,
@@ -330,7 +336,9 @@ export function PanelLlamada({
         {
           id: idPantalla(p.integranteId),
           stream: p.streamPantalla,
-          nombre: `Pantalla de ${persona?.nombre ?? 'alguien'}`,
+          nombre:
+            `Pantalla de ${persona?.nombre ?? 'alguien'}` +
+            (p.streamAudioPantalla ? '' : ' (sin audio)'),
           avatarUrl: persona?.avatar_url ?? null,
           color: persona?.color ?? null,
           micro: true,
@@ -436,17 +444,20 @@ export function PanelLlamada({
           sin mutear con autoPlay cae bajo la política de autoplay del
           navegador y no siempre suena del otro lado, y a quien comparte se
           le duplicaba su propio audio (una vez real, en su equipo, y otra
-          rebotada acá). De vuelta a este camino, que sí funciona -- sin
-          control de volumen propio: es una sola perilla por participante,
-          no una por cada cosa que suene. */}
+          rebotada acá). De vuelta a este camino, que sí funciona.
+          Perilla PROPIA, con la clave del id sintético de la tarjeta de
+          pantalla -- no la del participante. Así el volumen del video que
+          comparte no queda pegado al de su voz: se puede subir uno y bajar
+          el otro por separado, que es lo que se espera de dos cosas que
+          suenan distinto. */}
       {participantes
         .filter((p) => p.streamAudioPantalla)
         .map((p) => (
           <AudioRemoto
             key={`${p.integranteId}-pantalla`}
             stream={p.streamAudioPantalla}
-            mudo={ensordecido || silenciados.has(p.integranteId)}
-            volumen={(volumenes.get(p.integranteId) ?? 1) * volumenVoces}
+            mudo={ensordecido || silenciados.has(idPantalla(p.integranteId))}
+            volumen={(volumenes.get(idPantalla(p.integranteId)) ?? 1) * volumenVoces}
           />
         ))}
     </div>
@@ -669,8 +680,11 @@ export function PanelLlamada({
                 {...enGrande}
                 grande
                 hablando={quienesHablan.has(enGrande.id)}
+                // Sin perilla solo para las tarjetas propias -- no hay audio
+                // que controlar de uno mismo. Las de pantalla ajena SÍ tienen
+                // perilla (propia, separada de la voz): ver capaAudio.
                 volumen={
-                  enGrande.id === miIntegranteId || esTarjetaPantalla(enGrande.id)
+                  enGrande.id === miIntegranteId || enGrande.id === idPantalla(miIntegranteId)
                     ? null
                     : (volumenes.get(enGrande.id) ?? 1)
                 }
@@ -716,7 +730,9 @@ export function PanelLlamada({
                   {...r}
                   hablando={quienesHablan.has(r.id)}
                   volumen={
-                    r.id === miIntegranteId || esTarjetaPantalla(r.id) ? null : (volumenes.get(r.id) ?? 1)
+                    r.id === miIntegranteId || r.id === idPantalla(miIntegranteId)
+                      ? null
+                      : (volumenes.get(r.id) ?? 1)
                   }
                   silenciado={silenciados.has(r.id)}
                   onSilenciar={() =>
