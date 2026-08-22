@@ -33,6 +33,14 @@ export interface ParticipanteVivo {
   micro: boolean
   camara: boolean
   compartiendo: boolean
+  /**
+   * El audio de SU pantalla compartida, si trae uno. Separado del micrófono
+   * a propósito: `AudioContext.createMediaStreamSource` solo toma la primera
+   * pista de audio de un stream, así que si viajaran juntas en el mismo
+   * MediaStream, el audio de pantalla nunca sonaría -- necesita su propio
+   * elemento `<audio>`.
+   */
+  streamAudioPantalla: MediaStream | null
 }
 
 interface UseLlamadaOpts {
@@ -71,6 +79,15 @@ interface Par {
    * dejar la conexión peor que el problema que intenta arreglar.
    */
   intentosRanura: number
+  /**
+   * El sender del audio de la pantalla compartida en esta conexión, si hay
+   * uno. A diferencia del video, el audio de pantalla no tiene una ranura
+   * reservada de antemano -- es opcional (el usuario puede no tocar "Compartir
+   * audio también" en el selector del navegador) y su ausencia no debe
+   * tumbar nada. Se guarda acá para poder sacarlo con `removeTrack` cuando
+   * termina de compartir.
+   */
+  senderAudioPantalla: RTCRtpSender | null
 }
 
 /** Cuántas veces se reintenta enderezar la ranura antes de rendirse. */
@@ -287,6 +304,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
             micro: true,
             camara: false,
             compartiendo: false,
+            streamAudioPantalla: null,
             ...cambio,
           },
         ]
@@ -343,7 +361,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         bundlePolicy: 'max-bundle',
       })
 
-      const par: Par = { pc, pistas: new Map(), pendientes: [], negociando: false, intentosRanura: 0 }
+      const par: Par = {
+        pc,
+        pistas: new Map(),
+        pendientes: [],
+        negociando: false,
+        intentosRanura: 0,
+        senderAudioPantalla: null,
+      }
       pares.current.set(otroId, par)
 
       for (const track of local.current?.getTracks() ?? []) {
@@ -387,6 +412,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         if (sender) void sender.replaceTrack(pistaPantalla).catch(() => {})
       }
 
+      // El audio de la pantalla (si el usuario lo compartió) va como pista
+      // aparte, no reemplaza al micrófono. Acá entra gratis en la primera
+      // oferta/respuesta de esta conexión nueva, sin renegociar aparte.
+      const pistaAudioPantalla = pantalla.current?.getAudioTracks()[0]
+      if (pistaAudioPantalla) {
+        par.senderAudioPantalla = pc.addTrack(pistaAudioPantalla, pantalla.current!)
+      }
+
       pc.onicecandidate = (ev) => {
         if (ev.candidate) {
           enviar({ tipo: 'ice', de: miIntegranteId, para: otroId, candidato: ev.candidate.toJSON() })
@@ -398,16 +431,32 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         if (!p) return
 
         // Una por tipo: si llega una pista de video nueva reemplaza a la vieja,
-        // no se acumulan.
-        p.pistas.set(ev.track.kind, ev.track)
+        // no se acumulan. El audio de pantalla es la excepción: es una SEGUNDA
+        // pista de audio que convive con la del micrófono, así que necesita su
+        // propia clave -- si compartiera la de 'audio', la pisaría o la
+        // pisarían a ella según el orden en que lleguen los eventos.
+        const clave =
+          ev.track.kind === 'audio' && p.pistas.has('audio') && p.pistas.get('audio')!.id !== ev.track.id
+            ? 'audioPantalla'
+            : ev.track.kind
+        p.pistas.set(clave, ev.track)
 
         // Un MediaStream NUEVO en cada cambio, a propósito: mutar el existente no
-        // le avisa a React ni al elemento <video>, que ya tiene ese objeto en
-        // `srcObject` y no vuelve a mirarlo.
+        // le avisa a React ni al elemento <video>/<audio>, que ya tiene ese
+        // objeto en `srcObject` y no vuelve a mirarlo.
         const rehacer = () => {
           const vivo = pares.current.get(otroId)
           if (!vivo) return
-          actualizar(otroId, { stream: new MediaStream([...vivo.pistas.values()]) })
+          const audioPantalla = vivo.pistas.get('audioPantalla')
+          actualizar(otroId, {
+            // Sin la pista de audio de pantalla: `createMediaStreamSource` solo
+            // toma la primera pista de audio de un stream, mezclarlas acá haría
+            // que una de las dos nunca se escuche.
+            stream: new MediaStream(
+              [...vivo.pistas.entries()].filter(([k]) => k !== 'audioPantalla').map(([, t]) => t),
+            ),
+            streamAudioPantalla: audioPantalla ? new MediaStream([audioPantalla]) : null,
+          })
         }
 
         rehacer()
@@ -425,7 +474,10 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         ev.track.onended = () => {
           const vivo = pares.current.get(otroId)
           if (!vivo) return
-          vivo.pistas.delete(ev.track.kind)
+          // Por la clave con la que se guardó, no por `kind`: borrar por
+          // 'audio' cuando termina el audio de pantalla se llevaría puesto al
+          // micrófono, que quedó guardado con esa misma clave.
+          vivo.pistas.delete(clave)
           rehacer()
         }
       }
@@ -521,6 +573,44 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         if (hayQueRenegociar && pc.signalingState === 'stable') {
           void ofrecer(otroId)
         }
+      }
+    },
+    [ofrecer],
+  )
+
+  /**
+   * Agregar o sacar el audio de la pantalla compartida en las conexiones que
+   * ya existían cuando se empieza o termina de compartir.
+   *
+   * A diferencia del video, esto SÍ necesita `addTrack`/`removeTrack` y una
+   * renegociación real -- no hay una ranura de audio reservada de antemano,
+   * porque el audio de pantalla es opcional (depende de si el usuario tocó
+   * "Compartir audio también" en el selector del navegador) y no vale la pena
+   * reservarla para algo que la mayoría de las veces no está. Si la
+   * renegociación falla, el peor caso es que ese audio no se escuche -- el
+   * micrófono y el video siguen andando igual, no es una falla que se
+   * propague.
+   */
+  const repartirAudioPantalla = useCallback(
+    async (pista: MediaStreamTrack | null, stream: MediaStream | null) => {
+      for (const [otroId, { pc }] of pares.current) {
+        const par = pares.current.get(otroId)
+        if (!par) continue
+
+        if (pista && stream && !par.senderAudioPantalla) {
+          par.senderAudioPantalla = pc.addTrack(pista, stream)
+        } else if (!pista && par.senderAudioPantalla) {
+          try {
+            pc.removeTrack(par.senderAudioPantalla)
+          } catch {
+            // La conexión ya pudo haberse cerrado; no hay nada que sacar.
+          }
+          par.senderAudioPantalla = null
+        } else {
+          continue
+        }
+
+        if (pc.signalingState === 'stable') void ofrecer(otroId)
       }
     },
     [ofrecer],
@@ -818,13 +908,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     // lado deja de recibir cuadros, que es lo correcto.
     const camaraPista = local.current?.getVideoTracks()[0] ?? null
     await repartirVideo(camaraPista)
+    await repartirAudioPantalla(null, null)
     pantalla.current.getTracks().forEach((t) => t.stop())
     pantalla.current = null
     setStreamPantalla(null)
     setCompartiendo(false)
     aplicarCalidad()
     enviar({ tipo: 'pantalla', de: miIntegranteId, activa: false })
-  }, [aplicarCalidad, enviar, miIntegranteId, repartirVideo])
+  }, [aplicarCalidad, enviar, miIntegranteId, repartirAudioPantalla, repartirVideo])
 
   const alternarPantalla = useCallback(async () => {
     if (pantalla.current) {
@@ -833,15 +924,25 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     }
 
     try {
+      // `audio: true` solo pide el permiso; el navegador decide si lo puede
+      // cumplir. Compartiendo una pestaña de Chrome con "Compartir audio de
+      // la pestaña" tildado, llega. Compartiendo una ventana o el escritorio
+      // entero, la mayoría de los navegadores no ofrecen esa opción y el
+      // stream simplemente no trae pista de audio -- no es un error, es
+      // audio: false silencioso, así que el resto del código lo trata como
+      // opcional en todo momento.
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 15 } },
-        audio: false,
+        audio: true,
       })
       const pista = stream.getVideoTracks()[0]
       pantalla.current = stream
       setStreamPantalla(stream)
 
       await repartirVideo(pista)
+
+      const pistaAudio = stream.getAudioTracks()[0] ?? null
+      if (pistaAudio) await repartirAudioPantalla(pistaAudio, stream)
 
       // El botón "Dejar de compartir" del navegador no pasa por nuestra UI: sin
       // este handler la app seguiría creyendo que se comparte.
@@ -853,7 +954,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     } catch {
       // El usuario canceló el selector de ventana. No es un error que avisar.
     }
-  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirVideo])
+  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirAudioPantalla, repartirVideo])
 
   /**
    * Cada dos segundos se pregunta a WebRTC cuántos paquetes de audio salieron y
