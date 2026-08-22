@@ -1189,16 +1189,25 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       // opcional en todo momento.
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 15 } },
-        // Sin echoCancellation acá, el audio de sistema capturaba lo que
-        // sale por los parlantes de quien comparte -- incluida la VOZ del
-        // resto de la llamada sonando ahí mismo -- y lo retransmitía como
-        // "audio de pantalla". El resultado: cada uno se escuchaba a sí
-        // mismo rebotado, con eco, en la transmisión del que compartía.
-        // Chrome aplica AEC contra la salida de audio actual también para
-        // captura de sistema, no solo para el micrófono -- mismo mecanismo,
-        // otra fuente. Si el navegador no lo soporta para esto, lo ignora
-        // en silencio (como con `audio: true` a secas).
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+        /**
+         * Se probó `{ echoCancellation: true, noiseSuppression: true,
+         * autoGainControl: false }` acá para el eco (#159: quien comparte
+         * escuchaba su propia voz rebotada, porque el audio de sistema
+         * captura lo que sale por sus parlantes, incluida la llamada
+         * sonando ahí mismo). Rebotó en producción: en el equipo de
+         * Ignacio, la pista de audio de pantalla quedaba `muted: true` a
+         * nivel de WebRTC -- viva pero sin datos, silencio total del otro
+         * lado -- confirmado leyendo el estado real de la pista en la
+         * consola del navegador. echoCancellation/noiseSuppression están
+         * pensados para señal de MICRÓFONO; aplicados a una captura de
+         * audio de sistema, en algunos equipos degradan la señal a
+         * silencio en vez de solo cancelar el eco.
+         *
+         * Silencio total es peor que un eco ocasional -- se vuelve a
+         * `audio: true` a secas. El eco de #159 queda sin resolver (mitigar
+         * con auriculares mientras se comparte pantalla con audio).
+         */
+        audio: true,
       })
       const pista = stream.getVideoTracks()[0]
       pantalla.current = stream
