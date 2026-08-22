@@ -758,8 +758,16 @@ export function PanelLlamada({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-        <div className="flex-1 min-h-0 flex flex-col px-4 pb-4 gap-3">
+      {/* `min-w-0` en la fila y en el área de video: un `flex-1` sin esto no
+          se achica más allá del tamaño de su contenido (acá, la grilla de
+          recuadros/avatar centrado) -- con chat y/o música abiertos al
+          lado, el hueco de música (ancho fijo, `md:w-[320px]` más abajo)
+          terminaba empujado fuera de pantalla en vez de recibir el ancho
+          que le sobra al video. `min-h-0` ya estaba (mismo problema, eje
+          vertical) pero le faltaba el equivalente horizontal para
+          `md:flex-row`. */}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row md:min-w-0">
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col px-4 pb-4 gap-3">
           {/* El video de YouTube agrandado. Ocupa el área principal y manda a la
               gente a la tira, igual que una pantalla compartida: si están viendo
               algo juntos, lo que importa es lo que se ve, no las caras. El
