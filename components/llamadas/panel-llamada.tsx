@@ -247,6 +247,25 @@ export function PanelLlamada({
   const musicaVisible = musicaAbierta || Boolean(musica.sala.video_id)
 
   /**
+   * En mobile no entran video, chat y música a la vez -- la fila pasa a columna
+   * y cada panel pedía su propia franja, dejando a la gente en un resto
+   * inservible. Con pestañas, en mobile se ve UN panel a la vez, a pantalla
+   * completa (bajo el header, sobre la botonera). Es solo de lectura: no hay
+   * estado propio, sale de `chatAbierto`/`musicaVisible` para no duplicar la
+   * fuente de verdad y desincronizarse de los botones que ya los controlan.
+   *
+   * Ojo: se deriva de `musicaAbierta` (el botón/pestaña "Música", la
+   * intención del usuario), NO de `musicaVisible` (que además incluye
+   * "está sonando aunque nadie pidió verla" -- ver más abajo). Si usara
+   * `musicaVisible`, la pestaña "Video" no serviría de nada mientras suena
+   * algo: `musicaAbierta` puede pasar a `false` con el botón, pero
+   * `musicaVisible` seguiría en `true` por el video sonando, y esta
+   * variable volvería a caer en 'musica' sin importar qué tocara el
+   * usuario.
+   */
+  const pestanaMobile: 'video' | 'chat' | 'musica' = chatAbierto ? 'chat' : musicaAbierta ? 'musica' : 'video'
+
+  /**
    * Seguir al hueco reservado para el panel de música.
    *
    * El reproductor se monta UNA vez y fuera de la vista, por la misma razón que
@@ -758,6 +777,35 @@ export function PanelLlamada({
         </div>
       )}
 
+      {/* Pestañas, solo mobile (`md:hidden`): en desktop video/chat/música
+          conviven lado a lado en la fila de abajo, no hace falta elegir. */}
+      <nav className="flex md:hidden items-center gap-1 px-4 pb-2 shrink-0" aria-label="Vista de la llamada">
+        {(
+          [
+            ['video', 'Video'],
+            ['chat', 'Chat'],
+            ['musica', 'Música'],
+          ] as const
+        ).map(([id, etiqueta]) => (
+          <button
+            key={id}
+            onClick={() => {
+              setChatAbierto(id === 'chat')
+              setMusicaAbierta(id === 'musica')
+            }}
+            aria-pressed={pestanaMobile === id}
+            className="flex-1 rounded-lg py-1.5 text-[13px] font-medium"
+            style={
+              pestanaMobile === id
+                ? { background: 'oklch(100% 0 0 / 10%)', color: 'var(--tx-ink-primary)' }
+                : { color: 'var(--tx-ink-muted)' }
+            }
+          >
+            {etiqueta}
+          </button>
+        ))}
+      </nav>
+
       {/* `min-w-0` en la fila y en el área de video: un `flex-1` sin esto no
           se achica más allá del tamaño de su contenido (acá, la grilla de
           recuadros/avatar centrado) -- con chat y/o música abiertos al
@@ -767,7 +815,9 @@ export function PanelLlamada({
           vertical) pero le faltaba el equivalente horizontal para
           `md:flex-row`. */}
       <div className="flex-1 min-h-0 flex flex-col md:flex-row md:min-w-0">
-        <div className="flex-1 min-h-0 min-w-0 flex flex-col px-4 pb-4 gap-3">
+        <div
+          className={`${pestanaMobile === 'video' ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 min-w-0 flex-col px-4 pb-4 gap-3`}
+        >
           {/* El video de YouTube agrandado. Ocupa el área principal y manda a la
               gente a la tira, igual que una pantalla compartida: si están viendo
               algo juntos, lo que importa es lo que se ve, no las caras. El
@@ -870,19 +920,37 @@ export function PanelLlamada({
             se monta una sola vez fuera de esta vista y se posiciona encima de
             este ancla. Lo que hace este div es reservar el ancho, que es lo que
             corre los recuadros de la gente. */}
-        {/*
-          En escritorio el hueco va en el flujo y empuja: la grilla se achica y
-          los recuadros se reacomodan. En el teléfono no puede empujar -- apilado
-          bajo el video dejaba a la gente en una franja de nada. Ahí es una hoja
-          sobre la llamada, por encima del video y por debajo de la botonera, que
-          es lo que hacen Meet y Discord con el chat en móvil.
-        */}
+        {/* En escritorio el hueco va en el flujo y empuja: la grilla se achica
+            y los recuadros se reacomodan. En mobile, con la pestaña "Música"
+            activa, ocupa toda la fila igual que el chat -- lo reserva la
+            pestaña, no un tamaño fijo. Si NO está esa pestaña activa pero hay
+            música sonando (`musicaVisible` sin `musicaAbierta`, ver el
+            comentario de `pestanaMobile`), no puede desaparecer del todo --
+            los términos de la API de YouTube exigen que el reproductor quede
+            visible mientras reproduce -- así que queda como una miniatura fija
+            en la esquina, del tamaño mínimo que la API pide. */}
         {musicaVisible && !musicaGrande && (
           <div
             ref={setAnclaMusica}
-            className={`fixed inset-x-0 bottom-[84px] top-auto h-[58vh] md:static md:h-auto md:inset-auto md:shrink-0 w-full ${
-              musicaTamano === 'encogido' ? 'md:w-[224px]' : 'md:w-[320px]'
-            }`}
+            className={
+              pestanaMobile === 'musica'
+                ? `flex-1 min-h-0 w-full md:static md:h-auto md:inset-auto md:shrink-0 ${
+                    musicaTamano === 'encogido' ? 'md:w-[224px]' : 'md:w-[320px]'
+                  }`
+                // Ancho/alto en px literal (no `style`): un `style` inline
+                // pisaría también en desktop, donde `md:` sí tiene que ganar.
+                // 200 = `LADO_MINIMO` (reproductor-musica.tsx) -- Tailwind
+                // necesita el valor literal en el string de la clase, no
+                // puede interpolar la constante. Si `LADO_MINIMO` cambia,
+                // actualizar acá también.
+                // `bottom-[172px]`, no los `bottom-[92px]` de siempre: acá
+                // abajo puede haber además un cuadro de texto (el del chat,
+                // si esa es la pestaña activa) -- con el offset de la
+                // botonera nomás, la miniatura se lo tapaba.
+                : `fixed bottom-[172px] right-3 w-[200px] h-[200px] md:static md:bottom-auto md:right-auto md:h-auto md:flex-1 md:min-h-0 md:shrink-0 ${
+                    musicaTamano === 'encogido' ? 'md:w-[224px]' : 'md:w-[320px]'
+                  }`
+            }
             aria-hidden
           />
         )}
