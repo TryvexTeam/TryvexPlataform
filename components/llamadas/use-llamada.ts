@@ -36,15 +36,27 @@ export interface ParticipanteVivo {
   camara: boolean
   compartiendo: boolean
   /**
-   * Video Y audio de SU pantalla compartida juntos, si está compartiendo.
-   * Antes la pantalla reemplazaba a la cámara en la misma ranura de video, y
-   * el audio se mandaba (si había) en un elemento oculto aparte porque
-   * `AudioContext.createMediaStreamSource` -- usado para el mic -- solo toma
-   * la primera pista de audio de un stream. Ahora la pantalla es una tarjeta
-   * propia con su `<video>` sin mutear: no comparte motor de audio con el
-   * resto, así que video y audio pueden viajar juntos y reproducirse nativo
-   * -- entre otras cosas, para que el control de volumen del navegador
-   * funcione de verdad en pantalla completa.
+   * El audio de SU pantalla compartida, si trae uno. Separado del micrófono
+   * a propósito: `AudioContext.createMediaStreamSource` solo toma la primera
+   * pista de audio de un stream, así que si viajaran juntas en el mismo
+   * MediaStream, el audio de pantalla nunca sonaría -- necesita su propio
+   * elemento `<audio>`.
+   *
+   * (Se probó unmutear el `<video>` de la tarjeta y mandarle video+audio
+   * juntos para que el control de volumen del navegador en pantalla
+   * completa funcionara -- ver PR #161. Rebotó en producción: un `<video>`
+   * sin mutear con `autoPlay` cae bajo la política de autoplay del
+   * navegador y necesita un gesto del usuario para sonar, así que del otro
+   * lado simplemente no se escuchaba nada; y a quien comparte, si el
+   * navegador sí lo dejaba sonar, se le duplicaba su propio audio de
+   * pantalla -- una vez real, sonando en su equipo, y otra vez rebotada por
+   * este `<video>`. De vuelta al camino separado, que sí funciona.)
+   */
+  streamAudioPantalla: MediaStream | null
+  /**
+   * El VIDEO de su pantalla compartida, si está compartiendo. Viaja en una
+   * pista de video aparte de la cámara: no se reemplazan entre sí, y la
+   * pantalla se renderiza como una tarjeta propia, no en el mismo recuadro.
    */
   streamPantalla: MediaStream | null
 }
@@ -362,6 +374,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
             micro: true,
             camara: false,
             compartiendo: false,
+            streamAudioPantalla: null,
             streamPantalla: null,
             ...cambio,
           },
@@ -515,20 +528,17 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           const videoPantalla = vivo.pistas.get('videoPantalla')
           actualizar(otroId, {
             // Sin las pistas de pantalla: la cámara/mic van en su propia
-            // tarjeta, la pantalla en la suya.
+            // tarjeta, la pantalla en la suya. Separadas entre sí también:
+            // `createMediaStreamSource` (el mic pasa por ahí) solo toma la
+            // primera pista de audio de un stream, así que mezclarlas dejaría
+            // muda a una de las dos.
             stream: new MediaStream(
               [...vivo.pistas.entries()]
                 .filter(([k]) => k !== 'audioPantalla' && k !== 'videoPantalla')
                 .map(([, t]) => t),
             ),
-            // Video Y audio de pantalla juntos acá -- a diferencia de `stream`
-            // arriba (cámara/mic), esta tarjeta reproduce su audio nativo, sin
-            // pasar por `AudioContext.createMediaStreamSource` (que solo toma
-            // la primera pista de audio de un stream). Al no compartir motor
-            // de audio con el resto, no hay problema en juntar las dos.
-            streamPantalla: videoPantalla
-              ? new MediaStream(audioPantalla ? [videoPantalla, audioPantalla] : [videoPantalla])
-              : null,
+            streamAudioPantalla: audioPantalla ? new MediaStream([audioPantalla]) : null,
+            streamPantalla: videoPantalla ? new MediaStream([videoPantalla]) : null,
           })
         }
 
@@ -552,6 +562,26 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           // micrófono, que quedó guardado con esa misma clave.
           vivo.pistas.delete(clave)
           rehacer()
+        }
+
+        // Solo para las pistas de PANTALLA: cuando quien comparte deja de
+        // hacerlo, `repartirVideoPantalla`/`repartirAudioPantalla` sacan el
+        // sender con `removeTrack` y renegocian -- del lado de acá eso no
+        // dispara `ended`, dispara `mute` (la pista sigue "existiendo" en el
+        // transceiver, solo que sin datos). Sin este handler la tarjeta de
+        // pantalla se quedaba pegada con el último cuadro congelado, como si
+        // esa persona siguiera compartiendo para siempre. La cámara/mic NO
+        // entran acá a propósito: para esas dos, "muted" es un estado normal
+        // (cámara apagada, silenciado) que ya maneja el propio recuadro
+        // mostrando el avatar -- ahí sí tiene que seguir existiendo la
+        // tarjeta.
+        if (clave === 'videoPantalla' || clave === 'audioPantalla') {
+          ev.track.onmute = () => {
+            const vivo = pares.current.get(otroId)
+            if (!vivo) return
+            vivo.pistas.delete(clave)
+            rehacer()
+          }
         }
       }
 
