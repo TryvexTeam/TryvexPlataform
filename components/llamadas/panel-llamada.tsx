@@ -23,7 +23,7 @@ import { MusicIcon } from 'lucide-react'
 import { AvatarChat } from '@/components/chat/avatar-chat'
 import { PipLlamada } from './pip-llamada'
 import { ChatLlamada } from './chat-llamada'
-import { ReproductorMusica, type TamanoMusica } from './reproductor-musica'
+import { LADO_MINIMO, ReproductorMusica, type TamanoMusica } from './reproductor-musica'
 import { useGrillaVideo } from './use-grilla-video'
 import { useHablando } from './use-hablando'
 import { useMusica } from './use-musica'
@@ -274,15 +274,20 @@ export function PanelLlamada({
       el.style.right = 'auto'
       el.style.bottom = 'auto'
     } else {
-      // Sin ancla que seguir (minimizado sin video cargado): miniatura de
-      // respaldo sobre la tarjeta, igual que antes. Apagar el reproductor
-      // acá cortaría la música, y esconderlo rompe los términos de la API.
-      el.style.top = 'auto'
-      el.style.left = 'auto'
-      el.style.right = '12px'
-      el.style.bottom = '88px'
-      el.style.width = '224px'
-      el.style.height = '300px'
+      // Sin ancla que seguir -- solo pasa minimizado y sin video cargado.
+      // Antes esto mostraba una miniatura de respaldo flotando sobre la
+      // tarjeta ("Nada sonando…"), pero esa es justo la caja separada que
+      // Vicho pidió sacar: sin video no hay audio sonando tampoco, así que
+      // no hace falta que quede visible en ningún lado -- los términos de
+      // la API exigen visibilidad mientras REPRODUCE, no en reposo. Se
+      // saca de pantalla en vez de ocultar con display:none, que si rompe
+      // los términos.
+      el.style.top = '-9999px'
+      el.style.left = '-9999px'
+      el.style.right = 'auto'
+      el.style.bottom = 'auto'
+      el.style.width = `${LADO_MINIMO}px`
+      el.style.height = `${LADO_MINIMO}px`
     }
   }, [])
 
