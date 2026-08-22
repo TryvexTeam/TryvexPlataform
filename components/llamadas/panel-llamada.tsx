@@ -100,6 +100,15 @@ export function PanelLlamada({
   /** Dónde está el hueco reservado, en coordenadas de viewport. */
   const [huecoMusica, setHuecoMusica] = useState<DOMRect | null>(null)
   /**
+   * Mismo mecanismo que `anclaMusica`/`huecoMusica`, pero para el hueco que
+   * reserva la tarjeta minimizada (`PipLlamada`) cuando hay un video de
+   * música cargado. Antes, minimizado mostraba una cajita de música
+   * flotante APARTE de la tarjeta de la llamada -- dos cosas separadas. Con
+   * esto, el iframe se reparenta DENTRO de la misma tarjeta.
+   */
+  const [anclaPip, setAnclaPip] = useState<HTMLDivElement | null>(null)
+  const [huecoPip, setHuecoPip] = useState<DOMRect | null>(null)
+  /**
    * Ensordecer: dejar de oír a todos. Como en Discord, también apaga el propio
    * micrófono -- si uno no está escuchando, seguir transmitiendo es hablarle a
    * una conversación que no sigue.
@@ -262,9 +271,31 @@ export function PanelLlamada({
     }
   }, [anclaMusica])
 
-  // Minimizada no hay hueco que seguir: se descarta al derivar y no reseteando el
-  // estado desde el efecto, que dejaría un render con la medida vieja.
-  const huecoVigente = minimizado ? null : huecoMusica
+  // Igual que el efecto de arriba, para el ancla de la tarjeta minimizada.
+  useEffect(() => {
+    if (!anclaPip) return
+
+    const medir = () => setHuecoPip(anclaPip.getBoundingClientRect())
+    medir()
+
+    const observador = new ResizeObserver(medir)
+    observador.observe(anclaPip)
+    window.addEventListener('resize', medir)
+
+    return () => {
+      observador.disconnect()
+      window.removeEventListener('resize', medir)
+    }
+  }, [anclaPip])
+
+  /** Si hay un video cargado de verdad, no solo el panel de música abierto. */
+  const hayVideoMusica = Boolean(musica.sala.video_id)
+
+  // Minimizada sigue el ancla de la tarjeta (si hay video cargado, que es la
+  // única vez que la tarjeta la reserva) en vez de la del panel abierto, que
+  // ya no existe. Sin video de por medio, no hay ancla que seguir -- cae al
+  // recuadrito flotante de respaldo más abajo.
+  const huecoVigente = minimizado ? (hayVideoMusica ? huecoPip : null) : huecoMusica
 
   const terminar = async () => {
     await colgar()
@@ -529,6 +560,9 @@ export function PanelLlamada({
         onAlternarCamara={alternarCamara}
         onAlternarEnsordecer={alternarEnsordecer}
         onColgar={colgar}
+        streamPantallaPropia={streamPantalla}
+        hayMusica={hayVideoMusica}
+        onAnclaMusica={setAnclaPip}
       />
     )
   } else {
@@ -918,11 +952,13 @@ export function PanelLlamada({
             }}
             volumenVoces={volumenVoces}
             onVolumenVoces={setVolumenVoces}
-            // Con la llamada minimizada solo cabe la miniatura, sin cola ni
-            // sliders: se fuerza encogido sin tocar la preferencia de la persona,
-            // que vuelve tal cual estaba al restaurar.
-            tamano={minimizado ? 'encogido' : musicaTamano}
+            tamano={musicaTamano}
             onTamano={setMusicaTamano}
+            // Minimizada: solo el video, dentro de la tarjeta flotante --
+            // `tamano` no se toca, así que vuelve a verse tal cual estaba al
+            // restaurar (antes se forzaba a 'encogido', perdiendo la
+            // preferencia de la persona).
+            compacto={minimizado}
           />
         </div>
       )}
