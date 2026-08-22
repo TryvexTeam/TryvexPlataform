@@ -364,24 +364,25 @@ export function PipLlamada({
       }}
       role="dialog"
       aria-label="Llamada minimizada"
-      initial={sinMovimiento ? false : { opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-      // Al montar, `colocar()` (más abajo) ya llama a `onMovida` para
-      // ubicar el video de música -- pero ese primer llamado ocurre con la
-      // tarjeta todavía en pleno `scale: 0.9` de esta animación de entrada.
-      // `getBoundingClientRect()` del ancla (en panel-llamada.tsx) SÍ
-      // refleja ese `scale` -- mide la tarjeta más chica de lo que va a
-      // terminar siendo, y como el `ResizeObserver` que la sigue solo
-      // reacciona a cambios de tamaño de layout (no a transforms), esa
-      // medición vieja quedaba pegada hasta que algo más disparaba una
-      // remedición (arrastrar, que sí llama a `onMovida` en cada frame).
-      // Confirmado con capturas de Vicho: recién minimizada, el video de
-      // música quedaba con un margen/hueco en vez de llegar hasta las
-      // esquinas, y se corregía solo al mover la tarjeta. Repetir el
-      // llamado acá, cuando la animación de entrada termina (`scale` ya
-      // en 1), la corrige sola sin necesitar el arrastre.
-      onAnimationComplete={onMovida}
+      // Con contenido (video/música), la entrada anima solo `opacity` --
+      // nada de `scale`. `getBoundingClientRect()` del ancla (usado en
+      // panel-llamada.tsx para ubicar el video, que vive reparentado
+      // aparte) SÍ refleja un `scale` en curso: medía la tarjeta más chica
+      // de lo que iba a terminar siendo, y como el `ResizeObserver` que
+      // sigue esa medición no reacciona a transforms (solo a cambios de
+      // tamaño de layout), quedaba un hueco entre el video y el borde
+      // hasta que otra cosa disparaba una remedición (arrastrar). Esperar
+      // a que el spring de `scale` termine (`onAnimationComplete`) lo
+      // corregía, pero con un salto visible casi un segundo después --
+      // sin `scale` de por medio no hay nada que corregir: la medición ya
+      // sale bien en el primer frame. Sin contenido (avatar) no hay nada
+      // reparentado que dependa de esta medición, así que ahí se mantiene
+      // el `scale` de siempre.
+      initial={sinMovimiento ? false : hayContenido ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+      animate={hayContenido ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+      transition={
+        hayContenido ? { duration: 0.16, ease: 'easeOut' } : { type: 'spring', stiffness: 320, damping: 28 }
+      }
       className="fixed bottom-24 right-3 z-[80] cursor-grab touch-none select-none
         overflow-hidden rounded-[24px] border border-white/[0.09] active:cursor-grabbing
         md:bottom-6 md:right-6"
