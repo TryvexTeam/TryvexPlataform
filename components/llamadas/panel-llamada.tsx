@@ -822,7 +822,16 @@ export function PanelLlamada({
           `md:flex-row`. */}
       <div className="flex-1 min-h-0 flex flex-col md:flex-row md:min-w-0">
         <div
-          className={`${pestanaMobile === 'video' ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 min-w-0 flex-col px-4 pb-4 gap-3`}
+          // `|| musicaGrande`: el video de música "agrandado" (botón
+          // expandir del reproductor) reserva su hueco DENTRO de este div
+          // (más abajo, `musicaGrande && <div ref={setAnclaMusica} .../>`)
+          // -- si la pestaña activa en mobile no era "Video" cuando se
+          // agrandó (lo normal: se agranda desde la pestaña "Música"), este
+          // div quedaba `hidden`, el ancla medía 0x0, y el reproductor real
+          // (que sigue esa medición) se veía en pantalla negra. Confirmado
+          // con capturas de Vicho -- se corregía a medias reabriendo la
+          // música desde la botonera, que fuerza una remedición.
+          className={`${pestanaMobile === 'video' || musicaGrande ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 min-w-0 flex-col px-4 pb-4 gap-3`}
         >
           {/* El video de YouTube agrandado. Ocupa el área principal y manda a la
               gente a la tira, igual que una pantalla compartida: si están viendo
