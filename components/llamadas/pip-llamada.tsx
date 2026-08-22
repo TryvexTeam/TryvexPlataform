@@ -170,7 +170,7 @@ function VideoPantalla({ stream }: { stream: MediaStream }) {
       autoPlay
       playsInline
       muted
-      className="h-full w-full rounded-[14px] object-contain"
+      className="h-full w-full object-contain"
       style={{ background: '#000' }}
     />
   )
@@ -374,7 +374,16 @@ export function PipLlamada({
         boxShadow: '0 24px 60px rgba(0,0,0,.6)',
       }}
     >
-      <div className="relative p-2" style={{ height: altoContenido, transition: 'height 160ms ease' }}>
+      <div
+        // Con contenido, sin padding ni redondeo propio en los hijos: el
+        // video ocupa TODO el ancho/alto disponible hasta justo arriba de
+        // la fila de botones, con las mismas esquinas de arriba que la
+        // tarjeta (este wrapper las recorta por los dos). Antes el `p-2` +
+        // el redondeo de cada video dejaba un marco negro alrededor,
+        // achicando el video sin necesidad.
+        className={hayContenido ? 'relative overflow-hidden rounded-t-[23px]' : 'relative p-2'}
+        style={{ height: altoContenido, transition: 'height 160ms ease' }}
+      >
         {hayContenido ? (
           <div className="flex h-full w-full flex-col gap-1">
             {/* Con las dos cosas a la vez, la música se queda con su alto
@@ -392,7 +401,7 @@ export function PipLlamada({
             {hayMusica && (
               <div
                 ref={onAnclaMusica}
-                className="w-full overflow-hidden rounded-[14px]"
+                className="w-full"
                 style={{ height: dosCosas ? LADO_MINIMO : '100%', flexShrink: 0 }}
               />
             )}
