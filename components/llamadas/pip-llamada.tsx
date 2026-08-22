@@ -361,8 +361,16 @@ export function PipLlamada({
         overflow-hidden rounded-[24px] border border-white/[0.09] active:cursor-grabbing
         md:bottom-6 md:right-6"
       style={{
-        background: 'rgba(20,18,26,.92)',
-        backdropFilter: 'blur(28px) saturate(150%)',
+        // El video/pantalla es un elemento aparte que se posiciona DETRÁS de
+        // esta tarjeta (ver el comentario de z-index en panel-llamada.tsx),
+        // para que estos mismos botones queden por encima sin taparlo. Con
+        // fondo y `backdropFilter: blur` acá, ese video se veía "a través
+        // del vidrio esmerilado" -- difuminado. Sin contenido de por medio
+        // (vista de "quién habla"), el fondo vuelve: no hay nada detrás que
+        // deba verse nítido, y sin él el recuadro/avatar quedaría flotando
+        // sin ningún marco.
+        background: hayContenido ? 'transparent' : 'rgba(20,18,26,.92)',
+        backdropFilter: hayContenido ? 'none' : 'blur(28px) saturate(150%)',
         boxShadow: '0 24px 60px rgba(0,0,0,.6)',
       }}
     >
@@ -451,7 +459,14 @@ export function PipLlamada({
         </span>
       </div>
 
-      <div className="flex items-center gap-1.5 px-3 pb-3">
+      {/* Con contenido, la tarjeta entera perdió su fondo (ver el `style` de
+          arriba) para que el video/pantalla se vea nítido detrás -- esta
+          fila necesita el suyo propio, si no quedaría transparente sobre lo
+          que sea que haya en la página detrás de la tarjeta. */}
+      <div
+        className="flex items-center gap-1.5 px-3 pb-3 pt-2"
+        style={hayContenido ? { background: 'rgba(20,18,26,.92)' } : undefined}
+      >
         <p className="min-w-0 flex-1 truncate text-[12px] text-[var(--tx-ink-secondary)]">
           {ensordecido ? 'Ensordecido' : (persona?.nombre ?? 'En llamada')}
         </p>
