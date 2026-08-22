@@ -1227,6 +1227,30 @@ function Recuadro({
   }, [])
 
   /**
+   * Pantalla negra al entrar a pantalla completa en el navegador del
+   * teléfono (reportado por Vicho, no reproducible en este entorno --
+   * Playwright corre Chromium de escritorio, no el motor real de
+   * Safari/Chrome de un iPhone/Android). Causa probable: el fullscreen es
+   * sobre el CONTENEDOR, no sobre el `<video>` (ver el comentario de
+   * `contenedorRef` más arriba) -- en varios navegadores móviles, mover un
+   * `<video>` al "top layer" de fullscreen mueve su nodo en el árbol de
+   * render y el decoder pausa la reproducción sin que nada dispare un
+   * evento que lo avise; con `autoPlay` ya cumplido una vez, no hay
+   * reintento automático. Se vuelve a pedir `play()` explícito al entrar,
+   * que es el arreglo estándar para este patrón -- pendiente de que Vicho
+   * confirme en su teléfono, no se pudo verificar acá.
+   */
+  useEffect(() => {
+    const el = contenedorRef.current
+    if (!el) return
+    const alCambiar = () => {
+      if (document.fullscreenElement === el) videoRef.current?.play().catch(() => {})
+    }
+    document.addEventListener('fullscreenchange', alCambiar)
+    return () => document.removeEventListener('fullscreenchange', alCambiar)
+  }, [])
+
+  /**
    * ¿Hay imagen que mostrar?
    *
    * Se mira la pista real y no solo las banderas: una pista puede existir en la
