@@ -500,17 +500,18 @@ export function ReproductorMusica({
         El reproductor. 200×200 px visibles: es el mínimo que exigen los términos
         de la YouTube API, no una decisión estética. No reducir, no ocultar.
       */}
-      <div className={chromeMinimo ? 'flex-1 min-h-0 flex' : 'flex justify-center px-3 pt-3 shrink-0'}>
+      <div className={chromeMinimo ? 'flex-1 min-h-0 flex' : 'px-3 pt-3 shrink-0'}>
         <div
-          className={`relative overflow-hidden rounded-lg ${chromeMinimo ? 'w-full h-full' : ''}`}
+          className={`relative overflow-hidden rounded-lg w-full ${chromeMinimo ? 'h-full' : ''}`}
           style={{
-            // El video toma todo el hueco disponible; en los otros dos
-            // tamaños se queda en el cuadrado mínimo, que es el piso que
-            // exigen los términos -- ese piso NO se salta ni en compacto,
-            // por eso el ancla que le reserva la tarjeta minimizada
-            // (`PipLlamada`) usa esta misma constante para no pedirle menos.
-            width: chromeMinimo ? undefined : LADO_MINIMO,
-            height: chromeMinimo ? undefined : LADO_MINIMO,
+            // El video toma todo el hueco disponible en grande/compacto. En
+            // encogido/normal, antes era un cuadrado fijo de 200×200 -- el
+            // piso que exigen los términos de YouTube, pero un video 16:9
+            // metido en un cuadrado deja franjas negras arriba y abajo, se ve
+            // chico y con mucho margen muerto. Ahora usa todo el ancho
+            // disponible con la proporción real del video (16:9); el piso de
+            // 200 sigue ahí como mínimo, no como forma obligada.
+            aspectRatio: chromeMinimo ? undefined : '16 / 9',
             minWidth: LADO_MINIMO,
             minHeight: LADO_MINIMO,
             background: 'oklch(14% 0.004 240)',
@@ -620,21 +621,39 @@ export function ReproductorMusica({
           <SkipForwardIcon className="size-4" />
         </BotonMini>
 
-        <BotonMini onClick={() => void ejecutar('shuffle')} etiqueta="Mezclar la cola">
-          <ShuffleIcon className="size-4" />
-        </BotonMini>
+        {/* Mezclar y detener se ocultan en encogido -- con los seis botones
+            ahí, el sexto (Detener) quedaba solo en una segunda fila, apretado
+            y desbalanceado. Los cuatro esenciales (anterior/pausa/
+            siguiente/repetir) entran cómodos en una sola fila; mezclar y
+            detener siguen disponibles en normal/grande. */}
+        {!encogido && (
+          <>
+            <BotonMini onClick={() => void ejecutar('shuffle')} etiqueta="Mezclar la cola">
+              <ShuffleIcon className="size-4" />
+            </BotonMini>
 
-        <BotonMini
-          onClick={() => void ejecutar('loop')}
-          etiqueta={`Repetición: ${sala.modo_loop}`}
-          activo={sala.modo_loop !== 'off'}
-        >
-          {sala.modo_loop === 'pista' ? <Repeat1Icon className="size-4" /> : <RepeatIcon className="size-4" />}
-        </BotonMini>
+            <BotonMini
+              onClick={() => void ejecutar('loop')}
+              etiqueta={`Repetición: ${sala.modo_loop}`}
+              activo={sala.modo_loop !== 'off'}
+            >
+              {sala.modo_loop === 'pista' ? <Repeat1Icon className="size-4" /> : <RepeatIcon className="size-4" />}
+            </BotonMini>
 
-        <BotonMini onClick={() => void ejecutar('stop')} etiqueta="Detener y vaciar la cola">
-          <SquareIcon className="size-4" />
-        </BotonMini>
+            <BotonMini onClick={() => void ejecutar('stop')} etiqueta="Detener y vaciar la cola">
+              <SquareIcon className="size-4" />
+            </BotonMini>
+          </>
+        )}
+        {encogido && (
+          <BotonMini
+            onClick={() => void ejecutar('loop')}
+            etiqueta={`Repetición: ${sala.modo_loop}`}
+            activo={sala.modo_loop !== 'off'}
+          >
+            {sala.modo_loop === 'pista' ? <Repeat1Icon className="size-4" /> : <RepeatIcon className="size-4" />}
+          </BotonMini>
+        )}
       </div>
       )}
 
