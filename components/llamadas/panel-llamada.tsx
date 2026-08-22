@@ -992,7 +992,13 @@ export function PanelLlamada({
           // z-index de siempre, el video tapaba el botón de "volver" y el
           // contador de gente en la llamada, que viven en esa misma tarjeta
           // pero son un elemento de React totalmente aparte.
-          className={`fixed ${minimizado ? 'z-[79]' : 'z-[81]'}`}
+          // Este wrapper vive fuera del árbol de `PipLlamada` -- es un
+          // `position: fixed` aparte que solo se posiciona ENCIMA de la
+          // tarjeta por coincidencia de coordenadas, nunca es su hijo real.
+          // El `overflow-hidden`/rounded de la tarjeta no lo alcanza, así
+          // que las esquinas de arriba del video se salían del marco
+          // redondeado de la tarjeta. Mismo radio acá, directo.
+          className={`fixed ${minimizado ? 'z-[79] rounded-t-[23px] overflow-hidden' : 'z-[81]'}`}
         >
           <ReproductorMusica
             musica={musica}
