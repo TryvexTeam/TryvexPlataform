@@ -13,6 +13,7 @@ import {
   VideoOffIcon,
 } from 'lucide-react'
 import type { ParticipanteVivo } from './use-llamada'
+import { LADO_MINIMO } from './reproductor-musica'
 
 /**
  * La llamada minimizada: un recuadro con imagen y controles que vive sobre
@@ -55,6 +56,23 @@ interface PipLlamadaProps {
   onAlternarCamara: () => void
   onAlternarEnsordecer: () => void
   onColgar: () => void
+  /** La pantalla que uno mismo está compartiendo, si la hay. */
+  streamPantallaPropia: MediaStream | null
+  /**
+   * Si hay un video de música cargado -- no solo el panel abierto, la pista
+   * puede estar vacía. Reserva el lugar para el iframe de YouTube, que se
+   * reparenta acá adentro (ver `onAnclaMusica`).
+   */
+  hayMusica: boolean
+  /**
+   * El iframe de YouTube no es un `MediaStream`, es un DOM real que vive en
+   * otro componente (`ReproductorMusica`) y se reposiciona por encima con
+   * `position: fixed` midiendo este ancla -- mismo mecanismo que ya usa el
+   * modo "grande" del reproductor dentro de la llamada abierta. Sin esto,
+   * minimizar mostraba una cajita de música flotante APARTE de esta tarjeta:
+   * dos cosas separadas ocupando pantalla en vez de una sola.
+   */
+  onAnclaMusica: (el: HTMLDivElement | null) => void
 }
 
 function iniciales(nombre: string): string {
@@ -125,6 +143,28 @@ function Recuadro({
   )
 }
 
+/** Pantalla compartida, sin avatar de respaldo -- si no hay imagen, no hay nada que mostrar. */
+function VideoPantalla({ stream }: { stream: MediaStream }) {
+  const video = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const el = video.current
+    if (!el) return
+    if (el.srcObject !== stream) el.srcObject = stream
+  }, [stream])
+
+  return (
+    <video
+      ref={video}
+      autoPlay
+      playsInline
+      muted
+      className="h-full w-full rounded-[14px] object-contain"
+      style={{ background: '#000' }}
+    />
+  )
+}
+
 export function PipLlamada({
   onRestaurar,
   participantes,
@@ -135,6 +175,9 @@ export function PipLlamada({
   camara,
   ensordecido,
   streamLocal,
+  streamPantallaPropia,
+  hayMusica,
+  onAnclaMusica,
   onAlternarMicro,
   onAlternarCamara,
   onAlternarEnsordecer,
@@ -252,6 +295,38 @@ export function PipLlamada({
   const persona = enPantalla ? personas.get(enPantalla.integranteId) : undefined
   const total = participantes.length + 1
 
+  /**
+   * Si hay una transmisión (propia o ajena) o un video de música cargado, la
+   * tarjeta muestra ESO en vez de a quién se está oyendo -- es lo que uno
+   * quiere ver minimizado: lo que se está compartiendo, no una cara fija.
+   * Con las dos cosas a la vez, la tarjeta crece para que entren juntas en
+   * vez de que una tape a la otra.
+   */
+  const pantallaAjena = participantes.find((p) => p.streamPantalla)?.streamPantalla ?? null
+  const pantalla = streamPantallaPropia ?? pantallaAjena
+  const hayContenido = hayMusica || Boolean(pantalla)
+  const dosCosas = hayMusica && Boolean(pantalla)
+  /**
+   * El slot de música nunca baja de `LADO_MINIMO`: es el piso que exigen los
+   * términos de la API de YouTube (200×200 visibles), y no se lo salta ni
+   * acá adentro. Con las dos cosas a la vez, la pantalla compartida se
+   * queda con lo que sobra (124px, el mismo alto que ya usaba sola) y la
+   * tarjeta crece para que ninguna de las dos quede por debajo de su piso.
+   */
+  const altoContenido = !hayContenido ? 124 : dosCosas ? LADO_MINIMO + 124 + 8 : hayMusica ? LADO_MINIMO : 124
+
+  // La tarjeta cambia de alto sola cuando aparece o desaparece una
+  // transmisión/video, no solo cuando cambia la ventana -- sin re-acotar
+  // acá también, crecer estando cerca del borde inferior la sacaba de
+  // pantalla sin que el efecto de arriba se enterara (ese solo escucha
+  // resize/orientationchange).
+  useEffect(() => {
+    const el = caja.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    colocar(r.left, r.top)
+  }, [colocar, altoContenido])
+
   return (
     <motion.div
       ref={caja}
@@ -275,25 +350,53 @@ export function PipLlamada({
         boxShadow: '0 24px 60px rgba(0,0,0,.6)',
       }}
     >
-      <div className="relative h-[124px] p-2">
-        <Recuadro
-          stream={enPantalla?.stream ?? null}
-          persona={persona}
-          hablando={Boolean(enPantalla && quienesHablan.has(enPantalla.integranteId))}
-          camaraEncendida={enPantalla?.camara ?? false}
-        />
-
-        {/* Uno mismo, en miniatura sobre el recuadro grande — el mismo sitio
-            donde lo pone cualquier app de videollamada. */}
-        {camara && streamLocal && (
-          <div className="absolute bottom-3.5 right-3.5 h-[42px] w-[56px] overflow-hidden rounded-[10px] border border-white/15">
-            <Recuadro
-              stream={streamLocal}
-              persona={personas.get(miIntegranteId)}
-              hablando={false}
-              camaraEncendida={camara}
-            />
+      <div className="relative p-2" style={{ height: altoContenido, transition: 'height 160ms ease' }}>
+        {hayContenido ? (
+          <div className="flex h-full w-full flex-col gap-1">
+            {/* Con las dos cosas a la vez, la música se queda con su alto
+                fijo (el piso de YouTube) y la pantalla compartida con lo que
+                sobra -- al revés se arriesgaba a dejar el video de música
+                por debajo del mínimo que exigen sus términos. */}
+            {pantalla && (
+              <div className={dosCosas ? 'flex-1 min-h-0 w-full' : 'h-full w-full'}>
+                <VideoPantalla stream={pantalla} />
+              </div>
+            )}
+            {/* El iframe de YouTube se reparenta acá por fuera de React (ver
+                `onAnclaMusica` en panel-llamada.tsx) -- este div solo le
+                reserva el lugar y el tamaño. */}
+            {hayMusica && (
+              <div
+                ref={onAnclaMusica}
+                className="w-full overflow-hidden rounded-[14px]"
+                style={{ height: dosCosas ? LADO_MINIMO : '100%', flexShrink: 0 }}
+              />
+            )}
           </div>
+        ) : (
+          <>
+            <Recuadro
+              stream={enPantalla?.stream ?? null}
+              persona={persona}
+              hablando={Boolean(enPantalla && quienesHablan.has(enPantalla.integranteId))}
+              camaraEncendida={enPantalla?.camara ?? false}
+            />
+
+            {/* Uno mismo, en miniatura sobre el recuadro grande — el mismo
+                sitio donde lo pone cualquier app de videollamada. Solo
+                tiene sentido acá: si ya se ve una transmisión o un video,
+                la propia cámara en miniatura sobra. */}
+            {camara && streamLocal && (
+              <div className="absolute bottom-3.5 right-3.5 h-[42px] w-[56px] overflow-hidden rounded-[10px] border border-white/15">
+                <Recuadro
+                  stream={streamLocal}
+                  persona={personas.get(miIntegranteId)}
+                  hablando={false}
+                  camaraEncendida={camara}
+                />
+              </div>
+            )}
+          </>
         )}
 
         {/* Para el arrastre igual que los controles de abajo. El contenedor
