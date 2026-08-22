@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIcon,
   HeadphoneOffIcon,
@@ -97,17 +97,24 @@ export function PanelLlamada({
   // Callback ref por lo mismo que la grilla: minimizar y volver monta un ancla
   // nueva, y con un `useRef` el efecto que la mide no se enteraba.
   const [anclaMusica, setAnclaMusica] = useState<HTMLDivElement | null>(null)
-  /** Dónde está el hueco reservado, en coordenadas de viewport. */
-  const [huecoMusica, setHuecoMusica] = useState<DOMRect | null>(null)
   /**
-   * Mismo mecanismo que `anclaMusica`/`huecoMusica`, pero para el hueco que
-   * reserva la tarjeta minimizada (`PipLlamada`) cuando hay un video de
-   * música cargado. Antes, minimizado mostraba una cajita de música
-   * flotante APARTE de la tarjeta de la llamada -- dos cosas separadas. Con
-   * esto, el iframe se reparenta DENTRO de la misma tarjeta.
+   * Mismo mecanismo que `anclaMusica`, pero para el hueco que reserva la
+   * tarjeta minimizada (`PipLlamada`) cuando hay un video de música cargado.
+   * Antes, minimizado mostraba una cajita de música flotante APARTE de la
+   * tarjeta de la llamada -- dos cosas separadas. Con esto, el iframe se
+   * reparenta DENTRO de la misma tarjeta.
    */
   const [anclaPip, setAnclaPip] = useState<HTMLDivElement | null>(null)
-  const [huecoPip, setHuecoPip] = useState<DOMRect | null>(null)
+  /**
+   * El wrapper `position: fixed` del reproductor no se posiciona con estado
+   * de React (`style={{top, left, ...}}` desde un `useState`) -- eso deja un
+   * frame de rezago entre que la tarjeta minimizada se mueve y el video la
+   * alcanza, porque el arrastre de la tarjeta escribe el DOM directo (ver
+   * `pip-llamada.tsx`, `colocar`) y React re-renderiza en un ciclo aparte.
+   * Se posiciona con la misma técnica: escritura directa sobre el nodo, sin
+   * pasar por estado, así los dos se mueven en el mismo instante.
+   */
+  const reproductorFijoRef = useRef<HTMLDivElement>(null)
   /**
    * Ensordecer: dejar de oír a todos. Como en Discord, también apaga el propio
    * micrófono -- si uno no está escuchando, seguir transmitiendo es hablarle a
@@ -252,50 +259,91 @@ export function PanelLlamada({
    * entero: el hueco también se mueve cuando se abre el chat al lado o cuando
    * cambia el tamaño de la ventana, y eso no cambia el tamaño del ancla.
    */
+  /** Si hay un video cargado de verdad, no solo el panel de música abierto. */
+  const hayVideoMusica = Boolean(musica.sala.video_id)
+
+  /** Escribe la posición/tamaño directo en el nodo -- ver el comentario de `reproductorFijoRef`. */
+  const posicionarReproductor = useCallback((r: DOMRect | null) => {
+    const el = reproductorFijoRef.current
+    if (!el) return
+    if (r) {
+      el.style.top = `${r.top}px`
+      el.style.left = `${r.left}px`
+      el.style.width = `${r.width}px`
+      el.style.height = `${r.height}px`
+      el.style.right = 'auto'
+      el.style.bottom = 'auto'
+    } else {
+      // Sin ancla que seguir (minimizado sin video cargado): miniatura de
+      // respaldo sobre la tarjeta, igual que antes. Apagar el reproductor
+      // acá cortaría la música, y esconderlo rompe los términos de la API.
+      el.style.top = 'auto'
+      el.style.left = 'auto'
+      el.style.right = '12px'
+      el.style.bottom = '88px'
+      el.style.width = '224px'
+      el.style.height = '300px'
+    }
+  }, [])
+
+  /**
+   * Decide a qué ancla seguir según el estado actual y reposiciona. Minimizada
+   * sigue el ancla de la tarjeta (si hay video cargado, que es la única vez
+   * que la tarjeta la reserva) en vez de la del panel abierto, que ya no
+   * existe. Sin video de por medio, no hay ancla que seguir -- cae al
+   * recuadrito flotante de respaldo.
+   */
+  const reposicionarReproductor = useCallback(() => {
+    if (minimizado) {
+      posicionarReproductor(hayVideoMusica && anclaPip ? anclaPip.getBoundingClientRect() : null)
+    } else if (anclaMusica) {
+      posicionarReproductor(anclaMusica.getBoundingClientRect())
+    }
+  }, [minimizado, hayVideoMusica, anclaPip, anclaMusica, posicionarReproductor])
+
   useEffect(() => {
     if (!anclaMusica) return
 
-    const medir = () => setHuecoMusica(anclaMusica.getBoundingClientRect())
-    medir()
-
-    const observador = new ResizeObserver(medir)
+    reposicionarReproductor()
+    const observador = new ResizeObserver(reposicionarReproductor)
     observador.observe(anclaMusica)
     // También el padre: el hueco se corre cuando se abre el chat al lado, y eso
     // no cambia el tamaño del ancla, solo su posición.
     if (anclaMusica.parentElement) observador.observe(anclaMusica.parentElement)
-    window.addEventListener('resize', medir)
+    window.addEventListener('resize', reposicionarReproductor)
 
     return () => {
       observador.disconnect()
-      window.removeEventListener('resize', medir)
+      window.removeEventListener('resize', reposicionarReproductor)
     }
-  }, [anclaMusica])
+  }, [anclaMusica, reposicionarReproductor])
 
   // Igual que el efecto de arriba, para el ancla de la tarjeta minimizada.
   useEffect(() => {
     if (!anclaPip) return
 
-    const medir = () => setHuecoPip(anclaPip.getBoundingClientRect())
-    medir()
-
-    const observador = new ResizeObserver(medir)
+    reposicionarReproductor()
+    const observador = new ResizeObserver(reposicionarReproductor)
     observador.observe(anclaPip)
-    window.addEventListener('resize', medir)
+    window.addEventListener('resize', reposicionarReproductor)
 
     return () => {
       observador.disconnect()
-      window.removeEventListener('resize', medir)
+      window.removeEventListener('resize', reposicionarReproductor)
     }
-  }, [anclaPip])
+  }, [anclaPip, reposicionarReproductor])
 
-  /** Si hay un video cargado de verdad, no solo el panel de música abierto. */
-  const hayVideoMusica = Boolean(musica.sala.video_id)
-
-  // Minimizada sigue el ancla de la tarjeta (si hay video cargado, que es la
-  // única vez que la tarjeta la reserva) en vez de la del panel abierto, que
-  // ya no existe. Sin video de por medio, no hay ancla que seguir -- cae al
-  // recuadrito flotante de respaldo más abajo.
-  const huecoVigente = minimizado ? (hayVideoMusica ? huecoPip : null) : huecoMusica
+  // Minimizar/restaurar, o que cargue/termine un video mientras está
+  // minimizado, cambia a qué ancla hay que seguir -- sin esto, quedaba con
+  // la posición vieja hasta el próximo resize de ventana. `useLayoutEffect`
+  // y no `useEffect`: corre antes de pintar, así el primer render del
+  // reproductor (que no trae ningún `style` de React -- se maneja todo acá,
+  // a propósito, para que los efectos de arriba puedan escribirle encima
+  // sin que React se lo pise en el próximo render ajeno) no asoma un frame
+  // sin posición.
+  useLayoutEffect(() => {
+    reposicionarReproductor()
+  }, [reposicionarReproductor])
 
   const terminar = async () => {
     await colgar()
@@ -563,13 +611,14 @@ export function PanelLlamada({
         streamPantallaPropia={streamPantalla}
         hayMusica={hayVideoMusica}
         onAnclaMusica={setAnclaPip}
-        // El ResizeObserver de abajo solo dispara con cambios de TAMAÑO del
+        // El ResizeObserver de arriba solo dispara con cambios de TAMAÑO del
         // ancla; arrastrar la tarjeta la mueve sin cambiarle el tamaño, así
         // que sin esto el video de música quedaba pegado en el sitio viejo
-        // mientras la tarjeta se arrastraba a otro lado.
-        onMovida={() => {
-          if (anclaPip) setHuecoPip(anclaPip.getBoundingClientRect())
-        }}
+        // mientras la tarjeta se arrastraba a otro lado. Llama directo a
+        // `reposicionarReproductor` (escritura en el DOM, no `setState`):
+        // pasar por React acá metía un frame de rezago entre que la tarjeta
+        // se movía (arrastre = DOM directo) y el video la alcanzaba.
+        onMovida={reposicionarReproductor}
       />
     )
   } else {
@@ -932,21 +981,13 @@ export function PanelLlamada({
 
       {musicaVisible && (
         <div
-          className="fixed z-[81]"
-          style={
-            huecoVigente
-              ? {
-                  top: huecoVigente.top,
-                  left: huecoVigente.left,
-                  width: huecoVigente.width,
-                  height: huecoVigente.height,
-                }
-              : // Con la llamada minimizada el hueco no existe, pero el reproductor
-                // tiene que seguir a la vista: apagarlo cortaría la música, y
-                // esconderlo rompe los términos de la API. Queda como miniatura
-                // sobre la píldora de "En llamada".
-                { bottom: 88, right: 12, width: 224, height: 300 }
-          }
+          ref={reproductorFijoRef}
+          // Minimizada, tiene que quedar POR DEBAJO de los controles propios
+          // de la tarjeta (z-[80] en pip-llamada.tsx) -- antes, con el mismo
+          // z-index de siempre, el video tapaba el botón de "volver" y el
+          // contador de gente en la llamada, que viven en esa misma tarjeta
+          // pero son un elemento de React totalmente aparte.
+          className={`fixed ${minimizado ? 'z-[79]' : 'z-[81]'}`}
         >
           <ReproductorMusica
             musica={musica}
