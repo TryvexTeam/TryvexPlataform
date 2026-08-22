@@ -565,8 +565,8 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         }
 
         // Solo para las pistas de PANTALLA: cuando quien comparte deja de
-        // hacerlo, `repartirVideoPantalla`/`repartirAudioPantalla` sacan el
-        // sender con `removeTrack` y renegocian -- del lado de acá eso no
+        // hacerlo, `repartirPantalla` saca el sender con `removeTrack` y
+        // renegocia -- del lado de acá eso no
         // dispara `ended`, dispara `mute` (la pista sigue "existiendo" en el
         // transceiver, solo que sin datos). Sin este handler la tarjeta de
         // pantalla se quedaba pegada con el último cuadro congelado, como si
@@ -689,70 +689,77 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   )
 
   /**
-   * Agregar o sacar el audio de la pantalla compartida en las conexiones que
-   * ya existían cuando se empieza o termina de compartir.
+   * Agregar o sacar el video Y el audio de la pantalla compartida juntos, en
+   * las conexiones que ya existían cuando se empieza o termina de compartir.
    *
-   * A diferencia del video, esto SÍ necesita `addTrack`/`removeTrack` y una
-   * renegociación real -- no hay una ranura de audio reservada de antemano,
-   * porque el audio de pantalla es opcional (depende de si el usuario tocó
-   * "Compartir audio también" en el selector del navegador) y no vale la pena
-   * reservarla para algo que la mayoría de las veces no está. Si la
-   * renegociación falla, el peor caso es que ese audio no se escuche -- el
-   * micrófono y el video siguen andando igual, no es una falla que se
-   * propague.
+   * Antes eran dos funciones separadas (`repartirVideoPantalla` y
+   * `repartirAudioPantalla`), cada una con su propio `addTrack` + "si está
+   * estable, ofrecer". Se llamaban una después de la otra desde
+   * `alternarPantalla`/`dejarDeCompartir` -- y ahí estaba la carrera real que
+   * dejaba el audio de pantalla mudo para siempre: la primera (`video`)
+   * dispara `createOffer()`, que es async y no cambia `signalingState` hasta
+   * que `setLocalDescription()` termina. En esa ventana, la segunda
+   * (`audio`) todavía ve `signalingState === 'stable'`, así que TAMBIÉN
+   * intenta ofrecer -- pero `ofrecer()` se descarta solo si ya hay una
+   * negociación en curso (`par.negociando`), que la primera llamada ya puso
+   * en `true` de forma síncrona. Resultado: el `addTrack` del audio sí pasa,
+   * pero llega tarde para la oferta que ya se estaba armando, y su propio
+   * intento de generar una oferta nueva se tira al piso en silencio. La
+   * pista de audio queda agregada a la conexión pero nunca viaja en ningún
+   * SDP -- confirmado en vivo: llegaba al otro lado como pista "viva" pero
+   * `muted: true` para siempre, mientras el video (que sí iba en la primera
+   * oferta) andaba bien.
+   *
+   * Ahora es UNA sola función que agrega/saca las dos pistas primero y
+   * renegocia una sola vez por conexión, así una única oferta cubre a las
+   * dos.
+   *
+   * A diferencia de la ranura de cámara, ninguna de las dos tiene una ranura
+   * reservada de antemano -- compartir pantalla (con o sin audio) es
+   * opcional y no vale la pena reservarle un lugar a algo que la mayoría de
+   * las veces no está. Si la renegociación falla, el peor caso es que no se
+   * vea/escuche la pantalla -- el micrófono y la cámara siguen andando
+   * igual, no es una falla que se propague.
    */
-  const repartirAudioPantalla = useCallback(
-    async (pista: MediaStreamTrack | null, stream: MediaStream | null) => {
+  const repartirPantalla = useCallback(
+    async (
+      pistaVideo: MediaStreamTrack | null,
+      pistaAudio: MediaStreamTrack | null,
+      stream: MediaStream | null,
+    ) => {
       for (const [otroId, { pc }] of pares.current) {
         const par = pares.current.get(otroId)
         if (!par) continue
 
-        if (pista && stream && !par.senderAudioPantalla) {
-          par.senderAudioPantalla = pc.addTrack(pista, stream)
-        } else if (!pista && par.senderAudioPantalla) {
-          try {
-            pc.removeTrack(par.senderAudioPantalla)
-          } catch {
-            // La conexión ya pudo haberse cerrado; no hay nada que sacar.
-          }
-          par.senderAudioPantalla = null
-        } else {
-          continue
-        }
+        let hayCambio = false
 
-        if (pc.signalingState === 'stable') void ofrecer(otroId)
-      }
-    },
-    [ofrecer],
-  )
-
-  /**
-   * Igual que `repartirAudioPantalla`, para el video de la pantalla
-   * compartida. También necesita `addTrack`/`removeTrack` real: a diferencia
-   * de la cámara, no hay una ranura reservada de antemano para esto -- antes
-   * SÍ la reusaba (la de cámara), y por eso compartir apagaba la cara de
-   * quien compartía. Ahora es una pista propia, independiente de la cámara.
-   */
-  const repartirVideoPantalla = useCallback(
-    async (pista: MediaStreamTrack | null, stream: MediaStream | null) => {
-      for (const [otroId, { pc }] of pares.current) {
-        const par = pares.current.get(otroId)
-        if (!par) continue
-
-        if (pista && stream && !par.senderVideoPantalla) {
-          par.senderVideoPantalla = pc.addTrack(pista, stream)
-        } else if (!pista && par.senderVideoPantalla) {
+        if (pistaVideo && stream && !par.senderVideoPantalla) {
+          par.senderVideoPantalla = pc.addTrack(pistaVideo, stream)
+          hayCambio = true
+        } else if (!pistaVideo && par.senderVideoPantalla) {
           try {
             pc.removeTrack(par.senderVideoPantalla)
           } catch {
             // La conexión ya pudo haberse cerrado; no hay nada que sacar.
           }
           par.senderVideoPantalla = null
-        } else {
-          continue
+          hayCambio = true
         }
 
-        if (pc.signalingState === 'stable') void ofrecer(otroId)
+        if (pistaAudio && stream && !par.senderAudioPantalla) {
+          par.senderAudioPantalla = pc.addTrack(pistaAudio, stream)
+          hayCambio = true
+        } else if (!pistaAudio && par.senderAudioPantalla) {
+          try {
+            pc.removeTrack(par.senderAudioPantalla)
+          } catch {
+            // La conexión ya pudo haberse cerrado; no hay nada que sacar.
+          }
+          par.senderAudioPantalla = null
+          hayCambio = true
+        }
+
+        if (hayCambio && pc.signalingState === 'stable') void ofrecer(otroId)
       }
     },
     [ofrecer],
@@ -1163,15 +1170,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const dejarDeCompartir = useCallback(async () => {
     if (!pantalla.current) return
 
-    await repartirVideoPantalla(null, null)
-    await repartirAudioPantalla(null, null)
+    await repartirPantalla(null, null, null)
     pantalla.current.getTracks().forEach((t) => t.stop())
     pantalla.current = null
     setStreamPantalla(null)
     setCompartiendo(false)
     aplicarCalidad()
     enviar({ tipo: 'pantalla', de: miIntegranteId, activa: false })
-  }, [aplicarCalidad, enviar, miIntegranteId, repartirAudioPantalla, repartirVideoPantalla])
+  }, [aplicarCalidad, enviar, miIntegranteId, repartirPantalla])
 
   const alternarPantalla = useCallback(async () => {
     if (pantalla.current) {
@@ -1213,13 +1219,13 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       pantalla.current = stream
       setStreamPantalla(stream)
 
-      // Pista aparte de la cámara -- no toca su ranura para nada. Si la
-      // cámara estaba prendida, sigue mandando exactamente igual que antes
-      // de empezar a compartir.
-      await repartirVideoPantalla(pista, stream)
-
+      // Video y audio (si vino) van juntos, en una sola renegociación por
+      // conexión -- ver el comentario de `repartirPantalla`. Pista de video
+      // aparte de la cámara: no toca su ranura para nada, si la cámara
+      // estaba prendida sigue mandando exactamente igual que antes de
+      // empezar a compartir.
       const pistaAudio = stream.getAudioTracks()[0] ?? null
-      if (pistaAudio) await repartirAudioPantalla(pistaAudio, stream)
+      await repartirPantalla(pista, pistaAudio, stream)
 
       // El botón "Dejar de compartir" del navegador no pasa por nuestra UI: sin
       // este handler la app seguiría creyendo que se comparte.
@@ -1231,7 +1237,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     } catch {
       // El usuario canceló el selector de ventana. No es un error que avisar.
     }
-  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirAudioPantalla, repartirVideoPantalla])
+  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirPantalla])
 
   /**
    * Cada dos segundos se pregunta a WebRTC cuántos paquetes de audio salieron y
