@@ -43,6 +43,14 @@ export interface ParticipanteVivo {
    * elemento `<audio>`.
    */
   streamAudioPantalla: MediaStream | null
+  /**
+   * El VIDEO de su pantalla compartida, si está compartiendo. Antes la
+   * pantalla reemplazaba a la cámara en la misma ranura -- quien compartía
+   * dejaba de verse la cara. Ahora viaja en una pista de video aparte, así
+   * que la cámara sigue mandando (si está prendida) y la pantalla se
+   * renderiza como una tarjeta propia, no en el mismo recuadro.
+   */
+  streamPantalla: MediaStream | null
 }
 
 interface UseLlamadaOpts {
@@ -90,6 +98,13 @@ interface Par {
    * termina de compartir.
    */
   senderAudioPantalla: RTCRtpSender | null
+  /**
+   * El sender del VIDEO de la pantalla compartida. Igual que el de audio: no
+   * hay una ranura reservada de antemano para esto -- es la pista extra que
+   * antes reemplazaba a la cámara en la ranura de video, y ahora viaja
+   * aparte para que las dos convivan.
+   */
+  senderVideoPantalla: RTCRtpSender | null
 }
 
 /** Cuántas veces se reintenta enderezar la ranura antes de rendirse. */
@@ -102,18 +117,33 @@ const MAX_INTENTOS_RANURA = 4
  * está vacía —llamada que empezó en audio— el sender no tiene pista y no hay
  * `kind` que mirar. El receiver sí declara 'video' desde que se crea.
  */
-function transceiversDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver[] {
+/**
+ * `excluirSender` saca de la cuenta al sender del video de pantalla
+ * compartida (`Par.senderVideoPantalla`), si hay uno. Antes solo existía UN
+ * transceiver de video por conexión; ahora, con la pantalla como pista
+ * independiente de la cámara, puede haber dos al mismo tiempo -- sin
+ * excluirlo, esta función (y todo lo que se apoya en ella: `ranuraDeVideo`,
+ * `abrirRanuraDeVideo`, `repartirVideo`, la autorreparación) confundiría uno
+ * con otro y podía terminar vaciando la pantalla compartida cada vez que se
+ * tocaba la cámara.
+ */
+function transceiversDeVideo(
+  pc: RTCPeerConnection,
+  excluirSender?: RTCRtpSender | null,
+): RTCRtpTransceiver[] {
   return pc.getTransceivers().filter(
     (t) =>
       // `stopped` como propiedad ya no existe: un transceiver detenido se
       // reconoce por su dirección actual.
       t.currentDirection !== 'stopped' &&
-      (t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video'),
+      (t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video') &&
+      t.sender !== excluirSender,
   )
 }
 
 /**
- * LA ranura de video: la que está realmente negociada.
+ * LA ranura de video de CÁMARA: la que está realmente negociada, sin contar
+ * la de pantalla (ver `excluirSender` arriba).
  *
  * Una conexión puede terminar con más de un transceiver de video -- los crea
  * `addTrack` por un lado y `addTransceiver` por el otro, y una renegociación
@@ -128,14 +158,10 @@ function transceiversDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver[] {
  * compartía ponía su pantalla en el sender equivocado: `envío 0` con la ranura
  * en `sendrecv` y nadie viéndolo.
  */
-function ranuraDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver | null {
-  const todas = transceiversDeVideo(pc)
+function ranuraDeVideo(pc: RTCPeerConnection, excluirSender?: RTCRtpSender | null): RTCRtpTransceiver | null {
+  const todas = transceiversDeVideo(pc, excluirSender)
   // Sin negociar todavía no hay `mid`; ahí el primero es el que se va a usar.
   return todas.find((t) => t.mid !== null) ?? todas[0] ?? null
-}
-
-function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
-  return ranuraDeVideo(pc)?.sender ?? null
 }
 
 /**
@@ -166,8 +192,8 @@ function senderDeMicrofono(pc: RTCPeerConnection, par: Par): RTCRtpSender | null
  * Cambiar `direction` obliga a renegociar para que tenga efecto; devuelve si hizo
  * falta, para que quien llama dispare la oferta.
  */
-function abrirRanuraDeVideo(pc: RTCPeerConnection): boolean {
-  const tr = ranuraDeVideo(pc)
+function abrirRanuraDeVideo(pc: RTCPeerConnection, excluirSender?: RTCRtpSender | null): boolean {
+  const tr = ranuraDeVideo(pc, excluirSender)
   if (!tr) {
     pc.addTransceiver('video', { direction: 'sendrecv' })
     return true
@@ -341,6 +367,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
             camara: false,
             compartiendo: false,
             streamAudioPantalla: null,
+            streamPantalla: null,
             ...cambio,
           },
         ]
@@ -360,13 +387,20 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     const cuantos = pares.current.size + 1
     const perfil = perfilVideo(cuantos)
 
-    for (const { pc } of pares.current.values()) {
-      for (const sender of pc.getSenders()) {
+    for (const par of pares.current.values()) {
+      for (const sender of par.pc.getSenders()) {
         if (sender.track?.kind !== 'video') continue
+        // Cámara y pantalla son pistas separadas ahora, cada una con su
+        // propio sender -- antes, cuando compartir reemplazaba a la cámara
+        // en la misma ranura, "hay pantalla" alcanzaba para saber a cuál de
+        // las dos calidades aplicar. Ahora hay que distinguir CUÁL sender es
+        // el de pantalla, o compartir le bajaría la calidad a la cámara
+        // también.
+        const esPantalla = sender === par.senderVideoPantalla
         const params = sender.getParameters()
         if (!params.encodings || params.encodings.length === 0) params.encodings = [{}]
-        params.encodings[0].maxBitrate = pantalla.current ? BITRATE_PANTALLA : perfil.maxBitrate
-        params.encodings[0].maxFramerate = pantalla.current ? 15 : perfil.fps
+        params.encodings[0].maxBitrate = esPantalla ? BITRATE_PANTALLA : perfil.maxBitrate
+        params.encodings[0].maxFramerate = esPantalla ? 15 : perfil.fps
         // Falla en navegadores viejos y no es motivo para cortar la llamada: sin
         // esto la calidad no se adapta, pero se sigue oyendo y viendo.
         sender.setParameters(params).catch(() => {})
@@ -404,6 +438,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         negociando: false,
         intentosRanura: 0,
         senderAudioPantalla: null,
+        senderVideoPantalla: null,
       }
       pares.current.set(otroId, par)
 
@@ -431,26 +466,23 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
        * Si ya se está compartiendo pantalla, la conexión nueva tiene que nacer
        * con ella puesta.
        *
-       * La pantalla NO vive en `local.current` -- vive en `pantalla.current` y se
-       * reparte con `replaceTrack` sobre los pares que existían en ese momento.
-       * Una conexión creada después se quedaba con la ranura de video vacía para
-       * siempre: nadie volvía a llenarla. El que comparte seguía viéndose bien,
-       * porque lee su propia pantalla en local, y el otro veía negro mientras el
-       * cartel de "está transmitiendo" sí aparecía, porque eso viaja por la
-       * señalización y no por la media.
+       * La pantalla NO vive en `local.current` -- vive en `pantalla.current`. Va
+       * como pista de video APARTE de la ranura de cámara (que arriba se abrió
+       * vacía o con lo que haya en `local.current`) -- antes esto hacía
+       * `replaceTrack` sobre la ranura de cámara, y por eso compartir apagaba
+       * la cara de quien compartía para el resto. Entra gratis en la primera
+       * oferta/respuesta de esta conexión nueva, sin renegociar aparte.
        *
        * Pasa con quien entra tarde a la llamada, y también en cada reconexión:
        * `presence sync` cierra el par caído y crea uno nuevo.
        */
-      const pistaPantalla = pantalla.current?.getVideoTracks()[0]
-      if (pistaPantalla) {
-        const sender = senderDeVideo(pc)
-        if (sender) void sender.replaceTrack(pistaPantalla).catch(() => {})
+      const pistaVideoPantalla = pantalla.current?.getVideoTracks()[0]
+      if (pistaVideoPantalla) {
+        par.senderVideoPantalla = pc.addTrack(pistaVideoPantalla, pantalla.current!)
       }
 
       // El audio de la pantalla (si el usuario lo compartió) va como pista
-      // aparte, no reemplaza al micrófono. Acá entra gratis en la primera
-      // oferta/respuesta de esta conexión nueva, sin renegociar aparte.
+      // aparte también, no reemplaza al micrófono.
       const pistaAudioPantalla = pantalla.current?.getAudioTracks()[0]
       if (pistaAudioPantalla) {
         par.senderAudioPantalla = pc.addTrack(pistaAudioPantalla, pantalla.current!)
@@ -467,14 +499,15 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         if (!p) return
 
         // Una por tipo: si llega una pista de video nueva reemplaza a la vieja,
-        // no se acumulan. El audio de pantalla es la excepción: es una SEGUNDA
-        // pista de audio que convive con la del micrófono, así que necesita su
-        // propia clave -- si compartiera la de 'audio', la pisaría o la
-        // pisarían a ella según el orden en que lleguen los eventos.
-        const clave =
-          ev.track.kind === 'audio' && p.pistas.has('audio') && p.pistas.get('audio')!.id !== ev.track.id
-            ? 'audioPantalla'
-            : ev.track.kind
+        // no se acumulan. El audio Y el video de pantalla son la excepción: son
+        // pistas SEGUNDAS que conviven con las del micrófono/cámara, así que
+        // necesitan su propia clave -- si compartieran 'audio'/'video', se
+        // pisarían según el orden en que lleguen los eventos. La ranura de
+        // cámara siempre llega primero (se reserva desde `crearPar`), así que
+        // la segunda pista de cada tipo es siempre la de pantalla.
+        const esSegunda = (tipo: 'audio' | 'video') =>
+          ev.track.kind === tipo && p.pistas.has(tipo) && p.pistas.get(tipo)!.id !== ev.track.id
+        const clave = esSegunda('audio') ? 'audioPantalla' : esSegunda('video') ? 'videoPantalla' : ev.track.kind
         p.pistas.set(clave, ev.track)
 
         // Un MediaStream NUEVO en cada cambio, a propósito: mutar el existente no
@@ -484,14 +517,19 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           const vivo = pares.current.get(otroId)
           if (!vivo) return
           const audioPantalla = vivo.pistas.get('audioPantalla')
+          const videoPantalla = vivo.pistas.get('videoPantalla')
           actualizar(otroId, {
-            // Sin la pista de audio de pantalla: `createMediaStreamSource` solo
-            // toma la primera pista de audio de un stream, mezclarlas acá haría
-            // que una de las dos nunca se escuche.
+            // Sin las pistas de pantalla: la cámara/mic van en su propia
+            // tarjeta, la pantalla en la suya. Además, mezclar dos audios en
+            // un stream haría que `createMediaStreamSource` -- que solo toma
+            // la primera pista -- deje una de las dos muda.
             stream: new MediaStream(
-              [...vivo.pistas.entries()].filter(([k]) => k !== 'audioPantalla').map(([, t]) => t),
+              [...vivo.pistas.entries()]
+                .filter(([k]) => k !== 'audioPantalla' && k !== 'videoPantalla')
+                .map(([, t]) => t),
             ),
             streamAudioPantalla: audioPantalla ? new MediaStream([audioPantalla]) : null,
+            streamPantalla: videoPantalla ? new MediaStream([videoPantalla]) : null,
           })
         }
 
@@ -591,14 +629,21 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const repartirVideo = useCallback(
     async (pista: MediaStreamTrack | null) => {
       for (const [otroId, { pc }] of pares.current) {
-        const hayQueRenegociar = abrirRanuraDeVideo(pc)
-        const ranura = ranuraDeVideo(pc)
+        const par = pares.current.get(otroId)
+        if (!par) continue
 
-        // La pista va en la ranura negociada y en ninguna otra. Si hay más de un
-        // transceiver de video, dejar la pista colgada en el que no está atado a
-        // una m-line es exactamente lo que producía `envío 0` mientras la ranura
-        // decía `sendrecv`: el video salía hacia un tubo que no existe.
-        for (const t of transceiversDeVideo(pc)) {
+        // Excluyendo el sender de pantalla en las tres llamadas: sin esto,
+        // tocar la cámara mientras se comparte pantalla confundía una ranura
+        // con la otra y podía terminar vaciando la pantalla compartida.
+        const hayQueRenegociar = abrirRanuraDeVideo(pc, par.senderVideoPantalla)
+        const ranura = ranuraDeVideo(pc, par.senderVideoPantalla)
+
+        // La pista va en la ranura de CÁMARA negociada y en ninguna otra. Si
+        // hay más de un transceiver de video, dejar la pista colgada en el
+        // que no está atado a una m-line es exactamente lo que producía
+        // `envío 0` mientras la ranura decía `sendrecv`: el video salía hacia
+        // un tubo que no existe.
+        for (const t of transceiversDeVideo(pc, par.senderVideoPantalla)) {
           const destino = t === ranura ? pista : null
           if (t.sender.track === destino) continue
           await t.sender.replaceTrack(destino).catch(() => {})
@@ -653,6 +698,38 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   )
 
   /**
+   * Igual que `repartirAudioPantalla`, para el video de la pantalla
+   * compartida. También necesita `addTrack`/`removeTrack` real: a diferencia
+   * de la cámara, no hay una ranura reservada de antemano para esto -- antes
+   * SÍ la reusaba (la de cámara), y por eso compartir apagaba la cara de
+   * quien compartía. Ahora es una pista propia, independiente de la cámara.
+   */
+  const repartirVideoPantalla = useCallback(
+    async (pista: MediaStreamTrack | null, stream: MediaStream | null) => {
+      for (const [otroId, { pc }] of pares.current) {
+        const par = pares.current.get(otroId)
+        if (!par) continue
+
+        if (pista && stream && !par.senderVideoPantalla) {
+          par.senderVideoPantalla = pc.addTrack(pista, stream)
+        } else if (!pista && par.senderVideoPantalla) {
+          try {
+            pc.removeTrack(par.senderVideoPantalla)
+          } catch {
+            // La conexión ya pudo haberse cerrado; no hay nada que sacar.
+          }
+          par.senderVideoPantalla = null
+        } else {
+          continue
+        }
+
+        if (pc.signalingState === 'stable') void ofrecer(otroId)
+      }
+    },
+    [ofrecer],
+  )
+
+  /**
    * Alguien avisó que empezó a transmitir: asegurarse de poder recibirlo.
    *
    * Este es el eslabón que faltaba. `repartirVideo` arregla la ranura del que
@@ -669,7 +746,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       const par = pares.current.get(otroId)
       if (!par) return
 
-      if (!abrirRanuraDeVideo(par.pc)) {
+      if (!abrirRanuraDeVideo(par.pc, par.senderVideoPantalla)) {
         // Ya quedó bien: se olvidan los intentos, para que un problema futuro
         // vuelva a tener sus oportunidades.
         par.intentosRanura = 0
@@ -728,7 +805,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           // qué acepta este lado: si contesta con la dirección torcida que traía
           // de una negociación anterior, el pacto queda en `sendonly` para el
           // otro y su video no vuelve a entrar nunca.
-          abrirRanuraDeVideo(par.pc)
+          abrirRanuraDeVideo(par.pc, par.senderVideoPantalla)
 
           for (const c of par.pendientes) {
             await par.pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {})
@@ -1045,8 +1122,10 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   }, [aplicarCalidad, enviar, miIntegranteId, repartirVideo])
 
   /**
-   * Devuelve la cámara a su lugar con `replaceTrack`, que no obliga a renegociar.
-   * Volver a ofrecer acá cortaría el audio un instante.
+   * Saca la pantalla de las conexiones. Ya no toca la cámara para nada -- son
+   * pistas independientes desde que se abrieron como senders separados, así
+   * que dejar de compartir no le hace nada a lo que la cámara esté mandando
+   * (prendida o apagada, como estuviera).
    *
    * Va en su propia función y no dentro de `alternarPantalla` porque el botón
    * "Dejar de compartir" del navegador tiene que poder llamarla, y una función
@@ -1055,10 +1134,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const dejarDeCompartir = useCallback(async () => {
     if (!pantalla.current) return
 
-    // Si la cámara está apagada esto pone null: la ranura queda vacía y el otro
-    // lado deja de recibir cuadros, que es lo correcto.
-    const camaraPista = local.current?.getVideoTracks()[0] ?? null
-    await repartirVideo(camaraPista)
+    await repartirVideoPantalla(null, null)
     await repartirAudioPantalla(null, null)
     pantalla.current.getTracks().forEach((t) => t.stop())
     pantalla.current = null
@@ -1066,7 +1142,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     setCompartiendo(false)
     aplicarCalidad()
     enviar({ tipo: 'pantalla', de: miIntegranteId, activa: false })
-  }, [aplicarCalidad, enviar, miIntegranteId, repartirAudioPantalla, repartirVideo])
+  }, [aplicarCalidad, enviar, miIntegranteId, repartirAudioPantalla, repartirVideoPantalla])
 
   const alternarPantalla = useCallback(async () => {
     if (pantalla.current) {
@@ -1099,7 +1175,10 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       pantalla.current = stream
       setStreamPantalla(stream)
 
-      await repartirVideo(pista)
+      // Pista aparte de la cámara -- no toca su ranura para nada. Si la
+      // cámara estaba prendida, sigue mandando exactamente igual que antes
+      // de empezar a compartir.
+      await repartirVideoPantalla(pista, stream)
 
       const pistaAudio = stream.getAudioTracks()[0] ?? null
       if (pistaAudio) await repartirAudioPantalla(pistaAudio, stream)
@@ -1114,7 +1193,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     } catch {
       // El usuario canceló el selector de ventana. No es un error que avisar.
     }
-  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirAudioPantalla, repartirVideo])
+  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirAudioPantalla, repartirVideoPantalla])
 
   /**
    * Cada dos segundos se pregunta a WebRTC cuántos paquetes de audio salieron y
@@ -1130,6 +1209,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       const porPersona: DiagnosticoLlamada['porPersona'] = []
 
       for (const [otroId, { pc }] of pares.current) {
+        const par = pares.current.get(otroId)
         let enviados = 0
         let recibidos = 0
         let videoEnviado = 0
@@ -1155,11 +1235,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
          * mucho que el otro transmita nunca va a llegar nada. Eso no se ve en
          * ningún otro lado y es invisible desde la interfaz.
          */
-        const trVideo = ranuraDeVideo(pc)
-        // Cuántas ranuras de video tiene la conexión. Más de una significa que la
-        // negociación dejó m-lines de sobra, y ahí es donde el video se va por un
-        // tubo que no está conectado a nada.
-        const ranuras = transceiversDeVideo(pc).length
+        // Sin contar la ranura de pantalla: con ella activa es NORMAL tener
+        // dos transceivers de video a la vez, no es el bug que este
+        // diagnóstico busca detectar.
+        const trVideo = ranuraDeVideo(pc, par?.senderVideoPantalla)
+        // Cuántas ranuras de CÁMARA tiene la conexión. Más de una significa que
+        // la negociación dejó m-lines de sobra, y ahí es donde el video se va
+        // por un tubo que no está conectado a nada.
+        const ranuras = transceiversDeVideo(pc, par?.senderVideoPantalla).length
 
         porPersona.push({
           id: otroId,

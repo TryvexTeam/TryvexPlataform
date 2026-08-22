@@ -49,6 +49,16 @@ interface PanelLlamadaProps {
 }
 
 /**
+ * La pantalla compartida de alguien es una tarjeta propia en la grilla, no
+ * parte de la suya -- así conviven con su cámara en vez de reemplazarla. El
+ * id sintético las distingue de la tarjeta real de esa persona en todos
+ * lados: destacar, hablar, volumen.
+ */
+const SUFIJO_PANTALLA = ':pantalla'
+const idPantalla = (integranteId: string) => `${integranteId}${SUFIJO_PANTALLA}`
+const esTarjetaPantalla = (id: string) => id.endsWith(SUFIJO_PANTALLA)
+
+/**
  * La llamada en pantalla. Va sobre todo lo demás y no se desmonta al navegar:
  * uno entra a una llamada para hablar mientras mira un lead, no para quedarse
  * mirando la llamada.
@@ -274,19 +284,36 @@ export function PanelLlamada({
   const recuadros: RecuadroProps[] = [
     {
       id: miIntegranteId,
-      // Si estoy compartiendo, mi recuadro muestra lo que comparto, no mi cara.
-      stream: streamPantalla ?? streamLocal,
+      // Ya no muestra la pantalla acá -- eso es una tarjeta aparte, más
+      // abajo. La cámara sigue mandando (si está prendida) aunque se esté
+      // compartiendo pantalla al mismo tiempo.
+      stream: streamLocal,
       nombre: yo?.nombre ? `${yo.nombre} (tú)` : 'Tú',
       avatarUrl: yo?.avatar_url ?? null,
       color: yo?.color ?? null,
       micro,
       camara,
-      compartiendo,
+      compartiendo: false,
       estado: 'conectado',
     },
-    ...participantes.map((p) => {
+    ...(streamPantalla
+      ? [
+          {
+            id: idPantalla(miIntegranteId),
+            stream: streamPantalla,
+            nombre: yo?.nombre ? `Pantalla de ${yo.nombre}` : 'Tu pantalla',
+            avatarUrl: yo?.avatar_url ?? null,
+            color: yo?.color ?? null,
+            micro: true,
+            camara: false,
+            compartiendo: true,
+            estado: 'conectado' as const,
+          },
+        ]
+      : []),
+    ...participantes.flatMap((p) => {
       const persona = porId.get(p.integranteId)
-      return {
+      const propio = {
         id: p.integranteId,
         stream: p.stream,
         nombre: persona?.nombre ?? 'Alguien',
@@ -294,9 +321,24 @@ export function PanelLlamada({
         color: persona?.color ?? null,
         micro: p.micro,
         camara: p.camara,
-        compartiendo: p.compartiendo,
+        compartiendo: false,
         estado: p.estado,
       }
+      if (!p.streamPantalla) return [propio]
+      return [
+        propio,
+        {
+          id: idPantalla(p.integranteId),
+          stream: p.streamPantalla,
+          nombre: `Pantalla de ${persona?.nombre ?? 'alguien'}`,
+          avatarUrl: persona?.avatar_url ?? null,
+          color: persona?.color ?? null,
+          micro: true,
+          camara: false,
+          compartiendo: true,
+          estado: p.estado,
+        },
+      ]
     }),
   ]
 
@@ -347,7 +389,7 @@ export function PanelLlamada({
    * cualquier otro recuadro deshace la elección, así que no se le impone nada a
    * quien prefiera la grilla.
    */
-  const compartiendoAhora = participantes.find((p) => p.compartiendo)?.integranteId ?? null
+  const compartiendoAhora = participantes.find((p) => p.streamPantalla)?.integranteId ?? null
   // Ajuste de estado durante el render (no en un efecto): comparar contra el
   // valor anterior y llamar a setState de forma condicionada es el patrón que
   // React recomienda para esto, evita el render en cascada extra de hacerlo
@@ -355,7 +397,7 @@ export function PanelLlamada({
   const [previoCompartiendoAhora, setPrevioCompartiendoAhora] = useState(compartiendoAhora)
   if (compartiendoAhora !== previoCompartiendoAhora) {
     setPrevioCompartiendoAhora(compartiendoAhora)
-    if (compartiendoAhora) setDestacado(compartiendoAhora)
+    if (compartiendoAhora) setDestacado(idPantalla(compartiendoAhora))
   }
 
   /**
@@ -620,7 +662,11 @@ export function PanelLlamada({
                 {...enGrande}
                 grande
                 hablando={quienesHablan.has(enGrande.id)}
-                volumen={enGrande.id === miIntegranteId ? null : (volumenes.get(enGrande.id) ?? 1)}
+                volumen={
+                  enGrande.id === miIntegranteId || esTarjetaPantalla(enGrande.id)
+                    ? null
+                    : (volumenes.get(enGrande.id) ?? 1)
+                }
                 silenciado={silenciados.has(enGrande.id)}
                 onSilenciar={() =>
                   setSilenciados((s) => {
@@ -662,7 +708,9 @@ export function PanelLlamada({
                 <Recuadro
                   {...r}
                   hablando={quienesHablan.has(r.id)}
-                  volumen={r.id === miIntegranteId ? null : (volumenes.get(r.id) ?? 1)}
+                  volumen={
+                    r.id === miIntegranteId || esTarjetaPantalla(r.id) ? null : (volumenes.get(r.id) ?? 1)
+                  }
                   silenciado={silenciados.has(r.id)}
                   onSilenciar={() =>
                     setSilenciados((s) => {
