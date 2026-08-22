@@ -12,6 +12,7 @@ import {
   MonitorUpIcon,
   MonitorXIcon,
   PhoneOffIcon,
+  SparklesIcon,
   Volume2Icon,
   VolumeXIcon,
   ShieldAlertIcon,
@@ -135,9 +136,12 @@ export function PanelLlamada({
     error,
     hayTurn,
     diagnostico,
+    ruidoSuprimido,
+    cargandoSupresionRuido,
     alternarMicro,
     alternarCamara,
     alternarPantalla,
+    alternarSupresionRuido,
     colgar,
   } = useLlamada({
     llamadaId,
@@ -719,6 +723,31 @@ export function PanelLlamada({
           etiqueta={micro ? 'Silenciar micrófono' : 'Activar micrófono'}
         >
           {micro ? <MicIcon className="size-5" /> : <MicOffIcon className="size-5" />}
+        </Boton>
+
+        {/* Supresión de ruido tipo Discord (RNNoise por WASM). Solo desktop:
+            corre un modelo entero por cada llamada y en un teléfono no vale
+            la pena el costo de CPU/batería -- mismo criterio que "compartir
+            pantalla", que tampoco existe ahí. */}
+        <Boton
+          activo={ruidoSuprimido}
+          onClick={() => void alternarSupresionRuido()}
+          etiqueta={
+            cargandoSupresionRuido
+              ? 'Activando supresión de ruido…'
+              : ruidoSuprimido
+                ? 'Apagar supresión de ruido'
+                : 'Suprimir ruido de fondo'
+          }
+          clase="hidden md:inline-flex"
+        >
+          {cargandoSupresionRuido ? (
+            <ActivityIcon className="size-5 animate-pulse" />
+          ) : ruidoSuprimido ? (
+            <SparklesIcon className="size-5" />
+          ) : (
+            <SparklesIcon className="size-5 opacity-60" />
+          )}
         </Boton>
 
         <Boton
