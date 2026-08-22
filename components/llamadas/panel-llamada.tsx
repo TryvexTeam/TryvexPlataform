@@ -1003,6 +1003,14 @@ function Recuadro({
   onClick,
 }: RecuadroProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  /**
+   * El contenedor entero entra en pantalla completa, no el `<video>` solo.
+   * La perilla de volumen vive como hermana del video, dentro de este mismo
+   * div -- si el fullscreen fuera sobre el `<video>`, el navegador solo
+   * muestra el subárbol de ESE elemento y la perilla (fuera de él) queda
+   * inalcanzable: aparecía "bloqueada" justo al entrar a pantalla completa.
+   */
+  const contenedorRef = useRef<HTMLDivElement>(null)
 
   // `srcObject` no se puede pasar como prop en JSX: es una referencia viva, no
   // una URL. Va por ref o el recuadro queda negro.
@@ -1018,7 +1026,7 @@ function Recuadro({
   // fullscreen sobre un video que ya no existe -- sin este chequeo, la
   // única salida era Esc a mano.
   useEffect(() => {
-    const el = videoRef.current
+    const el = contenedorRef.current
     return () => {
       if (document.fullscreenElement === el) {
         void document.exitFullscreen().catch(() => {})
@@ -1106,6 +1114,7 @@ function Recuadro({
         }
       }}
       aria-label={onClick ? (grande ? `Volver a la grilla` : `Ver a ${nombre} en grande`) : undefined}
+      ref={contenedorRef}
       className={`relative overflow-hidden rounded-xl ${grande ? 'size-full' : 'size-full'} ${onClick ? 'cursor-pointer' : ''}`}
       style={{
         background: 'oklch(14% 0.004 240)',
@@ -1144,7 +1153,7 @@ function Recuadro({
           <button
             onClick={(e) => {
               e.stopPropagation()
-              videoRef.current?.requestFullscreen().catch(() => {
+              contenedorRef.current?.requestFullscreen().catch(() => {
                 /* el navegador negó el pedido (ej. falta de gesto de usuario
                    registrado); no hay nada que hacer salvo no romper el resto. */
               })
@@ -1287,6 +1296,15 @@ function AudioRemoto({
     const el = ref.current
     if (!el || el.srcObject === stream) return
     el.srcObject = stream
+    // `autoPlay` dispara al CARGAR el elemento, no cada vez que `srcObject`
+    // cambia después -- este elemento vive desde que arranca la llamada, así
+    // que cuando el audio de pantalla llega recién a mitad de la llamada (el
+    // caso normal: nadie comparte pantalla apenas entra), la reasignación de
+    // `srcObject` no siempre retoma la reproducción sola. El del micrófono
+    // nunca tropieza con esto porque existe desde el primer render. `.play()`
+    // explícito cubre el caso; si el navegador ya lo tenía andando, es un
+    // no-op inofensivo.
+    if (stream) void el.play().catch(() => {})
   }, [stream])
 
   /**
