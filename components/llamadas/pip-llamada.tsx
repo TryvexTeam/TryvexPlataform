@@ -330,6 +330,16 @@ export function PipLlamada({
    * tarjeta crece para que ninguna de las dos quede por debajo de su piso.
    */
   const altoContenido = !hayContenido ? 124 : dosCosas ? LADO_MINIMO + 124 + 8 : hayMusica ? LADO_MINIMO : 124
+  /**
+   * Con música, la tarjeta se ensancha de 232 a 356px -- a los 232 de
+   * siempre, un video 16:9 a la altura mínima de YouTube (200px) queda
+   * angosto, con franjas negras a los costados adentro del propio iframe
+   * (YouTube las pone él solo para no deformar el video, no algo que se
+   * pueda recortar por CSS desde acá afuera). 356×200 sí es 16:9 real.
+   * Sin música, se queda en 232 -- una pantalla compartida no tiene esa
+   * restricción de por medio.
+   */
+  const anchoTarjeta = hayMusica ? 356 : 232
 
   // La tarjeta cambia de alto sola cuando aparece o desaparece una
   // transmisión/video, no solo cuando cambia la ventana -- sin re-acotar
@@ -357,10 +367,12 @@ export function PipLlamada({
       initial={sinMovimiento ? false : { opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-      className="fixed bottom-24 right-3 z-[80] w-[232px] cursor-grab touch-none select-none
+      className="fixed bottom-24 right-3 z-[80] cursor-grab touch-none select-none
         overflow-hidden rounded-[24px] border border-white/[0.09] active:cursor-grabbing
         md:bottom-6 md:right-6"
       style={{
+        width: anchoTarjeta,
+        transition: 'width 160ms ease, background 160ms ease',
         // El video/pantalla es un elemento aparte que se posiciona DETRÁS de
         // esta tarjeta (ver el comentario de z-index en panel-llamada.tsx),
         // para que estos mismos botones queden por encima sin taparlo. Con
