@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ListMusicIcon,
   Maximize2Icon,
-  MicIcon,
   Minimize2Icon,
   MusicIcon,
   PauseIcon,
@@ -16,6 +15,7 @@ import {
   SkipBackIcon,
   SkipForwardIcon,
   SquareIcon,
+  UsersIcon,
   Volume2Icon,
   XIcon,
 } from 'lucide-react'
@@ -410,10 +410,12 @@ export function ReproductorMusica({
           esa tarjeta ya tiene sus propios controles. */}
       {!compacto && (
       <header
-        className={`flex items-center justify-between px-3 py-2.5 shrink-0 ${grande ? 'absolute inset-x-0 top-0 z-10' : ''}`}
+        className={`flex items-center justify-between px-3 shrink-0 ${grande ? 'absolute inset-x-0 top-0 z-10 pb-6 pt-3' : 'py-2.5'}`}
         style={{
           borderBottom: grande ? 'none' : '1px solid var(--tx-border)',
-          background: grande ? 'linear-gradient(to bottom, oklch(0% 0 0 / 55%), transparent)' : undefined,
+          background: grande
+            ? 'linear-gradient(to bottom, oklch(0% 0 0 / 85%) 0%, oklch(0% 0 0 / 85%) 40%, transparent 100%)'
+            : undefined,
         }}
       >
         {!grande && (
@@ -585,11 +587,21 @@ export function ReproductorMusica({
           la llamada (mic, cámara, colgar), no los de la música. */}
       {!compacto && (
       <div
-        className={`flex flex-wrap items-center justify-center gap-1 px-3 py-3 shrink-0 ${
-          grande ? 'absolute inset-x-0 bottom-0 z-10' : ''
+        className={`flex flex-wrap items-center justify-center gap-1 px-3 shrink-0 ${
+          grande ? 'absolute inset-x-0 bottom-0 z-10 pt-6 pb-3' : 'py-3'
         }`}
         style={
-          grande ? { background: 'linear-gradient(to top, oklch(0% 0 0 / 55%), transparent)' } : undefined
+          grande
+            ? {
+                // Un video puede traer subtítulos quemados cerca del borde
+                // inferior (pasó en vivo: tapaban los botones y viceversa).
+                // Degradé más largo y sólido del todo al final, no solo un
+                // tinte parejo, para que los controles se lean pase lo que
+                // pase debajo.
+                background:
+                  'linear-gradient(to top, oklch(0% 0 0 / 85%) 0%, oklch(0% 0 0 / 85%) 40%, transparent 100%)',
+              }
+            : undefined
         }
       >
         <BotonMini onClick={() => void ejecutar('previous')} etiqueta="Anterior">
@@ -677,7 +689,12 @@ export function ReproductorMusica({
       */}
       {!encogido && !chromeMinimo && (
         <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
-          <MicIcon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
+          {/* No es un ícono de micrófono a propósito: esto no controla el
+              propio mic, atenúa la voz de TODOS los demás para escuchar la
+              música mejor. Con MicIcon (como estaba antes) parecía un
+              control del propio micrófono, y Vicho lo reportó como "no
+              sirve para nada" -- confundido con qué hacía. */}
+          <UsersIcon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
           <input
             type="range"
             min={0}

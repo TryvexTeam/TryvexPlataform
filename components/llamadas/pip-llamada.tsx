@@ -73,6 +73,17 @@ interface PipLlamadaProps {
    * dos cosas separadas ocupando pantalla en vez de una sola.
    */
   onAnclaMusica: (el: HTMLDivElement | null) => void
+  /**
+   * Se llama cada vez que la tarjeta cambia de posición (arrastre, o el
+   * reacote automático). El iframe de música vive fuera de React, reposicionado
+   * con `position: fixed` midiendo el ancla de acá arriba con un
+   * `ResizeObserver` -- que solo dispara con cambios de TAMAÑO. Arrastrar
+   * mueve la tarjeta escribiendo `style.left/top` directo (por rendimiento,
+   * ver el comentario de `colocar`), sin tocar su tamaño, así que el
+   * observer nunca se enteraba: el video quedaba pegado en el sitio viejo
+   * mientras la tarjeta se movía sola. Este callback fuerza la remedición.
+   */
+  onMovida?: () => void
 }
 
 function iniciales(nombre: string): string {
@@ -178,6 +189,7 @@ export function PipLlamada({
   streamPantallaPropia,
   hayMusica,
   onAnclaMusica,
+  onMovida,
   onAlternarMicro,
   onAlternarCamara,
   onAlternarEnsordecer,
@@ -225,8 +237,12 @@ export function PipLlamada({
       el.style.top = `${p.y}px`
       el.style.right = 'auto'
       el.style.bottom = 'auto'
+      // Avisar en cada reposición, no solo al soltar: el video de música
+      // (si lo hay) tiene que seguir a la tarjeta mientras se arrastra, no
+      // saltar recién al final.
+      onMovida?.()
     },
-    [acotar],
+    [acotar, onMovida],
   )
 
   // `useLayoutEffect` y no `useEffect`: recoloca antes de que el navegador

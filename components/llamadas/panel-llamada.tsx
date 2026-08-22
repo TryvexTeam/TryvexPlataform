@@ -563,6 +563,13 @@ export function PanelLlamada({
         streamPantallaPropia={streamPantalla}
         hayMusica={hayVideoMusica}
         onAnclaMusica={setAnclaPip}
+        // El ResizeObserver de abajo solo dispara con cambios de TAMAÑO del
+        // ancla; arrastrar la tarjeta la mueve sin cambiarle el tamaño, así
+        // que sin esto el video de música quedaba pegado en el sitio viejo
+        // mientras la tarjeta se arrastraba a otro lado.
+        onMovida={() => {
+          if (anclaPip) setHuecoPip(anclaPip.getBoundingClientRect())
+        }}
       />
     )
   } else {
