@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor'
 import { createClient } from '@/lib/supabase/client'
+import { toast } from '@/lib/toast'
 import {
   BITRATE_PANTALLA,
   EVENTO_SENAL,
@@ -134,6 +136,21 @@ function ranuraDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver | null {
 
 function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
   return ranuraDeVideo(pc)?.sender ?? null
+}
+
+/**
+ * El sender del micrófono, distinto del de la pantalla compartida (esa se
+ * guarda aparte en `Par.senderAudioPantalla` porque es opcional y se agrega
+ * después). El del micrófono es el otro sender de audio: el que crea el
+ * `addTrack` inicial de `crearPar`, siempre presente desde que se abre la
+ * conexión.
+ */
+function senderDeMicrofono(pc: RTCPeerConnection, par: Par): RTCRtpSender | null {
+  return (
+    pc
+      .getSenders()
+      .find((s) => s.track && s.track.kind === 'audio' && s !== par.senderAudioPantalla) ?? null
+  )
 }
 
 /**
@@ -273,12 +290,31 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   /** Falso cuando no hay TURN configurado: hay redes donde no va a conectar. */
   const [hayTurn, setHayTurn] = useState(true)
   const [diagnostico, setDiagnostico] = useState<DiagnosticoLlamada | null>(null)
+  /**
+   * Supresión de ruido tipo Discord (RNNoise, red neuronal liviana vía WASM),
+   * no el `noiseSuppression` básico del navegador que ya pide `arrancar` --
+   * ese ayuda con eco y ruido estacionario, pero no con teclado, ventilador o
+   * calle. Empieza apagada: correr un modelo por WASM tiene un costo de CPU
+   * real y no todos los equipos del canal lo necesitan.
+   */
+  const [ruidoSuprimido, setRuidoSuprimido] = useState(false)
+  const [cargandoSupresionRuido, setCargandoSupresionRuido] = useState(false)
 
   const pares = useRef(new Map<string, Par>())
   const canal = useRef<RealtimeChannel | null>(null)
   const local = useRef<MediaStream | null>(null)
   const pantalla = useRef<MediaStream | null>(null)
   const iceServers = useRef<RTCIceServer[]>([])
+  /** La pista del micrófono tal como la entrega el navegador, sin procesar.
+   *  Se guarda aparte porque, con la supresión activa, `local.current` lleva
+   *  la pista PROCESADA -- sin esta referencia no habría forma de volver a
+   *  la cruda, ni de pararla al colgar (parar la procesada no apaga el
+   *  micrófono físico, solo el nodo de salida del grafo de audio). */
+  const pistaMicCrudaRef = useRef<MediaStreamTrack | null>(null)
+  const ctxRuidoRef = useRef<AudioContext | null>(null)
+  const nodoRuidoRef = useRef<RnnoiseWorkletNode | null>(null)
+  const fuenteRuidoRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const destinoRuidoRef = useRef<MediaStreamAudioDestinationNode | null>(null)
   // Se leen dentro de callbacks que no se recrean; un ref evita reconectar la
   // malla entera cada vez que alguien silencia el micrófono.
   const microRef = useRef(micro)
@@ -770,6 +806,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           return
         }
         local.current = stream
+        pistaMicCrudaRef.current = stream.getAudioTracks()[0] ?? null
         setStreamLocal(stream)
       } catch {
         if (vigente) setError('No se pudo usar el micrófono. Revisa los permisos del navegador.')
@@ -837,6 +874,24 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       for (const id of [...misPares.keys()]) cerrarPar(id)
       local.current?.getTracks().forEach((t) => t.stop())
       pantalla.current?.getTracks().forEach((t) => t.stop())
+      // Si la supresión de ruido estaba activa, `local.current` llevaba la
+      // pista PROCESADA, no la cruda -- pararla a ella no apaga el micrófono
+      // físico, solo el nodo de salida del grafo de audio. Sin esto, la luz
+      // del micrófono podía quedar encendida después de colgar.
+      pistaMicCrudaRef.current?.stop()
+      pistaMicCrudaRef.current = null
+      nodoRuidoRef.current?.destroy()
+      nodoRuidoRef.current = null
+      try {
+        fuenteRuidoRef.current?.disconnect()
+        destinoRuidoRef.current?.disconnect()
+      } catch {
+        // Ya desconectado.
+      }
+      fuenteRuidoRef.current = null
+      destinoRuidoRef.current = null
+      void ctxRuidoRef.current?.close()
+      ctxRuidoRef.current = null
       local.current = null
       pantalla.current = null
       setStreamLocal(null)
@@ -859,6 +914,102 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     setMicro(pista.enabled)
     enviar({ tipo: 'estado', de: miIntegranteId, micro: pista.enabled, camara: camaraRef.current })
   }, [enviar, miIntegranteId])
+
+  /**
+   * Prender o apagar la supresión de ruido tipo Discord (RNNoise por WASM).
+   *
+   * Reemplaza la pista que se está enviando por su versión procesada (o al
+   * revés, para apagarla), en cada conexión abierta, con `replaceTrack` --
+   * como es audio por audio no hace falta renegociar nada, igual que al
+   * silenciar el micrófono.
+   *
+   * Si algo del pipeline falla (WASM no soportado, AudioWorklet bloqueado,
+   * lo que sea), se avisa con un toast y se sigue con el micrófono normal:
+   * esto nunca debe poder dejar a alguien sin micrófono.
+   */
+  const alternarSupresionRuido = useCallback(async () => {
+    const cruda = pistaMicCrudaRef.current
+    if (!cruda) return
+
+    if (ruidoSuprimido) {
+      for (const [, par] of pares.current) {
+        const sender = senderDeMicrofono(par.pc, par)
+        if (sender) await sender.replaceTrack(cruda).catch(() => {})
+      }
+      cruda.enabled = microRef.current
+      if (local.current) {
+        const vieja = local.current.getAudioTracks()[0]
+        if (vieja && vieja !== cruda) {
+          local.current.removeTrack(vieja)
+          local.current.addTrack(cruda)
+        }
+      }
+      nodoRuidoRef.current?.destroy()
+      nodoRuidoRef.current = null
+      try {
+        fuenteRuidoRef.current?.disconnect()
+        destinoRuidoRef.current?.disconnect()
+      } catch {
+        // Ya desconectado.
+      }
+      fuenteRuidoRef.current = null
+      destinoRuidoRef.current = null
+      void ctxRuidoRef.current?.close()
+      ctxRuidoRef.current = null
+      setRuidoSuprimido(false)
+      return
+    }
+
+    setCargandoSupresionRuido(true)
+    try {
+      // RNNoise asume 48kHz -- de ahí el sampleRate explícito, no vale confiar
+      // en el que traiga el dispositivo por defecto.
+      const ctx = new AudioContext({ sampleRate: 48000 })
+      await ctx.audioWorklet.addModule('/audio/rnnoise-worklet.js')
+      const wasmBinary = await loadRnnoise({
+        url: '/audio/rnnoise.wasm',
+        simdUrl: '/audio/rnnoise-simd.wasm',
+      })
+      const nodo = new RnnoiseWorkletNode(ctx, { wasmBinary, maxChannels: 1 })
+      const fuente = ctx.createMediaStreamSource(new MediaStream([cruda]))
+      const destino = ctx.createMediaStreamDestination()
+      fuente.connect(nodo)
+      nodo.connect(destino)
+
+      const procesada = destino.stream.getAudioTracks()[0]
+      if (!procesada) throw new Error('el nodo de salida no entregó ninguna pista')
+      procesada.enabled = microRef.current
+
+      ctxRuidoRef.current = ctx
+      nodoRuidoRef.current = nodo
+      fuenteRuidoRef.current = fuente
+      destinoRuidoRef.current = destino
+
+      for (const [, par] of pares.current) {
+        const sender = senderDeMicrofono(par.pc, par)
+        if (sender) await sender.replaceTrack(procesada).catch(() => {})
+      }
+      if (local.current) {
+        const vieja = local.current.getAudioTracks()[0]
+        if (vieja) local.current.removeTrack(vieja)
+        local.current.addTrack(procesada)
+      }
+      setRuidoSuprimido(true)
+    } catch (err) {
+      console.error('[llamada] no se pudo activar la supresión de ruido', err)
+      toast.error('No se pudo activar la supresión de ruido', {
+        description: 'Seguís con el micrófono normal.',
+      })
+      nodoRuidoRef.current?.destroy()
+      nodoRuidoRef.current = null
+      fuenteRuidoRef.current = null
+      destinoRuidoRef.current = null
+      void ctxRuidoRef.current?.close()
+      ctxRuidoRef.current = null
+    } finally {
+      setCargandoSupresionRuido(false)
+    }
+  }, [ruidoSuprimido])
 
   const alternarCamara = useCallback(async () => {
     const pista = local.current?.getVideoTracks()[0]
@@ -1102,9 +1253,12 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     compartiendo,
     error,
     hayTurn,
+    ruidoSuprimido,
+    cargandoSupresionRuido,
     alternarMicro,
     alternarCamara,
     alternarPantalla,
+    alternarSupresionRuido,
     colgar,
   }
 }
