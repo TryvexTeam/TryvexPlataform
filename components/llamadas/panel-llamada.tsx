@@ -425,23 +425,6 @@ export function PanelLlamada({
           volumen={(volumenes.get(p.integranteId) ?? 1) * volumenVoces}
         />
       ))}
-
-      {/* El audio de la pantalla compartida (si el que comparte tildó
-          "Compartir audio también") va en su propio elemento -- viajó en una
-          pista de audio aparte, no mezclada con el micrófono, así que se
-          reproduce aparte también. Sigue la misma atenuación/silencio que la
-          voz de esa persona, pero sin control de volumen propio: es una sola
-          perilla por participante, no una por cada cosa que suene. */}
-      {participantes
-        .filter((p) => p.streamAudioPantalla)
-        .map((p) => (
-          <AudioRemoto
-            key={`${p.integranteId}-pantalla`}
-            stream={p.streamAudioPantalla}
-            mudo={ensordecido || silenciados.has(p.integranteId)}
-            volumen={(volumenes.get(p.integranteId) ?? 1) * volumenVoces}
-          />
-        ))}
     </div>
   )
 
@@ -961,6 +944,7 @@ interface RecuadroProps {
 }
 
 function Recuadro({
+  id,
   stream,
   nombre,
   avatarUrl,
@@ -980,6 +964,14 @@ function Recuadro({
   onClick,
 }: RecuadroProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  /**
+   * Las tarjetas de pantalla reproducen su audio nativo -- ver el comentario
+   * de `streamPantalla` en use-llamada.ts -- así que acá NO se mutea el
+   * `<video>`: si se muteara, el control de volumen que muestra el navegador
+   * en pantalla completa aparecería bloqueado (React lo re-mutearía en cada
+   * render, deshaciendo cualquier intento de subirlo desde ahí).
+   */
+  const esPantalla = esTarjetaPantalla(id)
 
   // `srcObject` no se puede pasar como prop en JSX: es una referencia viva, no
   // una URL. Va por ref o el recuadro queda negro.
@@ -988,6 +980,20 @@ function Recuadro({
     if (!el || el.srcObject === stream) return
     el.srcObject = stream
   }, [stream])
+
+  // Si esta tarjeta se desmonta (típicamente: la pantalla que mostraba dejó
+  // de compartir) mientras el navegador la tiene en pantalla completa,
+  // React se lleva el elemento pero el navegador se queda "atrapado" en modo
+  // fullscreen sobre un video que ya no existe -- sin este chequeo, la
+  // única salida era Esc a mano.
+  useEffect(() => {
+    const el = videoRef.current
+    return () => {
+      if (document.fullscreenElement === el) {
+        void document.exitFullscreen().catch(() => {})
+      }
+    }
+  }, [])
 
   /**
    * ¿Hay imagen que mostrar?
@@ -1083,7 +1089,7 @@ function Recuadro({
         ref={videoRef}
         autoPlay
         playsInline
-        muted
+        muted={!esPantalla}
         className={`size-full ${grande && compartiendo ? 'object-contain' : 'object-cover'}`}
         style={{ display: hayVideo ? 'block' : 'none' }}
       />
