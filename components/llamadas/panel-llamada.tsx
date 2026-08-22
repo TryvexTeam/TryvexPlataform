@@ -379,6 +379,23 @@ export function PanelLlamada({
           volumen={(volumenes.get(p.integranteId) ?? 1) * volumenVoces}
         />
       ))}
+
+      {/* El audio de la pantalla compartida (si el que comparte tildó
+          "Compartir audio también") va en su propio elemento -- viajó en una
+          pista de audio aparte, no mezclada con el micrófono, así que se
+          reproduce aparte también. Sigue la misma atenuación/silencio que la
+          voz de esa persona, pero sin control de volumen propio: es una sola
+          perilla por participante, no una por cada cosa que suene. */}
+      {participantes
+        .filter((p) => p.streamAudioPantalla)
+        .map((p) => (
+          <AudioRemoto
+            key={`${p.integranteId}-pantalla`}
+            stream={p.streamAudioPantalla}
+            mudo={ensordecido || silenciados.has(p.integranteId)}
+            volumen={(volumenes.get(p.integranteId) ?? 1) * volumenVoces}
+          />
+        ))}
     </div>
   )
 
