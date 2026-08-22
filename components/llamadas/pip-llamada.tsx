@@ -372,7 +372,14 @@ export function PipLlamada({
         md:bottom-6 md:right-6"
       style={{
         width: anchoTarjeta,
-        transition: 'width 160ms ease, background 160ms ease',
+        // Sin transición de `width`: el reproductor de música (elemento
+        // aparte, ver el comentario del wrapper en panel-llamada.tsx) mide
+        // este ancho con un ResizeObserver para posicionarse -- animarlo
+        // dispara mediciones de anchos intermedios mientras la transición
+        // corre, y el iframe de YouTube no reacciona tan rápido: se veía
+        // con bordes apenas se minimizaba, hasta que algo disparaba una
+        // remedición nueva (mover la tarjeta) y recién ahí se corregía.
+        transition: 'background 160ms ease',
         // El video/pantalla es un elemento aparte que se posiciona DETRÁS de
         // esta tarjeta (ver el comentario de z-index en panel-llamada.tsx),
         // para que estos mismos botones queden por encima sin taparlo. Con
@@ -394,7 +401,10 @@ export function PipLlamada({
         // el redondeo de cada video dejaba un marco negro alrededor,
         // achicando el video sin necesidad.
         className={hayContenido ? 'relative overflow-hidden rounded-t-[23px]' : 'relative p-2'}
-        style={{ height: altoContenido, transition: 'height 160ms ease' }}
+        // Sin transición de `height`, mismo motivo que el `width` de la
+        // tarjeta: anima mediciones intermedias hacia el ResizeObserver que
+        // sigue este ancla y el iframe de YouTube no llega a acompañar.
+        style={{ height: altoContenido }}
       >
         {hayContenido ? (
           <div className="flex h-full w-full flex-col gap-1">
