@@ -1363,20 +1363,15 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     onTerminada?.()
   }, [llamadaId, onTerminada])
 
-  // Cerrar la pestaña o navegar afuera no dispara ningún cleanup que avise al
-  // servidor -- sin esto la fila queda "en_llamada" hasta que el barrido de
-  // zombis la limpia, horas después. `pagehide` es más confiable que
-  // `beforeunload` para esto (sigue funcionando con bfcache).
-  const colgarRef = useRef(colgar)
-  useEffect(() => {
-    colgarRef.current = colgar
-  }, [colgar])
-  useEffect(() => {
-    if (!llamadaId) return
-    const alSalir = () => void colgarRef.current()
-    window.addEventListener('pagehide', alSalir)
-    return () => window.removeEventListener('pagehide', alSalir)
-  }, [llamadaId])
+  // OJO mobile: `pagehide` se dispara TANTO al cerrar la pestaña de verdad
+  // como al pasar la app a segundo plano (cambiar de app), y no hay forma
+  // confiable de distinguir un caso del otro solo con este evento -- iOS
+  // manda la misma señal para ambos. Adivinar con un timeout corta llamadas
+  // que siguen activas; por eso ya no colgamos automáticamente acá: la
+  // llamada sigue viva mientras el usuario esté en otra app y puede volver
+  // a escuchar/hablar sin cortes. Colgar de verdad queda a cargo de: (a) el
+  // botón de colgar, o (b) el barrido de zombis del servidor, para cuando
+  // alguien cierra la pestaña sin colgar y nunca vuelve.
 
   return {
     participantes,
