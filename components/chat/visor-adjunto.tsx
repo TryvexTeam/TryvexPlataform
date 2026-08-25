@@ -6,12 +6,14 @@ import { CodeIcon, DownloadIcon, EyeIcon, LinkIcon, XIcon } from 'lucide-react'
 import { copiarTexto } from '@/lib/utils/copiar-texto'
 import {
   MAX_BYTES_PREVIEW,
+  esExcel,
   esHtml,
   esImagen,
   esOfimatica,
   esPdf,
   esTexto,
   esVideo,
+  esWord,
   pesoLegible,
   urlAdjunto,
   type AdjuntoMensaje,
@@ -219,9 +221,13 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
     )
   }
 
-  if (esOfimatica(adjunto)) {
-    return <VistaOfimatica adjunto={adjunto} />
-  }
+  // Word y Excel se dibujan DENTRO del navegador (texto que fluye / tabla):
+  // crisp y con scroll vertical, como una página. El resto de la ofimática
+  // —PowerPoint, y los formatos viejos .doc/.ppt— van al visor de Microsoft,
+  // que los dibuja fiel (convertirlos del lado nuestro los deforma).
+  if (esWord(adjunto)) return <VistaWord adjunto={adjunto} />
+  if (esExcel(adjunto)) return <VistaExcel adjunto={adjunto} />
+  if (esOfimatica(adjunto)) return <VistaOfimatica adjunto={adjunto} />
 
   if (esHtml(adjunto)) {
     return (
@@ -247,18 +253,141 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
 }
 
 /**
- * Word, Excel y PowerPoint dibujados dentro del chat.
+ * Un documento (HTML ya armado) dibujado en un marco AISLADO.
  *
- * Ningún navegador los pinta por su cuenta, así que se apoya en el visor online
- * de Microsoft Office (`view.officeapps.live.com`). Ese visor necesita poder
- * abrir el archivo desde afuera, y el bucket es privado: por eso se le pide al
- * endpoint una URL firmada de vida corta (`?firmar=1`, 10 min) y se le pasa al
- * visor. La pertenencia al hilo se comprueba antes de firmar.
+ * `sandbox=""` —sin `allow-scripts` ni `allow-same-origin`— es la clave: el
+ * contenido viene de un archivo que subió alguien, así que aunque trajera un
+ * script o un enlace `javascript:`, adentro del marco no puede ejecutar nada ni
+ * tocar la sesión del CRM. Word y Excel no necesitan scripts para verse.
+ * El marco trae su propio estilo para que se lea como una página, con scroll.
+ */
+function DocumentoEnMarco({ html, titulo }: { html: string; titulo: string }) {
+  const doc = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light; }
+  body { margin:0 auto; padding:20px; max-width:820px; background:#fff; color:#111;
+    font:15px/1.6 -apple-system,system-ui,'Segoe UI',Roboto,sans-serif;
+    overflow-wrap:break-word; }
+  img { max-width:100%; height:auto; }
+  table { border-collapse:collapse; width:100%; margin:12px 0; font-size:13px; }
+  td,th { border:1px solid #ccc; padding:6px 8px; text-align:left; vertical-align:top; }
+  h1,h2,h3 { line-height:1.25; }
+  a { color:#0645ad; }
+</style></head><body>${html}</body></html>`
+  return (
+    <iframe
+      title={titulo}
+      srcDoc={doc}
+      sandbox=""
+      className="w-full flex-1 min-h-0 bg-white"
+    />
+  )
+}
+
+/**
+ * Word (.docx) dibujado DENTRO del navegador: texto que fluye, crisp y con
+ * scroll vertical como una página. Nada sale del CRM.
+ *
+ * Se baja el archivo del endpoint propio (que ya revisó pertenencia) y `mammoth`
+ * lo pasa a HTML acá mismo. Se importa dinámico para no cargar la librería hasta
+ * que de verdad se abre un Word. Si algo falla, cae a descargar.
+ */
+function VistaWord({ adjunto }: { adjunto: AdjuntoMensaje }) {
+  const [html, setHtml] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let vigente = true
+    ;(async () => {
+      try {
+        // @ts-expect-error el bundle de navegador de mammoth no trae tipos en este subpath
+        const mod = await import('mammoth/mammoth.browser')
+        const mammoth = mod.default ?? mod
+        const resp = await fetch(urlAdjunto(adjunto.id))
+        if (!resp.ok) throw new Error('descarga')
+        const arrayBuffer = await resp.arrayBuffer()
+        const { value } = await mammoth.convertToHtml({ arrayBuffer })
+        if (vigente) setHtml(value)
+      } catch {
+        if (vigente) setError(true)
+      }
+    })()
+    return () => {
+      vigente = false
+    }
+  }, [adjunto.id])
+
+  if (error) return <OfimaticaDescarga adjunto={adjunto} />
+  if (html === null)
+    return <p className="px-4 py-3 text-[12px] opacity-70">Abriendo el documento…</p>
+  return <DocumentoEnMarco html={html} titulo={adjunto.nombre} />
+}
+
+/**
+ * Excel (.xlsx) dibujado como tabla en el navegador. Muestra la primera hoja;
+ * si hay más, lo dice. Igual que Word: la librería se importa dinámico y todo
+ * pasa acá, sin salir del CRM.
+ */
+function VistaExcel({ adjunto }: { adjunto: AdjuntoMensaje }) {
+  const [html, setHtml] = useState<string | null>(null)
+  const [nota, setNota] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let vigente = true
+    ;(async () => {
+      try {
+        const XLSX = await import('xlsx')
+        const resp = await fetch(urlAdjunto(adjunto.id))
+        if (!resp.ok) throw new Error('descarga')
+        const arrayBuffer = await resp.arrayBuffer()
+        const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' })
+        const primera = wb.SheetNames[0]
+        const tabla = XLSX.utils.sheet_to_html(wb.Sheets[primera])
+        if (vigente) {
+          setHtml(tabla)
+          if (wb.SheetNames.length > 1) {
+            setNota(
+              `Mostrando la hoja "${primera}". El archivo tiene ${wb.SheetNames.length} hojas — descárgalo para ver el resto.`,
+            )
+          }
+        }
+      } catch {
+        if (vigente) setError(true)
+      }
+    })()
+    return () => {
+      vigente = false
+    }
+  }, [adjunto.id])
+
+  if (error) return <OfimaticaDescarga adjunto={adjunto} />
+  if (html === null)
+    return <p className="px-4 py-3 text-[12px] opacity-70">Abriendo la planilla…</p>
+  return (
+    <div className="flex flex-1 min-h-0 flex-col">
+      <DocumentoEnMarco html={html} titulo={adjunto.nombre} />
+      {nota && (
+        <p className="shrink-0 px-3 py-1.5 text-center text-[11px] text-[var(--tx-ink-muted)] border-t border-[var(--border)]">
+          {nota}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * PowerPoint (y los formatos viejos .doc/.ppt) dibujados dentro del chat.
+ *
+ * A diferencia de Word/Excel, estos NO se dibujan bien en el navegador por su
+ * cuenta, así que se apoya en el visor online de Microsoft Office
+ * (`view.officeapps.live.com`), que los renderiza fiel. Se le pide al endpoint
+ * una URL firmada de vida corta (`?firmar=1`, 10 min) y se le pasa al visor.
  *
  * ⚠️ Es la única parte donde un archivo del chat sale hacia un tercero
- * (Microsoft, mientras lo dibuja). Fue una decisión pedida a propósito para
- * tener la vista previa; si se quisiera cero terceros, la alternativa es
- * convertir a PDF del lado nuestro (VPS) y mostrar ese PDF.
+ * (Microsoft, mientras lo dibuja). Convertirlo del lado nuestro (LibreOffice)
+ * deforma los pptx, así que el visor de Office es lo que mejor los muestra.
  */
 function VistaOfimatica({ adjunto }: { adjunto: AdjuntoMensaje }) {
   const [urlVisor, setUrlVisor] = useState<string | null>(null)
