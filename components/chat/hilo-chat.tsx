@@ -139,18 +139,34 @@ export function HiloChat({
     idsMensajesRef.current = new Set(mensajes.map((m) => m.id))
   }, [mensajes])
 
+  // Timer del refresco coalescido de refrescarMensajes (ver más abajo).
+  const refrescoPendienteRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (refrescoPendienteRef.current) clearTimeout(refrescoPendienteRef.current)
+    }
+  }, [])
+
   /**
    * Trae de nuevo el historial completo (reacciones ya agrupadas y con nombres,
    * como las arma el servidor) sin tocar `cargando`, para no parpadear el spinner
    * por un cambio que llegó de otra pestaña o de otra persona.
    */
   const refrescarMensajes = useCallback(() => {
-    fetch(`/api/chat/mensajes?conversacion=${conversacion.id}`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setMensajes(json.data as Mensaje[])
-      })
-      .catch(() => {})
+    // Reaccionar a dos mensajes casi a la vez dispara dos INSERT de
+    // mensaje_reacciones seguidos; si cada uno pidiera el historial ya mismo,
+    // el primer fetch podría llegar antes de que el segundo POST comprometiera
+    // en la base y pisar el pintado optimista del segundo. Coalescer en un
+    // timer corto agrupa ráfagas de eventos en un único fetch posterior.
+    if (refrescoPendienteRef.current) clearTimeout(refrescoPendienteRef.current)
+    refrescoPendienteRef.current = setTimeout(() => {
+      fetch(`/api/chat/mensajes?conversacion=${conversacion.id}`)
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.success) setMensajes(json.data as Mensaje[])
+        })
+        .catch(() => {})
+    }, 250)
   }, [conversacion.id])
 
   // Mensajes nuevos, fijados/soltados y reacciones en vivo, sin recargar.
@@ -173,6 +189,10 @@ export function HiloChat({
         },
         (payload) => {
           const nuevo = payload.new as Mensaje
+          // Las respuestas de hilo pertenecen a esta misma conversación, así que
+          // el filtro por conversacion_id las deja pasar igual: no son parte del
+          // flujo principal y no deben entrar acá (se muestran en PanelHilo).
+          if (nuevo.hilo_padre) return
           // El propio ya se agregó al enviar: no duplicarlo.
           setMensajes((previos) => (previos.some((m) => m.id === nuevo.id) ? previos : [...previos, nuevo]))
           // La fila de realtime NO trae los adjuntos: viven en otra tabla y el
@@ -193,13 +213,10 @@ export function HiloChat({
         },
         (payload) => {
           const actualizado = payload.new as Mensaje
-          setMensajes((previos) =>
-            previos.map((m) =>
-              m.id === actualizado.id
-                ? { ...m, fijado_at: actualizado.fijado_at, fijado_por: actualizado.fijado_por }
-                : m,
-            ),
-          )
+          // REPLICA IDENTITY FULL (migración 023): la fila viene completa, así
+          // que se aplica entera -- de lo contrario un borrado (eliminado_at +
+          // contenido) de otro usuario no se reflejaba hasta el próximo refresh.
+          setMensajes((previos) => previos.map((m) => (m.id === actualizado.id ? { ...m, ...actualizado } : m)))
           cargarFijados()
         },
       )
