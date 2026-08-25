@@ -225,8 +225,8 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
   // crisp y con scroll vertical, como una página. El resto de la ofimática
   // —PowerPoint, y los formatos viejos .doc/.ppt— van al visor de Microsoft,
   // que los dibuja fiel (convertirlos del lado nuestro los deforma).
-  if (esWord(adjunto)) return <VistaWord adjunto={adjunto} />
-  if (esExcel(adjunto)) return <VistaExcel adjunto={adjunto} />
+  if (esWord(adjunto)) return <VistaOfficeConPdf adjunto={adjunto} Respaldo={VistaWordTexto} />
+  if (esExcel(adjunto)) return <VistaOfficeConPdf adjunto={adjunto} Respaldo={VistaExcelTabla} />
   if (esOfimatica(adjunto)) return <VistaOfimatica adjunto={adjunto} />
 
   if (esHtml(adjunto)) {
@@ -286,14 +286,70 @@ function DocumentoEnMarco({ html, titulo }: { html: string; titulo: string }) {
 }
 
 /**
+ * Word y Excel: primero intenta el PDF CON FORMATO (membrete, portada, diseño),
+ * que un servicio del VPS convierte y deja cacheado. Es lo que se ve fiel, como
+ * en la app del teléfono, y con scroll.
+ *
+ * Mientras el VPS lo prepara —o si la conversión no está—, cae al render de
+ * texto (`Respaldo`): mammoth para Word, tabla para Excel. Así nunca queda en
+ * blanco, y la próxima vez que se abra ya sale el PDF. Se sondea un rato por si
+ * el archivo es recién subido y el PDF aparece a los segundos.
+ */
+function VistaOfficeConPdf({
+  adjunto,
+  Respaldo,
+}: {
+  adjunto: AdjuntoMensaje
+  Respaldo: (props: { adjunto: AdjuntoMensaje }) => React.ReactElement
+}) {
+  const [pdfListo, setPdfListo] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let vigente = true
+    let intentos = 0
+    const revisar = async () => {
+      try {
+        const r = await fetch(`${urlAdjunto(adjunto.id)}?pdf=check`)
+        const d = r.ok ? await r.json() : { listo: false }
+        if (!vigente) return
+        if (d?.listo) {
+          setPdfListo(true)
+          return
+        }
+        setPdfListo(false)
+        if (intentos++ < 6) setTimeout(revisar, 4000)
+      } catch {
+        if (vigente) setPdfListo(false)
+      }
+    }
+    revisar()
+    return () => {
+      vigente = false
+    }
+  }, [adjunto.id])
+
+  if (pdfListo === null)
+    return <p className="px-4 py-3 text-[12px] opacity-70">Abriendo…</p>
+  if (pdfListo)
+    return (
+      <iframe
+        src={`${urlAdjunto(adjunto.id)}?pdf=1`}
+        title={adjunto.nombre}
+        className="w-full flex-1 min-h-0 bg-white"
+      />
+    )
+  return <Respaldo adjunto={adjunto} />
+}
+
+/**
  * Word (.docx) dibujado DENTRO del navegador: texto que fluye, crisp y con
- * scroll vertical como una página. Nada sale del CRM.
+ * scroll vertical. Es el RESPALDO mientras el PDF con formato no está listo.
  *
  * Se baja el archivo del endpoint propio (que ya revisó pertenencia) y `mammoth`
  * lo pasa a HTML acá mismo. Se importa dinámico para no cargar la librería hasta
  * que de verdad se abre un Word. Si algo falla, cae a descargar.
  */
-function VistaWord({ adjunto }: { adjunto: AdjuntoMensaje }) {
+function VistaWordTexto({ adjunto }: { adjunto: AdjuntoMensaje }) {
   const [html, setHtml] = useState<string | null>(null)
   const [error, setError] = useState(false)
 
@@ -325,11 +381,11 @@ function VistaWord({ adjunto }: { adjunto: AdjuntoMensaje }) {
 }
 
 /**
- * Excel (.xlsx) dibujado como tabla en el navegador. Muestra la primera hoja;
- * si hay más, lo dice. Igual que Word: la librería se importa dinámico y todo
- * pasa acá, sin salir del CRM.
+ * Excel (.xlsx) dibujado como tabla en el navegador. Es el RESPALDO mientras el
+ * PDF con formato no está listo. Muestra la primera hoja; si hay más, lo dice.
+ * La librería se importa dinámico y todo pasa acá, sin salir del CRM.
  */
-function VistaExcel({ adjunto }: { adjunto: AdjuntoMensaje }) {
+function VistaExcelTabla({ adjunto }: { adjunto: AdjuntoMensaje }) {
   const [html, setHtml] = useState<string | null>(null)
   const [nota, setNota] = useState<string | null>(null)
   const [error, setError] = useState(false)
