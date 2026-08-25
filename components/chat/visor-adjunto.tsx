@@ -47,7 +47,11 @@ export function VisorAdjunto({
   // Un video o un .docx no tienen "código" que mostrar.
   const alternable = (esHtml(adjunto) || esTexto(adjunto)) && !esOfimatica(adjunto)
   const [modo, setModo] = useState<'ver' | 'codigo'>(
-    esHtml(adjunto) || esImagen(adjunto) || esPdf(adjunto) || esVideo(adjunto)
+    esHtml(adjunto) ||
+      esImagen(adjunto) ||
+      esPdf(adjunto) ||
+      esVideo(adjunto) ||
+      esOfimatica(adjunto)
       ? 'ver'
       : 'codigo',
   )
@@ -85,13 +89,19 @@ export function VisorAdjunto({
   // tiene transform/filter/contain — y el hilo del chat los tiene. Sin esto el
   // visor quedaba encajado en una tira dentro del mensaje en vez de abrirse
   // grande, que es justo lo que hacía inservible al HTML incrustado.
+  //
+  // `overlay-pantalla-movil` (no `inset-0`) es lo que lo hace usable en iPhone:
+  // en iOS `inset-0`/`100vh` mide el viewport GRANDE y el visor se cortaba por
+  // abajo tras la barra de Safari, y la cabecera con la X quedaba tapada bajo la
+  // Dynamic Island. La clase da `100svh` + `env(safe-area-*)`. Es el mismo
+  // arreglo que ya se hizo en el chat de WhatsApp del lead (commit 64b981a).
   return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={adjunto.nombre}
       onClick={onCerrar}
-      className="fixed inset-0 z-[100] flex flex-col bg-black/80 backdrop-blur-sm p-2 sm:p-6"
+      className="overlay-pantalla-movil fixed inset-x-0 top-0 z-[100] flex flex-col bg-black/80 backdrop-blur-sm"
     >
       {/* El clic en el fondo cierra; adentro no, o se cerraría al usarlo. */}
       <div
@@ -210,24 +220,7 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
   }
 
   if (esOfimatica(adjunto)) {
-    return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-[13px] text-[var(--tx-ink-primary)]">
-          Word, Excel y PowerPoint no se pueden ver dentro del navegador.
-        </p>
-        <p className="text-[12px] text-[var(--tx-ink-muted)] max-w-sm">
-          Descárgalo y ábrelo con tu programa de siempre. No se usa un visor
-          externo porque estos archivos son internos del equipo y habría que
-          hacerlos públicos para que otro servicio los muestre.
-        </p>
-        <a
-          href={`${urlAdjunto(adjunto.id)}?descargar=1`}
-          className="rounded-lg px-3 py-1.5 text-[13px] bg-[var(--tx-accent)] text-black"
-        >
-          Descargar {adjunto.nombre}
-        </a>
-      </div>
-    )
+    return <VistaOfimatica adjunto={adjunto} />
   }
 
   if (esHtml(adjunto)) {
@@ -250,6 +243,87 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
       title={adjunto.nombre}
       className="w-full flex-1 min-h-0 bg-white"
     />
+  )
+}
+
+/**
+ * Word, Excel y PowerPoint dibujados dentro del chat.
+ *
+ * Ningún navegador los pinta por su cuenta, así que se apoya en el visor online
+ * de Microsoft Office (`view.officeapps.live.com`). Ese visor necesita poder
+ * abrir el archivo desde afuera, y el bucket es privado: por eso se le pide al
+ * endpoint una URL firmada de vida corta (`?firmar=1`, 10 min) y se le pasa al
+ * visor. La pertenencia al hilo se comprueba antes de firmar.
+ *
+ * ⚠️ Es la única parte donde un archivo del chat sale hacia un tercero
+ * (Microsoft, mientras lo dibuja). Fue una decisión pedida a propósito para
+ * tener la vista previa; si se quisiera cero terceros, la alternativa es
+ * convertir a PDF del lado nuestro (VPS) y mostrar ese PDF.
+ */
+function VistaOfimatica({ adjunto }: { adjunto: AdjuntoMensaje }) {
+  const [urlVisor, setUrlVisor] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let vigente = true
+    fetch(`${urlAdjunto(adjunto.id)}?firmar=1`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('firma'))))
+      .then((d: { success?: boolean; url?: string }) => {
+        if (!vigente) return
+        if (d?.success && d.url) {
+          setUrlVisor(
+            `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(d.url)}`,
+          )
+        } else {
+          setError(true)
+        }
+      })
+      .catch(() => vigente && setError(true))
+    return () => {
+      vigente = false
+    }
+  }, [adjunto.id])
+
+  if (error) return <OfimaticaDescarga adjunto={adjunto} />
+
+  if (!urlVisor) {
+    return <p className="px-4 py-3 text-[12px] opacity-70">Cargando vista previa…</p>
+  }
+
+  return (
+    <div className="flex flex-1 min-h-0 flex-col">
+      <iframe
+        src={urlVisor}
+        title={adjunto.nombre}
+        className="w-full flex-1 min-h-0 bg-white"
+      />
+      <p className="shrink-0 px-3 py-1.5 text-center text-[11px] text-[var(--tx-ink-muted)] border-t border-[var(--border)]">
+        Vista previa con el visor de Microsoft Office ·{' '}
+        <a href={`${urlAdjunto(adjunto.id)}?descargar=1`} className="underline">
+          descargar el original
+        </a>
+      </p>
+    </div>
+  )
+}
+
+/** Respaldo cuando el visor de Office no está disponible: descargar y abrirlo. */
+function OfimaticaDescarga({ adjunto }: { adjunto: AdjuntoMensaje }) {
+  return (
+    <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3 p-6 text-center">
+      <p className="text-[13px] text-[var(--tx-ink-primary)]">
+        No se pudo cargar la vista previa de este archivo.
+      </p>
+      <p className="text-[12px] text-[var(--tx-ink-muted)] max-w-sm">
+        Descárgalo y ábrelo con tu programa de siempre.
+      </p>
+      <a
+        href={`${urlAdjunto(adjunto.id)}?descargar=1`}
+        className="rounded-lg px-3 py-1.5 text-[13px] bg-[var(--tx-accent)] text-black"
+      >
+        Descargar {adjunto.nombre}
+      </a>
+    </div>
   )
 }
 

@@ -43,17 +43,39 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const ruta = adjunto.ruta as string
   const nombre = (adjunto.nombre as string) || 'archivo'
 
+  const params = new URL(req.url).searchParams
+
   // ?descargar=1 — bajar el archivo en vez de abrirlo.
   //
   // El `download` se lo pide a Supabase en vez de proxear los bytes acá: la
   // RESPUESTA de una función de Vercel también topa en 4,5 MB, así que pasar un
   // PDF grande por acá lo rompería igual que antes rompía la subida.
-  if (new URL(req.url).searchParams.has('descargar')) {
+  if (params.has('descargar')) {
     const { data, error } = await almacen.createSignedUrl(ruta, 60, { download: nombre })
     if (error || !data) {
       return NextResponse.json({ success: false, error: 'No se pudo abrir el archivo' }, { status: 500 })
     }
     return NextResponse.redirect(data.signedUrl)
+  }
+
+  // ?firmar=1 — entrega una URL firmada TEMPORAL, en JSON, para que un visor
+  // externo pueda leer el archivo.
+  //
+  // Word, Excel y PowerPoint no los dibuja ningún navegador por su cuenta; el
+  // visor online de Microsoft Office sí, pero para hacerlo sus servidores tienen
+  // que poder abrir el archivo, y el bucket es privado. Esta rama devuelve un
+  // enlace que vence en 10 minutos —lo justo para que el visor lo lea— y solo lo
+  // obtiene quien ya pasó el control de pertenencia de más arriba.
+  //
+  // ⚠️ Es la única vía por la que un archivo del chat sale hacia un tercero.
+  // Fue una decisión pedida a propósito para poder previsualizar ofimática; si
+  // se quiere cero terceros, hay que convertir a PDF del lado nuestro (VPS).
+  if (params.has('firmar')) {
+    const { data, error } = await almacen.createSignedUrl(ruta, 600)
+    if (error || !data) {
+      return NextResponse.json({ success: false, error: 'No se pudo firmar el archivo' }, { status: 500 })
+    }
+    return NextResponse.json({ success: true, url: data.signedUrl })
   }
 
   // Los archivos livianos se sirven DESDE ACÁ, no por redirección.
