@@ -1,4 +1,4 @@
-import type { Lead } from '@/lib/types/lead'
+import type { Lead, TurnoPitch } from '@/lib/types/lead'
 
 /**
  * Genera el guion de llamada en frío para un lead, personalizado con sus datos.
@@ -15,15 +15,11 @@ import type { Lead } from '@/lib/types/lead'
  * de los pitch = cambiar este archivo.
  */
 
-export interface TurnoPitch {
-  rol: string
-  texto: string
-  guia?: string
-}
-
 export interface Guion {
   resumen: string
   turnos: TurnoPitch[]
+  /** true si los turnos vienen de una edición a mano guardada, no del generador. */
+  editado: boolean
 }
 
 type Familia = 'citas' | 'comida' | 'optica' | 'taller' | 'tienda' | 'generico'
@@ -82,7 +78,19 @@ const RESUMEN: Record<Familia, string> = {
   generico: 'Sitio web profesional que aparezca en Google, muestre el trabajo y capte clientes por WhatsApp.',
 }
 
+/**
+ * El guion a mostrar para un lead: si tiene un pitch editado a mano guardado, ese;
+ * si no, el generado automáticamente desde sus datos.
+ */
 export function generarGuion(lead: Lead): Guion {
+  if (lead.pitch && lead.pitch.length > 0) {
+    return { resumen: generarGuionAuto(lead).resumen, turnos: lead.pitch, editado: true }
+  }
+  return generarGuionAuto(lead)
+}
+
+/** El guion SIEMPRE generado desde los datos, ignorando cualquier edición guardada. */
+export function generarGuionAuto(lead: Lead): Guion {
   const f = familia(lead.nicho)
   const nom = lead.nombre_negocio || 'este negocio'
   const rubro = (lead.nicho ?? 'negocios').toLowerCase()
@@ -106,6 +114,7 @@ export function generarGuion(lead: Lead): Guion {
 
   return {
     resumen: RESUMEN[f],
+    editado: false,
     turnos: [
       {
         rol: 'Tú — apertura',

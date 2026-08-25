@@ -53,6 +53,14 @@ export function debeAvanzarAContactado(estadoActual: EstadoLead, tipo: string): 
   return esContacto(tipo) && !YA_CONTACTADOS.includes(estadoActual)
 }
 
+/** Un turno del guion de llamada (lo que dice el vendedor + su nota de ayuda). */
+export const TurnoPitchSchema = z.object({
+  rol: z.string(),
+  texto: z.string(),
+  guia: z.string().optional(),
+})
+export type TurnoPitch = z.infer<typeof TurnoPitchSchema>
+
 export const LeadSchema = z.object({
   id: z.string().uuid(),
   nombre_negocio: z.string(),
@@ -71,6 +79,8 @@ export const LeadSchema = z.object({
   // Señales del scraper que alimentan el pitch personalizado.
   google_rating: z.number().nullable().optional(),
   google_resenas: z.number().nullable().optional(),
+  // Pitch editado a mano para este lead (migración 084). NULL = usar el generado.
+  pitch: z.array(TurnoPitchSchema).nullable().optional(),
   score: z.number().min(1).max(10).nullable(),
   estado: EstadoLeadSchema,
   razon_perdida: z.enum(['precio', 'sin_respuesta', 'competencia', 'sin_interes', 'otro']).nullable(),
@@ -87,6 +97,7 @@ const LeadBaseSchema = z.object({
   telefono: z.string().nullable().optional(),
   email: z.string().email('Correo inválido').nullable().optional().or(z.literal('')),
   nombre_contacto: z.string().nullable().optional(),
+  pitch: z.array(TurnoPitchSchema).nullable().optional(),
   info_texto: z.string().nullable().optional(),
   redes_sociales: z.record(z.string(), z.string()).nullable().optional(),
   tiene_web: z.boolean().nullable().optional(),

@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Phone, Mail, User, Camera, Globe, MapPin, Star, Loader2, Save } from 'lucide-react'
+import { Phone, Mail, User, Camera, Globe, MapPin, Star, Loader2, Save, Pencil, RotateCcw } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import type { Lead } from '@/lib/types/lead'
+import type { Lead, TurnoPitch } from '@/lib/types/lead'
 import { ESTADOS_LEAD, RAZONES_PERDIDA } from '@/lib/types/lead'
-import { generarGuion } from '@/lib/leads/pitch'
+import { generarGuion, generarGuionAuto } from '@/lib/leads/pitch'
 
 /**
  * El modal de pitch: se abre desde el panel del lead, al lado de WhatsApp.
@@ -36,6 +36,11 @@ export function LeadPitchModal({
   const [estado, setEstado] = useState(lead.estado)
   const [razon, setRazon] = useState(lead.razon_perdida ?? '')
   const [guardando, setGuardando] = useState(false)
+
+  // Edición del guion. `turnos` arranca del guion actual (editado o generado);
+  // al entrar en modo edición se muestran textareas. Guardar persiste el arreglo.
+  const [editandoGuion, setEditandoGuion] = useState(false)
+  const [turnos, setTurnos] = useState<TurnoPitch[]>(guion.turnos)
 
   const contactoCambiado =
     telefono !== (lead.telefono ?? '') ||
@@ -96,6 +101,52 @@ export function LeadPitchModal({
       setGuardando(false)
     }
   }
+
+  async function guardarGuion() {
+    setGuardando(true)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pitch: turnos }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Guion guardado')
+      setEditandoGuion(false)
+      router.refresh()
+    } catch {
+      toast.error('No se pudo guardar el guion todavía')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  async function restaurarGuion() {
+    const auto = generarGuionAuto(lead).turnos
+    setTurnos(auto)
+    setGuardando(true)
+    try {
+      // pitch = null vuelve al generado; si la columna aún no existe, igual queda
+      // el generado en pantalla (solo no persiste hasta aplicar la migración).
+      const res = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pitch: null }),
+      })
+      if (res.ok) {
+        toast.success('Guion restaurado al original')
+        setEditandoGuion(false)
+        router.refresh()
+      }
+    } catch {
+      /* el generado ya se ve en pantalla */
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const setTurno = (i: number, campo: 'texto' | 'guia', valor: string) =>
+    setTurnos((ts) => ts.map((t, j) => (j === i ? { ...t, [campo]: valor } : t)))
 
   const hayCambios = contactoCambiado || estadoCambiado
   const rating = lead.google_rating
@@ -185,28 +236,85 @@ export function LeadPitchModal({
             )}
           </section>
 
-          {/* ── Guion (vista previa) ── */}
+          {/* ── Guion (vista previa / edición) ── */}
           <section>
-            <p className="mb-1 text-[11px] font-mono uppercase tracking-wider text-[var(--tx-ink-muted)]">
-              Guion de llamada en frío
-            </p>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-mono uppercase tracking-wider text-[var(--tx-ink-muted)]">
+                Guion de llamada en frío{guion.editado && !editandoGuion ? ' · editado' : ''}
+              </p>
+              {!editandoGuion ? (
+                <button
+                  type="button"
+                  onClick={() => { setTurnos(guion.turnos); setEditandoGuion(true) }}
+                  className="inline-flex items-center gap-1 text-[12px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+                >
+                  <Pencil size={12} /> Editar
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={restaurarGuion}
+                  disabled={guardando}
+                  className="inline-flex items-center gap-1 text-[12px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] disabled:opacity-40"
+                >
+                  <RotateCcw size={12} /> Restaurar original
+                </button>
+              )}
+            </div>
             <p className="mb-3 text-[12.5px] text-[var(--tx-ink-muted)]">
               <span className="font-medium text-[var(--tx-ink-secondary)]">Qué ofrecerle:</span> {guion.resumen}
             </p>
-            <div className="space-y-3">
-              {guion.turnos.map((t, i) => (
-                <div key={i} className="border-l-2 border-green-500/40 pl-3">
-                  <span className="block text-[10px] font-mono uppercase tracking-wider text-green-400/90 mb-1">
-                    {t.rol}
-                  </span>
-                  <p className="rounded-lg bg-white/[0.03] px-3 py-2.5 text-[14px] leading-relaxed text-[var(--tx-ink-primary)]"
-                    dangerouslySetInnerHTML={{ __html: negritas(t.texto) }} />
-                  {t.guia && (
-                    <p className="mt-1.5 text-[12px] italic text-[var(--tx-ink-muted)]">{t.guia}</p>
-                  )}
-                </div>
-              ))}
-            </div>
+
+            {!editandoGuion ? (
+              <div className="space-y-3">
+                {guion.turnos.map((t, i) => (
+                  <div key={i} className="border-l-2 border-green-500/40 pl-3">
+                    <span className="block text-[10px] font-mono uppercase tracking-wider text-green-400/90 mb-1">
+                      {t.rol}
+                    </span>
+                    <p className="rounded-lg bg-white/[0.03] px-3 py-2.5 text-[14px] leading-relaxed text-[var(--tx-ink-primary)]"
+                      dangerouslySetInnerHTML={{ __html: negritas(t.texto) }} />
+                    {t.guia && (
+                      <p className="mt-1.5 text-[12px] italic text-[var(--tx-ink-muted)]">{t.guia}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[11.5px] text-[var(--tx-ink-muted)]">
+                  Edita lo que dirás. Usa <code className="text-green-400">**texto**</code> para resaltar en negrita.
+                </p>
+                {turnos.map((t, i) => (
+                  <div key={i} className="border-l-2 border-green-500/40 pl-3">
+                    <span className="block text-[10px] font-mono uppercase tracking-wider text-green-400/90 mb-1">
+                      {t.rol}
+                    </span>
+                    <textarea
+                      value={t.texto}
+                      onChange={(e) => setTurno(i, 'texto', e.target.value)}
+                      rows={Math.max(2, Math.ceil(t.texto.length / 55))}
+                      className="w-full resize-y rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[14px] leading-relaxed text-[var(--tx-ink-primary)] focus:border-green-500/40 focus:outline-none"
+                    />
+                    <input
+                      value={t.guia ?? ''}
+                      onChange={(e) => setTurno(i, 'guia', e.target.value)}
+                      placeholder="Nota de ayuda (opcional)"
+                      className="mt-1 w-full rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-[12px] italic text-[var(--tx-ink-muted)] focus:border-white/[0.08] focus:outline-none"
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={guardarGuion}
+                  disabled={guardando}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-green-500 px-4 py-2 text-[13px] font-semibold text-black transition-opacity disabled:opacity-40"
+                >
+                  {guardando ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Guardar guion
+                </button>
+              </div>
+            )}
           </section>
         </div>
 
