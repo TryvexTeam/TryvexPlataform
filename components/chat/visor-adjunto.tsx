@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { CodeIcon, DownloadIcon, EyeIcon, LinkIcon, XIcon } from 'lucide-react'
 import { copiarTexto } from '@/lib/utils/copiar-texto'
 import {
@@ -229,6 +230,13 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
   if (esExcel(adjunto)) return <VistaOfficeConPdf adjunto={adjunto} Respaldo={VistaExcelTabla} />
   if (esOfimatica(adjunto)) return <VistaOfimatica adjunto={adjunto} />
 
+  // El PDF se dibuja con PDF.js (a canvas), no con un iframe: iOS Safari NO
+  // muestra un PDF dentro de un iframe —enseña un botón "Abrir" y no la vista—,
+  // y a canvas se ve igual en iPhone, Android y computador, nítido y con scroll.
+  if (esPdf(adjunto)) {
+    return <VistaPdf adjunto={adjunto} fuente={urlAdjunto(adjunto.id)} />
+  }
+
   if (esHtml(adjunto)) {
     return (
       <iframe
@@ -331,14 +339,90 @@ function VistaOfficeConPdf({
   if (pdfListo === null)
     return <p className="px-4 py-3 text-[12px] opacity-70">Abriendo…</p>
   if (pdfListo)
-    return (
-      <iframe
-        src={`${urlAdjunto(adjunto.id)}?pdf=1`}
-        title={adjunto.nombre}
-        className="w-full flex-1 min-h-0 bg-white"
-      />
-    )
+    return <VistaPdf adjunto={adjunto} fuente={`${urlAdjunto(adjunto.id)}?pdf=1`} />
   return <Respaldo adjunto={adjunto} />
+}
+
+/**
+ * Un PDF dibujado a canvas con PDF.js.
+ *
+ * Por qué no un `<iframe src=pdf>`: iOS Safari NO dibuja un PDF dentro de un
+ * iframe —muestra un botón "Abrir" en vez de la vista—, así que en iPhone la
+ * vista previa no se veía. PDF.js lo dibuja página por página en un canvas, que
+ * se ve igual en iPhone, Android y computador, nítido (se rinde al doble de
+ * densidad para que no salga borroso) y con scroll.
+ *
+ * Sirve tanto para un PDF de verdad como para el PDF con formato al que se
+ * convirtió un Word/Excel (misma vista, distinta `fuente`).
+ */
+function VistaPdf({ adjunto, fuente }: { adjunto: AdjuntoMensaje; fuente: string }) {
+  const contenedor = useRef<HTMLDivElement>(null)
+  const [estado, setEstado] = useState<'cargando' | 'ok' | 'error'>('cargando')
+
+  useEffect(() => {
+    let cancelado = false
+    let tarea: ReturnType<typeof import('pdfjs-dist').getDocument> | null = null
+    ;(async () => {
+      try {
+        const pdfjs = await import('pdfjs-dist')
+        pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+        const resp = await fetch(fuente)
+        if (!resp.ok) throw new Error('descarga')
+        const data = await resp.arrayBuffer()
+        if (cancelado) return
+        tarea = pdfjs.getDocument({ data })
+        const doc: PDFDocumentProxy = await tarea.promise
+        const caja = contenedor.current
+        if (!caja || cancelado) return
+        caja.innerHTML = ''
+        const ancho = (caja.clientWidth || 800) - 16
+        const densidad = Math.min(window.devicePixelRatio || 1, 2)
+        for (let n = 1; n <= doc.numPages; n++) {
+          if (cancelado) return
+          const pagina = await doc.getPage(n)
+          const base = pagina.getViewport({ scale: 1 })
+          const escala = (ancho / base.width) * densidad
+          const vista = pagina.getViewport({ scale: escala })
+          const canvas = document.createElement('canvas')
+          canvas.width = vista.width
+          canvas.height = vista.height
+          canvas.style.width = '100%'
+          canvas.style.height = 'auto'
+          canvas.style.display = 'block'
+          canvas.style.margin = '0 auto 8px'
+          canvas.style.background = '#fff'
+          caja.appendChild(canvas)
+          const ctx = canvas.getContext('2d')
+          if (!ctx) continue
+          await pagina.render({ canvas, canvasContext: ctx, viewport: vista }).promise
+        }
+        if (!cancelado) setEstado('ok')
+      } catch {
+        if (!cancelado) setEstado('error')
+      }
+    })()
+    return () => {
+      cancelado = true
+      if (tarea) tarea.destroy().catch(() => {})
+    }
+  }, [fuente])
+
+  return (
+    <div className="flex flex-1 min-h-0 flex-col">
+      {estado === 'cargando' && (
+        <p className="px-4 py-3 text-[12px] opacity-70">Abriendo…</p>
+      )}
+      {estado === 'error' && (
+        <p className="px-4 py-3 text-[12px] opacity-70">
+          No se pudo mostrar acá —{' '}
+          <a className="underline" href={`${urlAdjunto(adjunto.id)}?descargar=1`}>
+            descárgalo
+          </a>
+        </p>
+      )}
+      <div ref={contenedor} className="flex-1 min-h-0 overflow-auto bg-black/30 p-2" />
+    </div>
+  )
 }
 
 /**
