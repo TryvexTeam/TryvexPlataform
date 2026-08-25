@@ -57,12 +57,20 @@ export const LeadSchema = z.object({
   id: z.string().uuid(),
   nombre_negocio: z.string(),
   telefono: z.string().nullable(),
+  // Datos de contacto para confirmar/corregir en la llamada. `email` y
+  // `nombre_contacto` viven en fact_leads desde la migración 083.
+  email: z.string().nullable().optional(),
+  nombre_contacto: z.string().nullable().optional(),
   info_texto: z.string().nullable(),
   redes_sociales: z.record(z.string(), z.string()).nullable(),
   tiene_web: z.boolean().nullable(),
   url_web: z.string().nullable(),
+  instagram: z.string().nullable().optional(),
   nicho: z.string().nullable(),
   localidad: z.string().nullable(),
+  // Señales del scraper que alimentan el pitch personalizado.
+  google_rating: z.number().nullable().optional(),
+  google_resenas: z.number().nullable().optional(),
   score: z.number().min(1).max(10).nullable(),
   estado: EstadoLeadSchema,
   razon_perdida: z.enum(['precio', 'sin_respuesta', 'competencia', 'sin_interes', 'otro']).nullable(),
@@ -77,6 +85,8 @@ export const LeadSchema = z.object({
 const LeadBaseSchema = z.object({
   nombre_negocio: z.string().min(1, 'El nombre es requerido'),
   telefono: z.string().nullable().optional(),
+  email: z.string().email('Correo inválido').nullable().optional().or(z.literal('')),
+  nombre_contacto: z.string().nullable().optional(),
   info_texto: z.string().nullable().optional(),
   redes_sociales: z.record(z.string(), z.string()).nullable().optional(),
   tiene_web: z.boolean().nullable().optional(),

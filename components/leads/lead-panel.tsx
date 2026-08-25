@@ -26,6 +26,7 @@ import { LeadForm } from './lead-form'
 import { NotaInterna } from './nota-interna'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { LeadChatWa } from './lead-chat-wa'
+import { LeadPitchModal } from './lead-pitch-modal'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
@@ -90,6 +91,7 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   // el chat" de los borradores de Vex. Aterrizar en la ficha y tener que buscar
   // el botón de WhatsApp haría que el atajo no sirviera de nada.
   const [chatAbierto, setChatAbierto] = useState(searchParams.get('chat') === '1')
+  const [pitchAbierto, setPitchAbierto] = useState(false)
   const prevLeadId = useRef<string | null>(null)
 
   // Fade transition when lead changes
@@ -504,6 +506,14 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           </button>
         )}
 
+        <button
+          onClick={() => setPitchAbierto(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-green-500/15 bg-green-500/5 hover:bg-green-500/15 text-green-400 transition-colors"
+        >
+          <Sparkles size={12} />
+          <span>Pitch</span>
+        </button>
+
         </div>
 
         {/*
@@ -572,6 +582,10 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             </DialogContent>
           </Dialog>
         )}
+
+        {/* El pitch: datos de contacto para confirmar, estado, y el guion de
+            llamada personalizado del negocio. Se abre desde el botón "Pitch". */}
+        <LeadPitchModal lead={lead} open={pitchAbierto} onOpenChange={setPitchAbierto} />
 
         {/* Mismo formulario que usa la ficha completa y la creación: un lead
             editado desde aquí y desde allí tiene que validar igual. */}
