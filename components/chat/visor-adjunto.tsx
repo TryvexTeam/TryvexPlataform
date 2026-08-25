@@ -228,7 +228,9 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
   // que los dibuja fiel (convertirlos del lado nuestro los deforma).
   if (esWord(adjunto)) return <VistaOfficeConPdf adjunto={adjunto} Respaldo={VistaWordTexto} />
   if (esExcel(adjunto)) return <VistaOfficeConPdf adjunto={adjunto} Respaldo={VistaExcelTabla} />
-  if (esOfimatica(adjunto)) return <VistaOfimatica adjunto={adjunto} />
+  // PowerPoint (y .doc/.ppt viejos): si un servicio del VPS ya lo convirtió a
+  // PDF, se muestra nítido con PDF.js; mientras no, cae al visor de Microsoft.
+  if (esOfimatica(adjunto)) return <VistaOfficeConPdf adjunto={adjunto} Respaldo={VistaOfimatica} />
 
   // El PDF se dibuja con PDF.js (a canvas), no con un iframe: iOS Safari NO
   // muestra un PDF dentro de un iframe —enseña un botón "Abrir" y no la vista—,
