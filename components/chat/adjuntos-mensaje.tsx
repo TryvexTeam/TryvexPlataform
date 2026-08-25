@@ -96,11 +96,17 @@ function TarjetaArchivo({
           ? FileTextIcon
           : FileIcon
 
-  // La ofimática NO se puede dibujar en un navegador: se dice "descargar" y el
-  // clic descarga. Un botón que abre algo que no se ve es peor que no tenerlo.
+  // La ofimática ahora también se abre en el visor (Word/Excel/PowerPoint se
+  // dibujan con el visor de Microsoft Office; ver visor-adjunto.tsx). Lo que no
+  // se puede ver de ninguna forma cae a "descargar": un botón que abre algo que
+  // no se muestra es peor que no tenerlo.
   const sePuedeVer =
-    esVideo(adjunto) || esHtml(adjunto) || esPdf(adjunto) || esTexto(adjunto)
-  const soloDescarga = esOfimatica(adjunto) || !sePuedeVer
+    esVideo(adjunto) ||
+    esHtml(adjunto) ||
+    esPdf(adjunto) ||
+    esTexto(adjunto) ||
+    esOfimatica(adjunto)
+  const soloDescarga = !sePuedeVer
 
   const copiarEnlace = () => {
     const base = typeof window === 'undefined' ? '' : window.location.origin
