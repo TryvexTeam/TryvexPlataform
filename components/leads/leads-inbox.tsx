@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search } from 'lucide-react'
+import { Search, SlidersHorizontal, X } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 import type { AsignacionConIntegrante } from '@/lib/types/asignacion'
 import { AvatarStack } from '@/components/shared/avatar-stack'
@@ -93,9 +93,44 @@ interface LeadsInboxProps {
   asignaciones?: Record<string, AsignacionConIntegrante[]>
 }
 
+/**
+ * Los filtros de la lista, aparte del texto y del estado.
+ *
+ * Se eligieron por lo que de verdad ayuda a decidir a quién llamar primero:
+ *  · nicho — agrupar por rubro para hacer tandas del mismo tipo de negocio.
+ *  · rating alto / muchas reseñas — negocios establecidos que cuidan su imagen.
+ *  · con teléfono — sin número no hay llamada en frío.
+ *  · con Instagram — activos en redes, mejor gancho ("ya tienes IG, te falta web").
+ *  · sin asignar — los que nadie del equipo tomó, para no pisarse.
+ * "Sin web" NO es filtro: hoy TODOS los leads del scraper vienen sin web, así
+ * que separaría nada. Si algún día entran con web, se agrega.
+ */
+interface Filtros {
+  nichos: Set<string>
+  ratingAlto: boolean
+  muchasResenas: boolean
+  conTelefono: boolean
+  conInstagram: boolean
+  sinAsignar: boolean
+}
+
+const FILTROS_VACIOS: Filtros = {
+  nichos: new Set(),
+  ratingAlto: false,
+  muchasResenas: false,
+  conTelefono: false,
+  conInstagram: false,
+  sinAsignar: false,
+}
+
+const RATING_MIN = 4.5
+const RESENAS_MIN = 100
+
 export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_VACIOS)
+  const [panelAbierto, setPanelAbierto] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   // Quien escribio por WhatsApp y sigue sin respuesta.
   const { noLeidos } = useWaNoLeidos()
@@ -111,21 +146,53 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // El filtro por estado vive en la columna de categorías (un solo sistema de filtros)
+  // Los rubros que la cartera ya tiene, ordenados por cuántos leads hay de cada
+  // uno (los más numerosos primero: son los que más conviene filtrar). Sirve
+  // para el panel de filtros y para el buscador de más leads.
+  const nichosConteo = useMemo(() => {
+    const c = new Map<string, number>()
+    for (const l of leads) if (l.nicho) c.set(l.nicho, (c.get(l.nicho) ?? 0) + 1)
+    return [...c.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))
+  }, [leads])
+  const nichosDisponibles = useMemo(
+    () => [...nichosConteo].map(([n]) => n).sort((a, b) => a.localeCompare(b, 'es')),
+    [nichosConteo],
+  )
+
+  const filtrosActivos =
+    filtros.nichos.size +
+    (filtros.ratingAlto ? 1 : 0) +
+    (filtros.muchasResenas ? 1 : 0) +
+    (filtros.conTelefono ? 1 : 0) +
+    (filtros.conInstagram ? 1 : 0) +
+    (filtros.sinAsignar ? 1 : 0)
+
+  const q = search.trim().toLowerCase()
   const filtered = leads.filter((l) => {
-    return (
-      !search ||
-      l.nombre_negocio.toLowerCase().includes(search.toLowerCase()) ||
-      (l.nicho ?? '').toLowerCase().includes(search.toLowerCase())
-    )
+    if (q && !(
+      l.nombre_negocio.toLowerCase().includes(q) ||
+      (l.nicho ?? '').toLowerCase().includes(q) ||
+      (l.localidad ?? '').toLowerCase().includes(q)
+    )) return false
+    if (filtros.nichos.size > 0 && !(l.nicho && filtros.nichos.has(l.nicho))) return false
+    if (filtros.ratingAlto && (l.google_rating ?? 0) < RATING_MIN) return false
+    if (filtros.muchasResenas && (l.google_resenas ?? 0) < RESENAS_MIN) return false
+    if (filtros.conTelefono && !l.telefono) return false
+    if (filtros.conInstagram && !l.instagram) return false
+    if (filtros.sinAsignar && (asignaciones[l.id]?.length ?? 0) > 0) return false
+    return true
   })
 
-  // Los rubros que la cartera ya tiene: se le ofrecen al que va a buscar mas,
-  // para que no los escriba de memoria y termine con "barberias" y "barberia"
-  // como si fueran dos rubros distintos.
-  const nichosDisponibles = Array.from(
-    new Set(leads.map(l => l.nicho).filter((n): n is string => Boolean(n))),
-  ).sort((a, b) => a.localeCompare(b, 'es'))
+  const toggleNicho = (n: string) =>
+    setFiltros((f) => {
+      const nichos = new Set(f.nichos)
+      if (nichos.has(n)) nichos.delete(n)
+      else nichos.add(n)
+      return { ...f, nichos }
+    })
+  const toggleFlag = (k: keyof Omit<Filtros, 'nichos'>) =>
+    setFiltros((f) => ({ ...f, [k]: !f[k] }))
+  const limpiarFiltros = () => setFiltros(FILTROS_VACIOS)
 
   const featuredId = (() => {
     if (filtered.length === 0) return null
@@ -147,22 +214,95 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
   return (
     <section className="glass feed w-[360px] shrink-0 flex flex-col h-full">
       {/* Search Header */}
-      <div className="feed__top">
-        <label className="search">
+      <div className="feed__top" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <label className="search" style={{ flex: 1 }}>
           <Search size={14} className="shrink-0" />
           <input
             ref={searchInputRef}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar leads, nichos..."
+            placeholder="Buscar leads, nichos, comunas..."
           />
           <kbd>Ctrl+K</kbd>
         </label>
+        <button
+          onClick={() => setPanelAbierto((v) => !v)}
+          title="Filtros"
+          aria-label="Filtros"
+          aria-pressed={panelAbierto}
+          className="relative shrink-0 grid place-items-center h-9 w-9 rounded-xl border transition-colors"
+          style={{
+            borderColor: filtrosActivos > 0 ? 'var(--tx-accent)' : 'rgba(255,255,255,.08)',
+            background: filtrosActivos > 0 ? 'color-mix(in oklab, var(--tx-accent) 14%, transparent)' : 'rgba(255,255,255,.02)',
+            color: filtrosActivos > 0 ? 'var(--tx-accent)' : 'var(--tx-ink-secondary)',
+          }}
+        >
+          <SlidersHorizontal size={15} />
+          {filtrosActivos > 0 && (
+            <span
+              className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 grid place-items-center rounded-full text-[10px] font-bold"
+              style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
+            >
+              {filtrosActivos}
+            </span>
+          )}
+        </button>
       </div>
+
+      {/* Panel de filtros */}
+      {panelAbierto && (
+        <div className="px-3 pb-3 pt-1 border-b border-white/[0.06] space-y-3">
+          {/* Filtros de calidad / estado del dato */}
+          <div className="flex flex-wrap gap-1.5">
+            <ChipFiltro activo={filtros.ratingAlto} onClick={() => toggleFlag('ratingAlto')}>
+              ★ {RATING_MIN}+
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.muchasResenas} onClick={() => toggleFlag('muchasResenas')}>
+              {RESENAS_MIN}+ reseñas
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.conTelefono} onClick={() => toggleFlag('conTelefono')}>
+              Con teléfono
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.conInstagram} onClick={() => toggleFlag('conInstagram')}>
+              Con Instagram
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.sinAsignar} onClick={() => toggleFlag('sinAsignar')}>
+              Sin asignar
+            </ChipFiltro>
+          </div>
+
+          {/* Nichos */}
+          {nichosConteo.length > 0 && (
+            <div>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--tx-ink-muted)] mb-1.5">
+                Rubro
+              </p>
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                {nichosConteo.map(([n, cnt]) => (
+                  <ChipFiltro key={n} activo={filtros.nichos.has(n)} onClick={() => toggleNicho(n)}>
+                    {n} <span className="opacity-50">{cnt}</span>
+                  </ChipFiltro>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {filtrosActivos > 0 && (
+            <button
+              onClick={limpiarFiltros}
+              className="inline-flex items-center gap-1 text-[12px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+            >
+              <X size={12} /> Limpiar filtros ({filtrosActivos})
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Contador + traer leads nuevos */}
       <div className="feed__chips" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span className="feed__count">{filtered.length} leads</span>
+        <span className="feed__count">
+          {filtered.length} {filtrosActivos > 0 || q ? `de ${leads.length}` : 'leads'}
+        </span>
         <span style={{ marginLeft: 'auto' }}>
           <ScraperPanel nichos={nichosDisponibles} />
         </span>
@@ -181,12 +321,12 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
             >
               + Nuevo lead
             </button>
-            {search !== '' && (
+            {(search !== '' || filtrosActivos > 0) && (
               <button
-                onClick={() => setSearch('')}
+                onClick={() => { setSearch(''); limpiarFiltros() }}
                 className="mt-1 text-[12px] px-3 py-1.5 rounded-lg border border-white/10 text-white/70"
               >
-                Limpiar búsqueda
+                Limpiar búsqueda y filtros
               </button>
             )}
           </div>
@@ -252,5 +392,32 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
         })}
       </div>
     </section>
+  )
+}
+
+/** Un chip on/off del panel de filtros. Verde de acento cuando está activo. */
+function ChipFiltro({
+  activo,
+  onClick,
+  children,
+}: {
+  activo: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activo}
+      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-colors"
+      style={{
+        borderColor: activo ? 'transparent' : 'rgba(255,255,255,.08)',
+        background: activo ? 'var(--tx-accent)' : 'rgba(255,255,255,.02)',
+        color: activo ? 'var(--tx-accent-fg)' : 'var(--tx-ink-secondary)',
+      }}
+    >
+      {children}
+    </button>
   )
 }
