@@ -51,24 +51,45 @@ export function LeadPitchModal({
     }
     setGuardando(true)
     try {
-      const payload: Record<string, unknown> = {}
-      if (contactoCambiado) {
-        payload.telefono = telefono.trim() || null
-        payload.email = email.trim() || null
-        payload.nombre_contacto = nombreContacto.trim() || null
-      }
+      // El estado y el contacto van en llamadas SEPARADAS a propósito. El
+      // estado siempre se puede guardar; los campos de contacto dependen de que
+      // exista la columna (email/nombre_contacto, migración 083). Si van juntos
+      // y la columna falta, la base rechaza TODO —incluido el estado— y el modal
+      // queda inservible. Separados, cada parte falla o guarda por su cuenta.
+      const patch = (body: Record<string, unknown>) =>
+        fetch(`/api/leads/${lead.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+
+      let okEstado = true
+      let okContacto = true
+
       if (estadoCambiado) {
-        payload.estado = estado
-        if (estado === 'perdido') payload.razon_perdida = razon
+        const body: Record<string, unknown> = { estado }
+        if (estado === 'perdido') body.razon_perdida = razon
+        okEstado = (await patch(body)).ok
       }
-      const res = await fetch(`/api/leads/${lead.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) throw new Error()
-      toast.success('Guardado')
-      router.refresh()
+      if (contactoCambiado) {
+        okContacto = (await patch({
+          telefono: telefono.trim() || null,
+          email: email.trim() || null,
+          nombre_contacto: nombreContacto.trim() || null,
+        })).ok
+      }
+
+      if (okEstado && okContacto) {
+        toast.success('Guardado')
+        router.refresh()
+      } else if (okEstado && !okContacto) {
+        // Caso típico hasta aplicar la migración 083: el estado quedó guardado,
+        // el contacto no. Se dice claro en vez de un "no se pudo" que miente.
+        toast.error('Estado guardado. El contacto no se pudo guardar todavía.')
+        router.refresh()
+      } else {
+        toast.error('No se pudo guardar')
+      }
     } catch {
       toast.error('No se pudo guardar')
     } finally {
