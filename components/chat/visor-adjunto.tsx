@@ -85,13 +85,19 @@ export function VisorAdjunto({
   // tiene transform/filter/contain — y el hilo del chat los tiene. Sin esto el
   // visor quedaba encajado en una tira dentro del mensaje en vez de abrirse
   // grande, que es justo lo que hacía inservible al HTML incrustado.
+  //
+  // `overlay-pantalla-movil` (no `inset-0`) es lo que lo hace usable en iPhone:
+  // en iOS `inset-0`/`100vh` mide el viewport GRANDE y el visor se cortaba por
+  // abajo tras la barra de Safari, y la cabecera con la X quedaba tapada bajo la
+  // Dynamic Island. La clase da `100svh` + `env(safe-area-*)`. Es el mismo
+  // arreglo que ya se hizo en el chat de WhatsApp del lead (commit 64b981a).
   return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={adjunto.nombre}
       onClick={onCerrar}
-      className="fixed inset-0 z-[100] flex flex-col bg-black/80 backdrop-blur-sm p-2 sm:p-6"
+      className="overlay-pantalla-movil fixed inset-x-0 top-0 z-[100] flex flex-col bg-black/80 backdrop-blur-sm"
     >
       {/* El clic en el fondo cierra; adentro no, o se cerraría al usarlo. */}
       <div

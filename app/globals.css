@@ -1236,6 +1236,33 @@
   }
 }
 
+/* El fondo oscuro de un visor a pantalla completa (el de adjuntos del chat).
+
+   Es el mismo golpe que .modal-pantalla-movil, en otra pantalla:
+   - `svh` y no `dvh` ni `inset-0`/`100vh`: mientras la barra de Safari está a
+     la vista —que es como se abre— el viewport GRANDE mide más que la pantalla
+     y el visor se corta por abajo. `svh` mide el chico y nunca se corta.
+   - El padding devuelve la zona segura (env(safe-area-*)): el layout declara
+     viewportFit:'cover', o sea dibuja POR DEBAJO de la Dynamic Island y de la
+     barra de gestos. Sin esto la cabecera del visor —con la X, los modos y
+     descargar— queda tapada bajo el notch: se ve, pero no se puede tocar.
+   A diferencia del modal, el fondo cubre TODO también en desktop (no se recorta
+   a 85vh): solo cambia el padding, más holgado cuando no hay notch. */
+.overlay-pantalla-movil {
+  height: 100vh;
+  height: 100svh;
+  padding: calc(0.5rem + env(safe-area-inset-top, 0px))
+    calc(0.5rem + env(safe-area-inset-right, 0px))
+    calc(0.5rem + env(safe-area-inset-bottom, 0px))
+    calc(0.5rem + env(safe-area-inset-left, 0px));
+}
+
+@media (min-width: 640px) {
+  .overlay-pantalla-movil {
+    padding: 1.5rem;
+  }
+}
+
 /* Alto de la barra inferior más su zona segura: lo que el contenido debe dejar
    libre para que el último mensaje no quede tapado por la navegación. */
 /* 5.5rem = 88px: los 56px reales de la barra (ranuras min-h-14, más su pb-safe)
