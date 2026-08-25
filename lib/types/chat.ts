@@ -122,6 +122,31 @@ export function esOfimatica(adjunto: AdjuntoMensaje): boolean {
 }
 
 /**
+ * Word (.docx). Se dibuja en el navegador como texto que fluye —crisp y con
+ * scroll vertical, como una página— en vez de mandarlo a un visor externo que
+ * lo muestra como una foto que hay que arrastrar. Ver `visor-adjunto.tsx`.
+ * El .doc viejo (binario) no lo lee el navegador: ese sí va al visor de Office.
+ */
+export function esWord(adjunto: AdjuntoMensaje): boolean {
+  if (
+    adjunto.tipo_mime ===
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  )
+    return true
+  return /\.docx$/i.test(adjunto.nombre)
+}
+
+/** Excel (.xlsx). Se dibuja como tabla en el navegador, nítida y con scroll. */
+export function esExcel(adjunto: AdjuntoMensaje): boolean {
+  if (
+    adjunto.tipo_mime ===
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  )
+    return true
+  return /\.xlsx$/i.test(adjunto.nombre)
+}
+
+/**
  * Páginas HTML: se dibujan, no se leen.
  *
  * Va ANTES que `esTexto` a propósito — un `.html` cumple las dos, y quien manda
