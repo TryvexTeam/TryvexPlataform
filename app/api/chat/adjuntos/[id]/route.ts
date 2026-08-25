@@ -78,6 +78,46 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.json({ success: true, url: data.signedUrl })
   }
 
+  // ?pdf=check / ?pdf=1 — el PDF con FORMATO de un Word o Excel.
+  //
+  // Word/Excel se ven fiel (membrete, portada, diseño) solo como PDF. Un
+  // servicio en nuestro VPS los convierte con LibreOffice y deja el resultado en
+  // `_pdf/<id>.pdf` dentro del mismo bucket (ver `ops/office-pdf/`). Acá:
+  //  · `?pdf=check` responde si ese PDF ya está listo (el navegador decide si
+  //    muestra el PDF o cae al render de texto mientras el VPS lo prepara).
+  //  · `?pdf=1` lo sirve, con la misma lógica que un PDF normal: inline si cabe
+  //    en la respuesta de Vercel, si no por redirección.
+  // Todo pasa por nuestro origen: el archivo no sale hacia ningún tercero.
+  if (params.has('pdf')) {
+    const rutaPdf = `_pdf/${id}.pdf`
+    const { data: firmadaPdf, error: errFirma } = await almacen.createSignedUrl(rutaPdf, 60)
+    const listo = !errFirma && !!firmadaPdf
+
+    if (params.get('pdf') === 'check') {
+      return NextResponse.json({ success: true, listo })
+    }
+    if (!listo || !firmadaPdf) {
+      return NextResponse.json({ success: false, pendiente: true }, { status: 404 })
+    }
+
+    const TOPE_INLINE = 3 * 1024 * 1024
+    const { data: contenido, error: errBaja } = await almacen.download(rutaPdf)
+    if (!errBaja && contenido) {
+      const buf = await contenido.arrayBuffer()
+      if (buf.byteLength < TOPE_INLINE) {
+        return new NextResponse(buf, {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'inline',
+            'X-Content-Type-Options': 'nosniff',
+            'Cache-Control': 'private, max-age=300',
+          },
+        })
+      }
+    }
+    return NextResponse.redirect(firmadaPdf.signedUrl)
+  }
+
   // Los archivos livianos se sirven DESDE ACÁ, no por redirección.
   //
   // Dos motivos, los dos comprobados contra los archivos reales del chat:
