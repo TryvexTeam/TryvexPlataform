@@ -32,10 +32,16 @@ export type ArchivoCandidato = {
 const EXTENSIONES_BLOQUEADAS = [
   'exe', 'bat', 'cmd', 'com', 'msi', 'msix', 'msp', 'scr', 'ps1', 'psm1',
   'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh', 'sh', 'bash', 'app', 'jar',
-  'dll', 'gadget', 'reg', 'lnk', 'apk',
+  'dll', 'gadget', 'reg', 'lnk', 'apk', 'hta', 'cpl', 'pif', 'scf', 'url',
+  'ws', 'wsc',
 ]
 
-function extension(nombre: string): string {
+/** Windows recorta espacios y puntos finales del nombre al guardar el
+ *  archivo en disco (comportamiento Win32 documentado), así que
+ *  "malware.exe " o "malware.exe." terminan siendo "malware.exe"
+ *  ejecutable aunque la extensión cruda no matchee el denylist. */
+function extension(nombreCrudo: string): string {
+  const nombre = nombreCrudo.trim().replace(/[. ]+$/, '')
   const punto = nombre.lastIndexOf('.')
   return punto === -1 ? '' : nombre.slice(punto + 1).toLowerCase()
 }

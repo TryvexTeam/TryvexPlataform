@@ -155,6 +155,7 @@ export class ChatRepository {
       .select('*, mensaje_adjuntos(id, nombre, tipo_mime, bytes, ancho, alto)')
       .eq('hilo_padre', padreId)
       .order('created_at', { ascending: true })
+      .limit(500)
     if (error) throw new Error(error.message)
 
     const mensajes = ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[]).map(

@@ -332,6 +332,7 @@ export class LeadsRepository {
       .select('*, dim_integrantes ( nombre, avatar_url )')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: false })
+      .limit(200)
 
     if (error) throw new Error(error.message)
     return ((data ?? []) as (Interaccion & { dim_integrantes: { nombre: string; avatar_url: string | null } | null })[]).map((i) => ({

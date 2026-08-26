@@ -33,8 +33,12 @@ export class PushRepository {
     if (error) throw new Error(error.message)
   }
 
-  async eliminar(endpoint: string): Promise<void> {
-    const { error } = await this.sb.from('push_subscriptions').delete().eq('endpoint', endpoint)
+  async eliminar(endpoint: string, integranteId: string): Promise<void> {
+    const { error } = await this.sb
+      .from('push_subscriptions')
+      .delete()
+      .eq('endpoint', endpoint)
+      .eq('integrante_id', integranteId)
     if (error) throw new Error(error.message)
   }
 }
