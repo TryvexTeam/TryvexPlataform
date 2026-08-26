@@ -23,8 +23,10 @@ Como se instala
     sudo systemctl daemon-reload
     sudo systemctl enable --now tryvex-scraper-worker
 
-Necesita en /opt/scraper/.env las mismas llaves que el scraper
-(NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY).
+Necesita en /opt/scraper/.env la URL de Supabase y la clave de servicio. Se
+aceptan los dos juegos de nombres que conviven en el proyecto: los de Next
+(NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) y los cortos que ya usa
+scraper.py en el servidor (SUPABASE_URL / SUPABASE_SERVICE_KEY).
 """
 import logging
 import os
@@ -68,15 +70,51 @@ def ahora():
     return datetime.now(timezone.utc).isoformat()
 
 
+# El mismo dato se llama distinto en cada lado: la app de Vercel usa los
+# nombres de Next, y el .env del servidor (el que ya usa scraper.py desde
+# julio) usa los cortos. Se aceptan los dos y gana el que exista.
+#
+# No es capricho: escrito con UN solo nombre, este worker arranca y se cae al
+# instante con un KeyError en un servidor donde todo lo demas funciona --
+# y el mensaje no dice "te falta una variable", dice el nombre que ÉL espera,
+# que es justamente el que ahi no se usa.
+NOMBRES_URL = ("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL")
+NOMBRES_KEY = ("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY")
+
+
+def _primera(nombres):
+    """El primer valor no vacio de la lista de nombres, o None."""
+    for n in nombres:
+        v = os.environ.get(n)
+        if v:
+            return v
+    return None
+
+
 def conectar():
+    # Se revisa la configuracion ANTES de importar el cliente: si falta una
+    # variable, el mensaje tiene que hablar de la variable que falta y no de
+    # una libreria. Un error que apunta al lugar equivocado cuesta mas que no
+    # tener error.
+    url = _primera(NOMBRES_URL)
+    key = _primera(NOMBRES_KEY)
+    if not url or not key:
+        faltan = []
+        if not url:
+            faltan.append(" o ".join(NOMBRES_URL))
+        if not key:
+            faltan.append(" o ".join(NOMBRES_KEY))
+        # Que el error diga QUE falta y DONDE ponerlo, no solo un nombre suelto.
+        raise SystemExit(
+            "Falta en /opt/scraper/.env: " + "; ".join(faltan)
+        )
+
     # El import va acá adentro y no arriba a proposito: asi armar_comando() y
     # las expresiones que leen el log se pueden probar sin tener instalado el
     # cliente de Supabase. Lo que puede fallar en silencio conviene que sea lo
     # mas barato de probar.
     from supabase import create_client
 
-    url = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
-    key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     return create_client(url, key)
 
 
