@@ -118,7 +118,7 @@ export function generarGuionAuto(lead: Lead): Guion {
     turnos: [
       {
         rol: 'Tú — apertura',
-        texto: `“Hola, ${saludo} de ${nom}… Mira, te llamo de Tryvex, y déjame partir por lo más honesto: **¿sería mala idea que te robe treinta segundos para mostrarte algo que vi en tu negocio?**”`,
+        texto: `“Hola, ${saludo} de ${nom}… Mira, te llamo de Tryvex. Somos una agencia consultora que se encarga de posicionar negocios en internet para que puedan tener mayor visibilidad y aumenten sus ingresos económicos, implementando la inteligencia artificial a medida. Y déjame partir por lo más honesto: **¿sería mala idea que te robe treinta segundos para mostrarte algo que vi en tu negocio?**”`,
         guia: 'Es una pregunta hecha para que responda “no, dale” — así siente que él manda, pero te dio el paso. Si dice “no es mala idea”, “¿de qué se trata?” o “ya, dime”, sigue.',
       },
       { rol: 'Tú — la señal', texto: señal },
