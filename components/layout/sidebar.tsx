@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
+import { useHasMounted } from '@/lib/hooks/use-has-mounted'
 import {
   LayoutDashboard,
   Users,
@@ -160,7 +161,12 @@ export function Sidebar({
     localStorage.setItem('tryvex-sidebar-collapsed', String(nextVal))
   }
 
-  const collapsed = forceExpand ? false : isCollapsed
+  // `isCollapsed` viene de localStorage vía lazy initializer: el servidor
+  // siempre renderiza `false` (no tiene acceso a localStorage), así que hay
+  // que seguir mostrando expandido hasta que el cliente termine de hidratar,
+  // o React marca mismatch en este subárbol.
+  const mounted = useHasMounted()
+  const collapsed = forceExpand ? false : mounted && isCollapsed
 
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(href + '/')
@@ -193,7 +199,7 @@ export function Sidebar({
             whileTap={{ scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <Link href="/dashboard" className="outline-none">
+            <Link href="/dashboard" className="outline-none" aria-label="Ir al dashboard">
               <TryvexLogo variant="icon" theme="dark" iconSize={20} />
             </Link>
           </motion.div>
@@ -203,7 +209,7 @@ export function Sidebar({
             whileTap={{ scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <Link href="/dashboard" className="outline-none">
+            <Link href="/dashboard" className="outline-none" aria-label="Ir al dashboard">
               <TryvexLogo variant="full" theme="dark" iconSize={20} />
             </Link>
           </motion.div>

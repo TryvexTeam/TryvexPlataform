@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
-import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor'
+// Import de solo-tipo: el paquete real referencia `AudioWorkletNode` (API de
+// browser) en su nivel superior, así que un import normal rompe el SSR con
+// "AudioWorkletNode is not defined" apenas Next evalúa el módulo en el
+// servidor. El valor se importa dinámicamente donde se usa, nunca en el top-level.
+import type { RnnoiseWorkletNode } from '@sapphi-red/web-noise-suppressor'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import {
@@ -1077,6 +1081,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     try {
       // RNNoise asume 48kHz -- de ahí el sampleRate explícito, no vale confiar
       // en el que traiga el dispositivo por defecto.
+      const { RnnoiseWorkletNode, loadRnnoise } = await import('@sapphi-red/web-noise-suppressor')
       const ctx = new AudioContext({ sampleRate: 48000 })
       await ctx.audioWorklet.addModule('/audio/rnnoise-worklet.js')
       const wasmBinary = await loadRnnoise({

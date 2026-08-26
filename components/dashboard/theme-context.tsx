@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { useHasMounted } from '@/lib/hooks/use-has-mounted'
 
 /* ── Theme Token Types ── */
 export type GlowMode = 'off' | 'ambient' | 'cinematic'
@@ -180,8 +181,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const [panelOpen, setPanelOpen] = useState(false)
 
+  // `theme` viene de localStorage vía lazy initializer: el servidor siempre
+  // renderiza DEFAULT_THEME (sin acceso a localStorage). Cualquier consumidor
+  // que pinte `theme.*` directo en el JSX (fondo, glow, etc.) necesita seguir
+  // viendo el default hasta que el cliente termine de hidratar, o React marca
+  // mismatch. Se gatea acá, una sola vez, para que ningún consumidor nuevo
+  // tenga que acordarse de hacerlo por su cuenta.
+  const mounted = useHasMounted()
+  const themeExpuesto = mounted ? theme : DEFAULT_THEME
+
   return (
-    <ThemeContext.Provider value={{ theme, set, updateTheme, reset, panelOpen, setPanelOpen }}>
+    <ThemeContext.Provider value={{ theme: themeExpuesto, set, updateTheme, reset, panelOpen, setPanelOpen }}>
       {children}
     </ThemeContext.Provider>
   )

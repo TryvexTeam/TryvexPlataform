@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { useHasMounted } from '@/lib/hooks/use-has-mounted'
 import { LogOut, Settings } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { motion } from 'framer-motion'
@@ -78,6 +79,12 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
     const saved = localStorage.getItem('tryvex-user-status') as 'online' | 'offline' | null
     return saved ?? 'online'
   })
+  // El servidor siempre renderiza 'online' (sin acceso a localStorage); si el
+  // valor guardado es 'offline', el primer render del cliente ya difiere y
+  // React marca mismatch de hidratación en el punto de presencia. Se sigue
+  // mostrando 'online' hasta que termine de hidratar.
+  const mounted = useHasMounted()
+  const statusMostrado = mounted ? status : 'online'
 
   function toggleStatus() {
     const newStatus = status === 'online' ? 'offline' : 'online'
@@ -161,9 +168,9 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
                   width: 7,
                   height: 7,
                   borderRadius: '50%',
-                  backgroundColor: status === 'online' ? '#22C55E' : '#9CA3AF',
+                  backgroundColor: statusMostrado === 'online' ? '#22C55E' : '#9CA3AF',
                   border: '1.5px solid oklch(6% 0.003 240)',
-                  boxShadow: status === 'online' ? '0 0 6px rgba(34,197,94,0.8)' : 'none',
+                  boxShadow: statusMostrado === 'online' ? '0 0 6px rgba(34,197,94,0.8)' : 'none',
                 }}
               />
             </div>
