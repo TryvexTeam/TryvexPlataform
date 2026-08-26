@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -80,10 +80,14 @@ export function TareasKanban({
   // `tareas`, que no estaba publicada: el canal decía SUBSCRIBED y no llegaba nada.
   useDatosVivos(['tareas', 'tarea_responsables'])
 
-  // Sync cuando el server revalida
-  useEffect(() => {
+  // Ajuste de estado durante el render en vez de un effect: evita el setState
+  // sincrono dentro de un effect (mismo patron que leads-pipeline.tsx). Sync
+  // cuando el server revalida.
+  const [initialTareasPrevias, setInitialTareasPrevias] = useState(initialTareas)
+  if (initialTareas !== initialTareasPrevias) {
+    setInitialTareasPrevias(initialTareas)
     setTareas(initialTareas)
-  }, [initialTareas])
+  }
 
   const tareasVisibles = tareas.filter((t) => !t.eliminado_at)
   const enPapelera = tareas.filter((t) => t.eliminado_at)
