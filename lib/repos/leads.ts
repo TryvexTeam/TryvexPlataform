@@ -122,7 +122,14 @@ export class LeadsRepository {
       .select('nombre_negocio, nombre_contacto, telefono, email, nicho, localidad, redes_sociales')
       .eq('id', leadId)
       .single()
-    if (errorLead || !lead) return null
+    if (errorLead || !lead) {
+      // Antes esto devolvía null en silencio: un lead pasaba a "ganado" y la
+      // ficha de cliente simplemente no se creaba, sin log ni error visible
+      // en ningún lado. Así estuvo roto meses (drift de columnas en
+      // fact_leads) sin que nadie se enterara. Ahora se loguea y se propaga.
+      console.error('[leads] convertirEnCliente: no se pudo leer el lead para armar el cliente', leadId, errorLead)
+      throw new Error(errorLead?.message ?? `Lead ${leadId} no encontrado al convertir a cliente`)
+    }
 
     const fuente = lead as {
       nombre_negocio: string | null
