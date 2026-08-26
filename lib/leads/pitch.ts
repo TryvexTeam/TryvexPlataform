@@ -193,8 +193,22 @@ export function generarGuionAuto(lead: Lead): Guion {
         guia: 'Deja que hable. Lo que responda es la punta del diagnóstico — anótalo.',
       },
       {
+        // Pregunta de Implicacion (SPIN Selling, Neil Rackham): en vez de
+        // decirle tu el tamano del problema, dejas que el mismo le ponga un
+        // numero. Aunque conteste "no se, hartos", ya sintio el peso — eso
+        // vende mas que cualquier frase armada.
+        rol: 'Tú — implicación',
+        texto: '“Y cuando eso pasa —que alguien te busca y no te encuentra, o se cansa de esperar— ¿tienes idea de cuántos se te van así, más o menos, al mes?”',
+        guia: 'No le des tú el número: déjalo que lo diga él. La respuesta no importa tanto como el hecho de que la piense.',
+      },
+      {
+        // Dato real, no inventado: Camara de Comercio de Santiago (CCS),
+        // estudio 2024, citado por Emol 13-sep-2024 — "solo el 23,1% de las
+        // pymes en Chile cuentan con presencia en linea a traves de una
+        // pagina web" (o sea, ~77% no tiene). Si cambia el estudio,
+        // actualizar el numero aca.
         rol: 'Tú — el porqué (sin vender)',
-        texto: `“Mira, no te llamo para venderte nada ahora. Lo que hacemos es ${BENEFICIO[f]}. Hoy, quien te busca en Google encuentra primero a la competencia que sí tiene web. La idea es solo mostrarte en corto qué estás dejando pasar.”`,
+        texto: `“Mira, no te llamo para venderte nada ahora. Lo que hacemos es ${BENEFICIO[f]}. Y esto no te pasa solo a ti: casi 8 de cada 10 pymes en Chile tampoco tienen página web propia. Por eso el que sí la tiene se está llevando a los clientes que te buscan a ti por Google. Te quiero mostrar rapidito qué te estás perdiendo.”`,
       },
       {
         rol: 'Tú — cierre',
