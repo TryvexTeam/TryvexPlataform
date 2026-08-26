@@ -204,13 +204,76 @@ waClient.on('qr', (qr) => {
 waClient.on('ready', () => {
   sesionLista = true
   ultimoQr = null
+  reintentosReconexion = 0
   console.log('[wa-bridge] Sesion de WhatsApp lista.')
 })
+
+// Reconexion automatica. Sin esto, una desconexion (WhatsApp cierra la sesion
+// del lado del telefono, se cae el socket, etc.) dejaba el proceso vivo pero
+// mudo: /health seguia respondiendo 200 con sesionLista:false para siempre,
+// hasta que un humano notaba y reiniciaba el proceso a mano. `initialize()`
+// solo se llamaba una vez, al arrancar (mas abajo).
+//
+// 'LOGOUT' es un caso aparte: significa que la sesion ya no existe del lado
+// de WhatsApp (alguien la cerro desde el telefono, o WhatsApp la invalido).
+// Llamar initialize() ahi de nuevo solo generaria un QR nuevo que nadie esta
+// mirando -- no hay forma de que el reintento automatico "arregle" un logout,
+// asi que no se reintenta: se loguea fuerte para que quede claro que hace
+// falta reescanear el QR a mano (via /qr), y se deja que el heartbeat.js
+// existente avise al equipo por el webhook de que sesionLista quedo en false.
+const RECONEXION_INTERVALO_MS = Number(env.WA_BRIDGE_RECONEXION_INTERVALO_MS || 30000)
+const RECONEXION_MAX_INTENTOS = Number(env.WA_BRIDGE_RECONEXION_MAX_INTENTOS || 5)
+let reintentosReconexion = 0
+let reconectando = false
 
 waClient.on('disconnected', (reason) => {
   sesionLista = false
   console.error('[wa-bridge] Sesion desconectada:', reason)
+
+  if (reason === 'LOGOUT') {
+    console.error(
+      '[wa-bridge] LOGOUT: la sesion ya no existe del lado de WhatsApp. ' +
+      'No se reintenta automaticamente -- reescanea el QR a mano en /qr. ' +
+      'El heartbeat existente (heartbeat.js) va a alertar por webhook mientras sesionLista siga en false.'
+    )
+    return
+  }
+
+  programarReconexion(reason)
 })
+
+function programarReconexion(reason) {
+  if (reconectando) return
+  reconectando = true
+  reintentosReconexion += 1
+
+  if (reintentosReconexion > RECONEXION_MAX_INTENTOS) {
+    console.error(
+      `[wa-bridge] Se agotaron los ${RECONEXION_MAX_INTENTOS} reintentos de reconexion tras "${reason}". ` +
+      'Me rindo -- queda esperando la alerta del heartbeat existente (heartbeat.js) y una intervencion manual.'
+    )
+    reconectando = false
+    return
+  }
+
+  console.warn(
+    `[wa-bridge] Reintentando conexion en ${RECONEXION_INTERVALO_MS / 1000}s ` +
+    `(intento ${reintentosReconexion}/${RECONEXION_MAX_INTENTOS}, motivo: ${reason})`
+  )
+
+  setTimeout(async () => {
+    try {
+      await waClient.destroy()
+      await waClient.initialize()
+      // Si initialize() no tira error, el evento 'ready' (que resetea
+      // reintentosReconexion a 0 mas abajo) confirma la reconexion real.
+    } catch (err) {
+      console.error('[wa-bridge] fallo el intento de reconexion:', err)
+    } finally {
+      reconectando = false
+    }
+  }, RECONEXION_INTERVALO_MS)
+}
 
 // Mensajes entrantes: se resuelve el lead por telefono y se guarda direccion='in'.
 //
