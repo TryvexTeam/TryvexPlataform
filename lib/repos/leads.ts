@@ -68,20 +68,25 @@ export class LeadsRepository {
   }
 
   async update(id: string, data: LeadUpdate): Promise<void> {
+    // Antes de marcar "ganado" en fact_leads: si convertirEnCliente falla acá
+    // (drift de columnas, RLS, lo que sea), el lead nunca llega a quedar
+    // marcado ganado sin ficha de cliente detrás — el throw corta antes del
+    // update, no después.
+    if (data.estado === 'ganado') await this.convertirEnCliente(id)
+
     const { error } = await this.sb
       .from('fact_leads')
       .update({ ...data, updated_at: new Date().toISOString() })
       .eq('id', id)
 
     if (error) throw new Error(error.message)
-
-    // También aquí, y no solo en `cambiarEstado`: el tablero mueve la tarjeta
-    // por una ruta y el botón "Ganado" de la ficha por otra. Cubrir una sola
-    // dejaba la mitad de los leads ganados sin ficha de cliente.
-    if (data.estado === 'ganado') await this.convertirEnCliente(id)
   }
 
   async cambiarEstado(id: string, estado: Lead['estado'], razonPerdida?: Lead['razon_perdida']): Promise<void> {
+    // Mismo orden que en `update`: convertir primero, marcar "ganado" después.
+    // Si convertirEnCliente tira, el estado en fact_leads nunca cambia.
+    if (estado === 'ganado') await this.convertirEnCliente(id)
+
     const { error } = await this.sb
       .from('fact_leads')
       .update({
@@ -94,8 +99,6 @@ export class LeadsRepository {
       .eq('id', id)
 
     if (error) throw new Error(error.message)
-
-    if (estado === 'ganado') await this.convertirEnCliente(id)
   }
 
   /**
