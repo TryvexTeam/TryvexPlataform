@@ -58,20 +58,32 @@ export function TareaScoopCard({
   const responsable = mostrarResponsable ? tarea.responsables[0] : undefined
   const plazo = etiquetaPlazo(diasVencida, tarea.fecha_limite)
 
-  const bordePlazo = acento
+  // El acento (fondo rojo con trama diagonal) es "la única cosa roja de la
+  // pantalla" -- pero una tarea vencida YA es roja por su cuenta (badge +
+  // borde). Combinar los dos es la tarjeta ilegible que reportó la crítica:
+  // rayas rojas, badge rojo y texto rojo todo junto. Vencida gana: se apaga
+  // el hatch y el rojo queda solo en el badge de la fecha.
+  const conAcento = acento && !vencida
+
+  const bordePlazo = conAcento
     ? 'rgba(255,255,255,.28)'
     : vencida
       ? 'rgba(232,53,42,.3)'
       : 'rgba(255,255,255,.10)'
-  const tintaPlazo = acento ? '#ffffff' : vencida ? 'var(--tx-accent-2)' : 'var(--tx-ink-secondary)'
+  const tintaPlazo = conAcento ? '#ffffff' : vencida ? 'var(--tx-accent-2)' : 'var(--tx-ink-secondary)'
 
   return (
     <ScoopCard
       href={`/tareas?tarea=${tarea.id}`}
       accion={`Abrir ${tarea.titulo}`}
-      acento={acento}
+      acento={conAcento}
       indice={indice}
       className="flex h-full flex-col p-4 md:p-5"
+      style={
+        // Vencida sin el hatch: el borde izquierdo lleva el acento rojo en
+        // vez del fondo, para no perder del todo la señal de urgencia.
+        vencida ? { borderLeft: '3px solid rgba(232,53,42,.55)' } : undefined
+      }
     >
       {responsable && (
         <div className="mb-3 flex items-center gap-2.5">
@@ -82,7 +94,7 @@ export function TareaScoopCard({
           />
           <p
             className={`truncate text-[12.5px] font-medium ${
-              acento ? 'text-white' : 'text-[var(--tx-ink-primary)]'
+              conAcento ? 'text-white' : 'text-[var(--tx-ink-primary)]'
             }`}
           >
             {responsable.nombre}
@@ -94,7 +106,7 @@ export function TareaScoopCard({
           mete debajo en las dos primeras líneas. */}
       <p
         className={`mt-1 line-clamp-3 pr-12 text-[16px] font-semibold leading-tight tracking-[-0.02em] md:mt-2 md:text-[21px] md:tracking-[-0.025em] ${
-          acento ? 'text-white' : 'text-[var(--tx-ink-primary)]'
+          conAcento ? 'text-white' : 'text-[var(--tx-ink-primary)]'
         }`}
       >
         {tarea.titulo}
@@ -102,8 +114,8 @@ export function TareaScoopCard({
 
       {tarea.descripcion && (
         <p
-          className={`mt-2 hidden text-[13px] md:line-clamp-2 md:block ${
-            acento ? 'text-white' : 'text-[var(--tx-ink-secondary)]'
+          className={`mt-2 hidden text-sm line-clamp-3 md:block ${
+            conAcento ? 'text-white/80' : 'text-muted-foreground'
           }`}
         >
           {tarea.descripcion}
@@ -113,15 +125,26 @@ export function TareaScoopCard({
       <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-5">
         <span
           className="inline-flex h-[26px] items-center rounded-full border px-2.5 text-[11px] font-medium"
-          style={{ borderColor: bordePlazo, color: tintaPlazo }}
+          style={
+            // Vencida: chip con fondo sólido neutro y borde/texto rojo, no
+            // rojo-sobre-rojo con el fondo de la tarjeta -- el rojo queda
+            // reservado para este badge, nunca como fondo detrás del texto.
+            vencida
+              ? {
+                  background: 'var(--tx-bg-primary)',
+                  borderColor: 'rgba(232,53,42,.45)',
+                  color: 'var(--tx-accent-2)',
+                }
+              : { borderColor: bordePlazo, color: tintaPlazo }
+          }
         >
           {plazo}
         </span>
         <span
           className="inline-flex h-[26px] items-center rounded-full border px-2.5 text-[11px] font-medium"
           style={{
-            borderColor: acento ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.10)',
-            color: acento ? '#ffffff' : 'var(--tx-ink-secondary)',
+            borderColor: conAcento ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.10)',
+            color: conAcento ? '#ffffff' : 'var(--tx-ink-secondary)',
           }}
         >
           {PRIORIDAD_LABEL[tarea.prioridad]}

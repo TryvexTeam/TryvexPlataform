@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { motion, useReducedMotion } from 'framer-motion'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { ArrowUpRightIcon, type LucideIcon } from 'lucide-react'
 
 /**
@@ -34,6 +34,9 @@ interface ScoopCardProps {
   acento?: boolean
   /** Clases extra del contenedor interno (padding, alto, columnas). */
   className?: string
+  /** Estilos extra del contenedor interno -- para acentos puntuales (ej. un
+   *  borde) que no valen la pena como variante nueva del componente. */
+  style?: CSSProperties
   /** Posición en la lista: escalona la entrada 45 ms por tarjeta. */
   indice?: number
 }
@@ -55,6 +58,7 @@ export function ScoopCard({
   Icono = ArrowUpRightIcon,
   acento = false,
   className = '',
+  style,
   indice = 0,
 }: ScoopCardProps) {
   // El estado se lleva a mano en vez de dejarlo a la propagación de variantes:
@@ -86,6 +90,7 @@ export function ScoopCard({
         className={`relative rounded-[28px] border transition-colors duration-200 ${superficie} ${
           href && !acento ? 'group-hover:border-white/[0.13] group-hover:bg-white/[0.06]' : ''
         } ${href ? 'tx-scoop' : ''} ${className}`}
+        style={style}
       >
         {acento && <div className="tx-hatch rounded-[28px]" aria-hidden="true" />}
         {href && !acento && <div className="tx-scoop-edge" aria-hidden="true" />}

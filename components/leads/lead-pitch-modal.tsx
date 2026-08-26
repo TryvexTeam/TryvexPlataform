@@ -161,8 +161,20 @@ export function LeadPitchModal({
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
-        <DialogTitle className="px-5 pt-4 pb-3 text-[15px] font-semibold text-[var(--tx-ink-primary)] border-b border-white/[0.06]">
-          Pitch · {lead.nombre_negocio}
+        {/* El nombre del lead es lo que importa acá — con quién se va a hablar.
+            El rating va al lado como dato secundario, no compitiendo en tamaño:
+            antes se leía más grande que el propio nombre del negocio. */}
+        <DialogTitle className="px-5 pt-4 pb-3 flex items-baseline gap-2 border-b border-white/[0.06]">
+          <span className="text-[17px] font-semibold text-[var(--tx-ink-primary)]">
+            {lead.nombre_negocio}
+          </span>
+          {rating != null && (
+            <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium text-[var(--tx-ink-secondary)]" style={{ background: 'rgba(255,255,255,.06)' }}>
+              <Star size={11} className="text-amber-400" fill="currentColor" />
+              {String(rating).replace('.', ',')}
+              {resenas != null ? ` (${resenas})` : ''}
+            </span>
+          )}
         </DialogTitle>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
@@ -181,9 +193,6 @@ export function LeadPitchModal({
             </div>
             {/* Solo-lectura: lo que el scraper ya sabe */}
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] text-[var(--tx-ink-secondary)]">
-              {rating != null && (
-                <span className="inline-flex items-center gap-1"><Star size={13} className="text-amber-400" />{String(rating).replace('.', ',')}{resenas != null ? ` · ${resenas} reseñas` : ''}</span>
-              )}
               <span className="inline-flex items-center gap-1">
                 <Globe size={13} />{lead.tiene_web ? (lead.url_web ?? 'Con web') : 'Sin web'}
               </span>

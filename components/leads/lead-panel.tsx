@@ -314,19 +314,24 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
         {!isTaskPanelOpen && (
           <button onClick={onToggleTaskPanel} className="reopen">
             <CheckSquare size={13} />
-            <span>Open Tasks</span>
+            <span>Tareas abiertas</span>
           </button>
         )}
       </div>
 
-      {/* Subject Header — muestra info_texto como heading principal, igual que "Hello, help me v..." en la referencia */}
+      {/* Subject Header — el nombre del lead es lo que importa acá, no el
+          primer fragmento de texto que trajo el scraper (que suele empezar
+          con el rating de Google: "4,3 (11)..." se leía más grande que el
+          propio nombre del negocio). El nombre va de heading; info_texto,
+          si existe, queda como descripción secundaria debajo. */}
       <h1 className="reader__subject" style={{ fontSize: 28 }}>
-        {lead.info_texto
-          ? lead.info_texto.split(' ').slice(0, 9).join(' ') + (lead.info_texto.split(' ').length > 9 ? '...' : '')
-          : lead.nombre_negocio}
+        {lead.nombre_negocio}
       </h1>
       {lead.info_texto && (
-        <p className="reader__subtitle">{lead.nombre_negocio}</p>
+        <p className="reader__subtitle">
+          {lead.info_texto.split(' ').slice(0, 12).join(' ') +
+            (lead.info_texto.split(' ').length > 12 ? '...' : '')}
+        </p>
       )}
 
       {/* Meta bar */}

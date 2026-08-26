@@ -618,7 +618,7 @@ export function HiloChat({
             <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--tx-ink-muted)]">
               {fijadosAbiertos
                 ? `${fijados.length} ${fijados.length === 1 ? 'mensaje fijado' : 'mensajes fijados'}`
-                : (fijados[0].contenido ?? 'Adjunto')}
+                : (fijados[0].contenido ? textoPlano(fijados[0].contenido) : 'Adjunto')}
             </span>
             {fijados.length > 1 && (
               <span className="shrink-0 text-[11px] text-[var(--tx-ink-muted)]">
@@ -631,9 +631,15 @@ export function HiloChat({
             <ul className="mt-2 space-y-1.5">
               {fijados.map((f) => (
                 <li key={f.id} className="flex items-start gap-2">
-                  <span className="min-w-0 flex-1 text-[12px] text-[var(--tx-ink-primary)]">
-                    {f.contenido ?? 'Adjunto'}
-                  </span>
+                  <div className="min-w-0 flex-1 text-[12px] text-[var(--tx-ink-primary)]">
+                    {f.contenido ? (
+                      <Markdown chat heredaColor className="text-[12px]">
+                        {f.contenido}
+                      </Markdown>
+                    ) : (
+                      'Adjunto'
+                    )}
+                  </div>
                   <button
                     onClick={() => alternarFijado(f)}
                     className="shrink-0 text-[11px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
@@ -717,7 +723,7 @@ export function HiloChat({
                   </div>
                 )}
 
-                <div className={`max-w-[85%] sm:max-w-[68%] min-w-0 ${mio ? 'items-end' : 'items-start'} flex flex-col group`}>
+                <div className={`max-w-[85%] sm:max-w-[70%] min-w-0 ${mio ? 'items-end' : 'items-start'} flex flex-col group`}>
                   {!mio && conversacion.tipo !== 'dm' && !encadenado && (
                     <span className="flex items-center gap-1.5 text-[11px] text-[var(--tx-ink-muted)] px-1 mb-0.5">
                       {autor?.nombre ?? 'Sin nombre'}
