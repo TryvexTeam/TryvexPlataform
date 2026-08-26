@@ -52,7 +52,7 @@ export function comunaDe(localidad: string | null): string {
 }
 
 const PREGUNTA: Record<Familia, string> = {
-  citas: 'Cuando a alguien nuevo lo pillas por Google o Instagram, ¿cómo termina agendando su hora hoy — te escribe, te llama, o llega y espera?',
+  citas: 'Cuando un cliente nuevo los busca por Google o las redes sociales, ¿cómo termina agendando su hora hoy — te escribe, te llama, o llega a tu local y espera?',
   comida: 'Cuando alguien busca dónde comer cerca y los encuentra, ¿cómo ve hoy la carta y hace el pedido — por Instagram, WhatsApp, o tiene que ir al local?',
   optica: 'Cuando alguien necesita un examen de vista o busca marcos, ¿cómo llega hoy a ustedes — por Google, por recomendación, o pasando por fuera?',
   taller: 'Cuando a alguien se le echa a perder el auto y los busca, ¿cómo pide hoy la cotización o la hora — llamando no más, o tiene que ir hasta allá?',
@@ -133,8 +133,21 @@ export function generarGuionAuto(lead: Lead): Guion {
       },
       {
         rol: 'Tú — cierre',
-        texto: '“Te propongo algo concreto: una **llamada de diagnóstico de 30 minutos, sin costo y sin compromiso** — revisamos tu caso puntual y tú decides si tiene sentido. Para dejarla agendada, ¿te acomoda mejor **a principio de semana (lunes o martes)** o **hacia el final (jueves o viernes)**?”',
+        texto: '“Te propongo algo concreto: una **llamada de diagnóstico de solo 30 minutos, sin costo y sin compromiso**, donde revisamos tu caso puntual y tú decides si tiene sentido lo que te proponemos. Para dejar agendada la llamada, ¿te acomoda mejor **a principio de semana (lunes o martes)** o **hacia el final (jueves o viernes)**?”',
         guia: 'Cierra ofreciendo DÍAS de la semana, no un “cuándo puedes”. Reduce a dos opciones. Si agenda, la llamada cumplió: no sigas vendiendo.',
+      },
+      {
+        rol: 'Tú — agenda un horario',
+        texto: '“Okey, mira, tengo un cupo libre en la agenda: ¿a las 5 pm o a las 7 pm? ¿Cuál te acomoda?”',
+        guia: 'Mismo criterio que con los días: dos horarios concretos, no “¿a qué hora te acomoda?”. Ajusta los horarios a la disponibilidad real antes de llamar.',
+      },
+      {
+        rol: 'Tú — pide sus datos',
+        texto: '“Perfecto, ¿me podría dar su nombre y su correo, por favor, para enviarle el link de la reunión? Le estaría llegando a su correo.”',
+      },
+      {
+        rol: 'Tú — despedida',
+        texto: '“Okey, ha sido un placer, [nombre]. De igual manera, nos comunicaremos con usted por WhatsApp para mantener el contacto. Chao, chao.”',
       },
     ],
   }
