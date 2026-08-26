@@ -5,7 +5,7 @@ import { HeadphonesIcon, MessagesSquareIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLlamadas } from '@/components/llamadas/proveedor-llamadas'
 import { toast } from '@/lib/toast'
-import { textoPlano } from '@/lib/markdown/mini'
+import { pareceJson, textoPlano } from '@/lib/markdown/mini'
 import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 import type { Conversacion, Mensaje } from '@/lib/types/chat'
 import { avatarConversacion, tituloConversacion } from '@/lib/types/chat'
@@ -351,7 +351,13 @@ export function ChatWorkspace({
  */
 function vistaPrevia(mensaje: Mensaje | null): string {
   if (!mensaje) return 'Sin mensajes'
-  if (mensaje.contenido?.trim()) return textoPlano(mensaje.contenido)
+  if (mensaje.contenido?.trim()) {
+    // Contenido de sistema (evento de llamada, webhook) guardado como
+    // JSON.stringify crudo: en la bandeja no se lee como mensaje, se lee
+    // como basura entre llaves. Se describe en vez de mostrarlo.
+    if (pareceJson(mensaje.contenido)) return 'Evento de llamada'
+    return textoPlano(mensaje.contenido)
+  }
 
   const cuantos = mensaje.adjuntos?.length ?? 0
   if (cuantos === 0) return 'Sin mensajes'

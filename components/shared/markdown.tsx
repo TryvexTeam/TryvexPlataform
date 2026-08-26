@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, Fragment, useContext, useState } from 'react'
-import { parsearInline, parsearMarkdown, type BloqueMd, type NodoInline } from '@/lib/markdown/mini'
+import { pareceJson, parsearInline, parsearMarkdown, type BloqueMd, type NodoInline } from '@/lib/markdown/mini'
 
 interface MarkdownProps {
   /** Texto de la entrada tal cual quedó guardado. */
@@ -19,10 +19,41 @@ interface MarkdownProps {
 const HeredaColor = createContext(false)
 
 /**
+ * Formatea el JSON crudo para mostrarlo legible. Si viene doblemente
+ * serializado (una STRING que contiene JSON), se desenvuelve una capa antes
+ * de imprimir -- de lo contrario se ven backslashes de escape por todos lados.
+ * Si algo falla, se devuelve el texto tal cual: mejor eso que romper el chat.
+ */
+function formatearJsonCrudo(texto: string): string {
+  try {
+    const t = texto.trim()
+    const primero = JSON.parse(t)
+    const objeto = typeof primero === 'string' ? JSON.parse(primero) : primero
+    return JSON.stringify(objeto, null, 2)
+  } catch {
+    return texto
+  }
+}
+
+/**
  * Pinta markdown. Arma nodos de React a partir del parser: nada de HTML crudo,
  * así que un mensaje de Discord o del chat no puede inyectar nada.
  */
 export function Markdown({ children, className, heredaColor = false, chat = false }: MarkdownProps) {
+  // Contenido de sistema (evento de llamada, webhook) que quedó como
+  // JSON.stringify crudo en `contenido`: no es texto para leer como párrafo,
+  // así que va en un bloque monoespaciado con su propio scroll horizontal en
+  // vez de estirar la burbuja o mostrarse como prosa con llaves sueltas.
+  if (pareceJson(children)) {
+    return (
+      <pre
+        className={`tx-md max-w-full overflow-x-auto rounded-lg bg-black/25 p-2.5 text-[12px] leading-snug font-mono whitespace-pre-wrap break-words ${className ?? ''}`}
+      >
+        {formatearJsonCrudo(children)}
+      </pre>
+    )
+  }
+
   const bloques = parsearMarkdown(children, { chat })
   const base = heredaColor
     ? 'tx-md leading-relaxed min-w-0 break-words'

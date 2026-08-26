@@ -61,10 +61,16 @@ function ProyectoCard({
           onClick?.()
         }
       }}
+      // El proyecto vencido pero activo puede estar en cualquier columna,
+      // incluida una "sana" como Mantención (verde) — un fondo/borde rojo
+      // pleno ahí contradice el color de la columna. El rojo se reserva
+      // para el badge/texto de la fecha; la tarjeta solo lleva un acento
+      // ámbar en el borde izquierdo, neutro en el resto.
       className="rounded-xl p-3 cursor-pointer select-none transition-all duration-150"
       style={{
-        background: vencido ? 'oklch(63% 0.21 22 / 6%)' : 'oklch(10% 0.004 240)',
-        border: vencido ? '1px solid oklch(63% 0.21 22 / 25%)' : '1px solid var(--tx-border)',
+        background: 'oklch(10% 0.004 240)',
+        border: '1px solid var(--tx-border)',
+        borderLeft: vencido ? '3px solid oklch(75% 0.16 70)' : '1px solid var(--tx-border)',
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'
