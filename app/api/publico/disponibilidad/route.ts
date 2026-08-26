@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { DisponibilidadRepository } from '@/lib/repos/disponibilidad'
 import { SlotsPublicosQuerySchema } from '@/lib/types/disponibilidad'
-import { hoyEnSantiago } from '@/lib/fechas'
+import { diaSantiago } from '@/lib/utils/fecha-santiago'
 
 /**
  * Horas reservables para el formulario de citas de tryvex.tech.
@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 
   // Nunca antes de hoy: pedir el pasado no tiene sentido y además permitiría
   // barrer el historial de ocupación del equipo hacia atrás.
-  const hoy = hoyEnSantiago()
+  const hoy = diaSantiago(new Date())
   const desde = parseo.data.desde && parseo.data.desde > hoy ? parseo.data.desde : hoy
 
   try {

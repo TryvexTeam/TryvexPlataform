@@ -1,11 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { Celda, DisponibilidadIntegrante, SlotPublico } from '@/lib/types/disponibilidad'
-import {
-  ANTICIPACION_MINIMA_HORAS,
-  DURACION_CITA_MIN,
-  MINUTOS_DE_SLOT,
-} from '@/lib/types/disponibilidad'
-import { diaSemanaLunes0, santiagoToUTC, sumarDias } from '@/lib/fechas'
+import { calcularSlots, type CeldaOfrecida, type Ocupacion } from '@/lib/citas/slots'
+import { sumarDias } from '@/lib/utils/fecha-santiago'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -14,6 +10,7 @@ interface CeldaRow {
   integrante_id: string
   dia_semana: number
   hora: number
+  publica?: boolean
 }
 
 interface EventoOcupaRow {
@@ -28,6 +25,8 @@ interface IntegranteRow {
   avatar_url: string | null
   color: string | null
   auth_user_id: string | null
+  recibe_citas: boolean | null
+  visible_en_landing: boolean | null
 }
 
 export class DisponibilidadRepository {
@@ -42,12 +41,12 @@ export class DisponibilidadRepository {
     const [{ data: integrantes, error: e1 }, { data: celdas, error: e2 }] = await Promise.all([
       this.sb
         .from('dim_integrantes')
-        .select('id, nombre, avatar_url, color, auth_user_id')
+        .select('id, nombre, avatar_url, color, auth_user_id, recibe_citas, visible_en_landing')
         .eq('activo', true)
         .order('nombre'),
       this.sb
         .from('disponibilidad')
-        .select('integrante_id, dia_semana, hora'),
+        .select('integrante_id, dia_semana, hora, publica'),
     ])
     if (e1) throw new Error(e1.message)
     if (e2) throw new Error(e2.message)
@@ -55,7 +54,7 @@ export class DisponibilidadRepository {
     const porIntegrante = new Map<string, Celda[]>()
     for (const c of (celdas ?? []) as CeldaRow[]) {
       const arr = porIntegrante.get(c.integrante_id) ?? []
-      arr.push({ dia_semana: c.dia_semana, hora: c.hora })
+      arr.push({ dia_semana: c.dia_semana, hora: c.hora, publica: c.publica ?? false })
       porIntegrante.set(c.integrante_id, arr)
     }
 
@@ -66,7 +65,25 @@ export class DisponibilidadRepository {
       color: i.color,
       es_propio: i.auth_user_id === authUserId,
       celdas: porIntegrante.get(i.id) ?? [],
+      recibe_citas: i.recibe_citas ?? false,
+      visible_en_landing: i.visible_en_landing ?? false,
     }))
+  }
+
+  /**
+   * Enciende o apaga el interruptor maestro de citas del propio integrante.
+   *
+   * No hace falta comprobar acá que sea el suyo: la RLS solo autoriza UPDATE
+   * sobre la fila con `auth_user_id = auth.uid()` (066), y el GRANT columnar de
+   * la 090 limita la escritura a esta única columna. Dos candados, y ninguno
+   * depende de que este método recuerde chequearlo.
+   */
+  async setRecibeCitas(integranteId: string, recibeCitas: boolean): Promise<void> {
+    const { error } = await this.sb
+      .from('dim_integrantes')
+      .update({ recibe_citas: recibeCitas })
+      .eq('id', integranteId)
+    if (error) throw new Error(error.message)
   }
 
   /**
@@ -76,10 +93,14 @@ export class DisponibilidadRepository {
    * el insert fallaba después del delete.
    */
   async replaceOwn(integranteId: string, celdas: Celda[]): Promise<void> {
+    // La firma de 4 parámetros (migración 090). La de 3 sigue existiendo y
+    // conserva lo publicado, pero acá sí sabemos qué celdas van públicas, así
+    // que se manda explícito en vez de depender de que la base lo adivine.
     const { error } = await this.sb.rpc('reemplazar_disponibilidad', {
       p_integrante_id: integranteId,
       p_dias: celdas.map((c) => c.dia_semana),
       p_horas: celdas.map((c) => c.hora),
+      p_publicas: celdas.map((c) => c.publica ?? false),
     })
     if (error) throw new Error(error.message)
   }
@@ -125,16 +146,14 @@ export class DisponibilidadRepository {
     const idsElegibles = new Set(((elegibles ?? []) as { id: string }[]).map((i) => i.id))
     if (idsElegibles.size === 0) return []
 
-    // Celdas publicadas, solo de gente elegible, indexadas por día y hora.
-    const porDiaHora = new Map<string, Set<string>>()
-    for (const c of (celdas ?? []) as CeldaRow[]) {
-      if (!idsElegibles.has(c.integrante_id)) continue
-      const clave = `${c.dia_semana}-${c.hora}`
-      const set = porDiaHora.get(clave) ?? new Set<string>()
-      set.add(c.integrante_id)
-      porDiaHora.set(clave, set)
-    }
-    if (porDiaHora.size === 0) return []
+    const celdasOfrecidas: CeldaOfrecida[] = ((celdas ?? []) as CeldaRow[])
+      .filter((c) => idsElegibles.has(c.integrante_id))
+      .map((c) => ({
+        integranteId: c.integrante_id,
+        diaSemana: c.dia_semana,
+        hora: c.hora,
+      }))
+    if (celdasOfrecidas.length === 0) return []
 
     // Eventos que solapan la ventana, con sus asistentes internos.
     const { data: eventos, error: e3 } = await this.sb
@@ -144,48 +163,21 @@ export class DisponibilidadRepository {
       .gt('fin', `${desde}T00:00:00Z`)
     if (e3) throw new Error(e3.message)
 
-    const ocupaciones = ((eventos ?? []) as EventoOcupaRow[]).map((ev) => ({
+    const ocupaciones: Ocupacion[] = ((eventos ?? []) as EventoOcupaRow[]).map((ev) => ({
       inicio: new Date(ev.inicio).getTime(),
       fin: new Date(ev.fin).getTime(),
-      // Sin asistentes = calendario compartido del negocio = bloquea a todos.
-      asistentes: (ev.eventos_asistentes ?? []).map((a) => a.integrante_id),
+      // Vacío = bloquea a todos. Así llegan los eventos del sync de Google,
+      // que caen sobre el calendario compartido del negocio.
+      integrantes: (ev.eventos_asistentes ?? []).map((a) => a.integrante_id),
     }))
 
-    const ahora = Date.now()
-    const minimo = ahora + ANTICIPACION_MINIMA_HORAS * 60 * 60 * 1000
-    const slots: SlotPublico[] = []
-
-    for (let d = 0; d < dias; d++) {
-      const fecha = sumarDias(desde, d)
-      const diaSemana = diaSemanaLunes0(fecha)
-
-      for (let hora = 0; hora < 24; hora++) {
-        const disponiblesEnCelda = porDiaHora.get(`${diaSemana}-${hora}`)
-        if (!disponiblesEnCelda) continue
-
-        for (const minuto of MINUTOS_DE_SLOT) {
-          const hhmm = `${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}`
-          const inicio = santiagoToUTC(fecha, hhmm).getTime()
-          const fin = inicio + DURACION_CITA_MIN * 60 * 1000
-
-          // Ya pasó, o es demasiado sobre la hora para que alguien se prepare.
-          if (inicio < minimo) continue
-
-          const hayAlguienLibre = [...disponiblesEnCelda].some((integranteId) =>
-            !ocupaciones.some(
-              (o) =>
-                inicio < o.fin &&
-                fin > o.inicio &&
-                (o.asistentes.length === 0 || o.asistentes.includes(integranteId))
-            )
-          )
-
-          if (hayAlguienLibre) slots.push({ fecha, hora: hhmm })
-        }
-      }
-    }
-
-    return slots
+    return calcularSlots({
+      desde,
+      dias,
+      celdas: celdasOfrecidas,
+      ocupaciones,
+      ahora: new Date(),
+    })
   }
 
   /** id del integrante asociado al usuario auth actual (null si no es integrante activo) */

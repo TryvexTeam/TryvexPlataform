@@ -65,3 +65,39 @@ export function ultimosDiasSantiago(dias: number): string[] {
   }
   return salida
 }
+
+/**
+ * Una hora local de Santiago ("17:30" del día `fecha`) al instante UTC que le
+ * corresponde.
+ *
+ * Correcto a través de los cambios de horario: Chile es UTC-3 en verano y
+ * UTC-4 en invierno, y el desfase se deduce de la zona en esa fecha concreta
+ * en vez de asumirse. Estaba copiada en `lib/google/calendar-sync.ts` y dos
+ * veces en el repo de la landing; una copia que se desactualice no falla al
+ * escribirla, falla en septiembre con las citas ya agendadas.
+ */
+export function santiagoToUTC(fecha: string, hora: string): Date {
+  const comoUTC = new Date(`${fecha}T${hora}:00Z`)
+  const localSantiago = comoUTC.toLocaleString('sv-SE', { timeZone: 'America/Santiago' })
+  const desfase = comoUTC.getTime() - new Date(localSantiago.replace(' ', 'T') + 'Z').getTime()
+  return new Date(comoUTC.getTime() + desfase)
+}
+
+/**
+ * Día de la semana en la convención de la tabla `disponibilidad`:
+ * 0 = lunes … 6 = domingo (migración 004).
+ *
+ * `getUTCDay()` sobre la fecha del calendario y no `getDay()` sobre un Date
+ * local: acá interesa qué día del calendario es '2026-09-07', no en qué
+ * instante cae según el reloj de quien ejecuta esto.
+ */
+export function diaSemanaLunes0(fecha: string): number {
+  const [anios, meses, dias] = fecha.split('-').map(Number)
+  return (new Date(Date.UTC(anios, meses - 1, dias)).getUTCDay() + 6) % 7
+}
+
+/** 'YYYY-MM-DD' sumando `dias` días, sin salirse del calendario. */
+export function sumarDias(fecha: string, dias: number): string {
+  const [anios, meses, diasBase] = fecha.split('-').map(Number)
+  return new Date(Date.UTC(anios, meses - 1, diasBase + dias)).toISOString().slice(0, 10)
+}
