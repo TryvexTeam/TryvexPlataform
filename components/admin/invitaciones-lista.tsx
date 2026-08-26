@@ -32,7 +32,12 @@ export function InvitacionesLista({ refreshKey }: InvitacionesListaProps) {
     }
   }, [])
 
-  useEffect(() => { cargar() }, [cargar, refreshKey])
+  useEffect(() => {
+    // `cargar` es async: en este tick solo arranca el fetch, y el setState
+    // pasa recien cuando responde. La regla no puede ver a traves del await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargar()
+  }, [cargar, refreshKey])
 
   if (loading) {
     return <p className="text-sm text-neutral-400 text-center py-6">Cargando...</p>

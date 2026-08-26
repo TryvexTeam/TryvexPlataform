@@ -28,7 +28,12 @@ export function InvitacionesPendientes({ refreshKey }: { refreshKey: number }) {
     setPendientes(json.data)
   }, [])
 
-  useEffect(() => { cargar() }, [cargar, refreshKey])
+  useEffect(() => {
+    // `cargar` es async: en este tick solo arranca el fetch, y el setState
+    // pasa recien cuando responde. La regla no puede ver a traves del await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargar()
+  }, [cargar, refreshKey])
 
   async function aprobar(inv: Pendiente) {
     setAprobando(inv.id)
