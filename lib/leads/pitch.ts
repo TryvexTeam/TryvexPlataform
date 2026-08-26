@@ -69,6 +69,60 @@ const BENEFICIO: Record<Familia, string> = {
   generico: 'un sitio web que capte los clientes que hoy se pierden por no aparecer en Google',
 }
 
+/**
+ * Un halago real del negocio, no del numero de estrellas — eso va aparte, en
+ * `traccion`. Sin esto la señal sonaba a que solo miramos el rating.
+ */
+const ALAGO: Record<Familia, string> = {
+  citas: 'Se nota que le pones cariño al detalle en cada trabajo.',
+  comida: 'Se nota que cuidan lo que sirven, no es solo llenar un plato.',
+  optica: 'Se nota que explican bien las cosas antes de vender, y eso da confianza.',
+  taller: 'Se nota que la gente confía en dejarles el auto, y eso no se gana fácil.',
+  tienda: 'Se nota que cuidas cada pieza que subes, no es solo vender por vender.',
+  generico: 'Se nota que hay un trabajo serio detrás de esto, no es cualquier cosa.',
+}
+
+/**
+ * Respuestas a las objeciones mas comunes de una llamada en frio, tomadas del
+ * Playbook de Llamada en Frio de Tryvex. No son parte del orden del guion: el
+ * vendedor las usa solo si el negocio pone esa objecion puntual en la llamada.
+ */
+const OBJECIONES: TurnoPitch[] = [
+  {
+    rol: 'Objeción — “No me interesa”',
+    texto: '“Totalmente. Antes de dejarte, ¿es porque ahora mismo esto no es prioridad o porque sientes que ya lo tienen resuelto?”',
+    guia: 'Sección de referencia: se usa solo si el negocio pone esta objeción durante la llamada, no sigue el orden del guion.',
+  },
+  {
+    rol: 'Objeción — “No tengo tiempo”',
+    texto: '“Te entiendo. Justamente por eso no quiero explicarte nada ahora. Si te parece, dejamos una hora cerrada y en esa llamada vemos si hay algo que realmente valga la pena. Si no, lo dejamos ahí.”',
+  },
+  {
+    rol: 'Objeción — “Mándame información”',
+    texto: '“Claro. Puedo mandarte una presentación, pero sería bastante genérica. Lo que quería mostrarte nace de lo que vimos en tu negocio. Prefiero que usemos una llamada corta y que tú decidas con algo concreto delante.”',
+  },
+  {
+    rol: 'Objeción — “Ya tenemos página / agencia / alguien que ve eso”',
+    texto: '“Perfecto, mejor todavía. No te estoy proponiendo reemplazar a nadie. Queremos revisar si hay algo entre lo que el cliente ve y cómo funciona el proceso por dentro que hoy esté quedando fuera.”',
+  },
+  {
+    rol: 'Objeción — “¿Cuánto cuesta?”',
+    texto: '“El diagnóstico inicial no tiene costo. Si después detectamos algo que valga la pena implementar, en la reunión de entrega te mostramos una propuesta con alcance y precio. Tú decides si avanzas o no.”',
+  },
+  {
+    rol: 'Objeción — “No quiero IA”',
+    texto: '“Está perfecto. Tampoco partimos desde la IA. Partimos desde el problema. Si se arregla con algo simple, te vamos a decir eso.”',
+  },
+  {
+    rol: 'Objeción — “Estamos bien como estamos”',
+    texto: '“Puede ser. El diagnóstico también puede confirmar eso. La pregunta es si vale la pena revisar en una llamada corta si hay algo que no se esté viendo desde dentro.”',
+  },
+  {
+    rol: 'Objeción — “Llámame más adelante”',
+    texto: '“Dale. Para no quedar en el aire, ¿te parece que dejemos una fecha tentativa y si cambia algo la movemos?”',
+  },
+]
+
 const RESUMEN: Record<Familia, string> = {
   citas: 'Sitio web con agenda de horas online (reservan solos, 24/7), galería de trabajos y contacto directo por WhatsApp. Menos horas por teléfono, menos citas perdidas.',
   comida: 'Sitio con carta/menú online, pedidos por WhatsApp y reservas, que aparezca en Google cuando buscan dónde comer cerca.',
@@ -101,13 +155,16 @@ export function generarGuionAuto(lead: Lead): Guion {
   const nombre = lead.nombre_contacto?.trim()
   const saludo = nombre ? `¿hablo con ${nombre}?` : '¿hablo con el dueño o encargado?'
 
+  // El halago va ANTES de las estrellas y sobre algo del rubro, no de un
+  // numero — un elogio que solo mira el rating se siente automatico.
+  const alago = ALAGO[f]
   // La señal se adapta a si tenemos las reseñas o no: nunca inventamos números.
   const traccion =
     resenas != null && rating != null
-      ? `**${resenas} reseñas con ${rating} estrellas**, te va muy bien… `
-      : 'te va bien por lo que se ve… '
+      ? `Además, **${resenas} reseñas con ${rating} estrellas** — te va muy bien… `
+      : 'Además, se nota que te va bien… '
   const señal =
-    `“Estuve mirando ${rubro} en ${comuna} y me quedé con el tuyo: ${traccion}` +
+    `“Estuve mirando ${rubro} en ${comuna} y me quedé con el tuyo: ${alago} ${traccion}` +
     'pero **no tienes un sitio web propio**. No sé si hoy eso te está costando ' +
     'clientes o no — por eso preferí preguntarte antes de asumirlo.”' +
     (tieneIg ? ' (Vi que sí tienes Instagram, así que gente te busca.)' : '')
@@ -149,6 +206,7 @@ export function generarGuionAuto(lead: Lead): Guion {
         rol: 'Tú — despedida',
         texto: '“Okey, ha sido un placer, [nombre]. De igual manera, nos comunicaremos con usted por WhatsApp para mantener el contacto. Chao, chao.”',
       },
+      ...OBJECIONES,
     ],
   }
 }
