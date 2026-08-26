@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, List, Kanban, Search } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -36,16 +36,20 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
   // Quien escribio y todavia no le contestamos. Se pinta en la tarjeta.
   const { noLeidos } = useWaNoLeidos()
 
-  const leadsFiltrados = leads.filter((l) =>
-    l.nombre_negocio.toLowerCase().includes(search.toLowerCase())
+  const leadsFiltrados = useMemo(
+    () => leads.filter((l) => l.nombre_negocio.toLowerCase().includes(search.toLowerCase())),
+    [leads, search],
   )
 
-  const columns = ESTADOS_LEAD.map((e) => ({
-    id: e.id,
-    title: e.label,
-    color: e.color,
-    items: leadsFiltrados.filter((l) => l.estado === e.id),
-  }))
+  const columns = useMemo(
+    () => ESTADOS_LEAD.map((e) => ({
+      id: e.id,
+      title: e.label,
+      color: e.color,
+      items: leadsFiltrados.filter((l) => l.estado === e.id),
+    })),
+    [leadsFiltrados],
+  )
 
   async function patchEstado(
     itemId: string,
@@ -100,6 +104,19 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
     router.refresh()
   }
 
+  const handleCardClick = useCallback((id: string) => router.push(`/leads/${id}`), [router])
+
+  const renderCard = useCallback(
+    (lead: Lead) => (
+      <LeadCard
+        lead={lead}
+        noLeidos={noLeidos[lead.id]}
+        onClick={() => handleCardClick(lead.id)}
+      />
+    ),
+    [noLeidos, handleCardClick],
+  )
+
   return (
     <div>
       {/* Header */}
@@ -138,13 +155,7 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
       {vista === 'kanban' ? (
         <KanbanBoard
           columns={columns}
-          renderCard={(lead) => (
-            <LeadCard
-              lead={lead}
-              noLeidos={noLeidos[lead.id]}
-              onClick={() => router.push(`/leads/${lead.id}`)}
-            />
-          )}
+          renderCard={renderCard}
           onDragEnd={handleDragEnd}
         />
       ) : (

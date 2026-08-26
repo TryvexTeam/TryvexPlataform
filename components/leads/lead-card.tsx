@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Globe, Phone, MapPin, Star } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 
@@ -14,7 +15,7 @@ interface LeadCardProps {
   noLeidos?: number
 }
 
-export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
+export const LeadCard = memo(function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
   return (
     <div
       onClick={onClick}
@@ -126,4 +127,4 @@ export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
       </div>
     </div>
   )
-}
+})
