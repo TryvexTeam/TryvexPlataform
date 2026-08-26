@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, List, Kanban, Search } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -29,7 +29,14 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
   const [formOpen, setFormOpen] = useState(false)
   const [search, setSearch] = useState('')
 
-  useEffect(() => { setLeads(initialLeads) }, [initialLeads])
+  // Ajuste de estado durante el render (patrón recomendado por React para
+  // sincronizar estado con una prop) en vez de un efecto: evita el setState
+  // síncrono dentro de un effect.
+  const [initialLeadsPrevios, setInitialLeadsPrevios] = useState(initialLeads)
+  if (initialLeads !== initialLeadsPrevios) {
+    setInitialLeadsPrevios(initialLeads)
+    setLeads(initialLeads)
+  }
 
   // `fact_leads` tampoco estaba publicada: el canal decía SUBSCRIBED sin recibir nada.
   useDatosVivos(['fact_leads', 'interacciones_lead'])

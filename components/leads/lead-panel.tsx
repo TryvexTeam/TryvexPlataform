@@ -94,22 +94,31 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   const [pitchAbierto, setPitchAbierto] = useState(false)
   const prevLeadId = useRef<string | null>(null)
 
-  // Fade transition when lead changes
+  // Fade transition when lead changes.
+  // El "ocultar" es un ajuste de estado durante el render (patrón
+  // recomendado por React al reaccionar a un cambio de identidad de prop):
+  // pasa en el mismo render en que cambia `lead.id`, sin setState síncrono
+  // dentro de un effect. El "mostrar de nuevo" sigue en un effect porque
+  // depende de un timer (sistema externo real).
+  const [renderedLeadId, setRenderedLeadId] = useState<string | null>(lead?.id ?? null)
+  if ((lead?.id ?? null) !== renderedLeadId) {
+    setRenderedLeadId(lead?.id ?? null)
+    setVisible(false)
+  }
+
+  // Los refs no se leen ni se escriben durante el render (`prevLeadId` es
+  // libro de estado del propio effect), así que ese seguimiento queda acá.
   useEffect(() => {
     if (!lead) {
-      setVisible(false)
       prevLeadId.current = null
       return
     }
-    if (lead.id !== prevLeadId.current) {
-      setVisible(false)
-      const t = setTimeout(() => {
-        setVisible(true)
-        prevLeadId.current = lead.id
-      }, 80)
-      return () => clearTimeout(t)
-    }
-    setVisible(true)
+    if (lead.id === prevLeadId.current) return
+    const t = setTimeout(() => {
+      setVisible(true)
+      prevLeadId.current = lead.id
+    }, 80)
+    return () => clearTimeout(t)
   }, [lead?.id])
 
   /**

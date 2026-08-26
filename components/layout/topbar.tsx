@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { LogOut, Settings } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -71,14 +71,13 @@ interface TopbarProps {
 
 export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
   const router = useRouter()
-  const [status, setStatus] = useState<'online' | 'offline'>('online')
-
-  useEffect(() => {
-    const saved = localStorage.getItem('tryvex-user-status') as 'online' | 'offline'
-    if (saved) {
-      setStatus(saved)
-    }
-  }, [])
+  // Lazy initializer: lee localStorage antes del primer render en vez de
+  // arrancar en 'online' y corregir en un efecto.
+  const [status, setStatus] = useState<'online' | 'offline'>(() => {
+    if (typeof window === 'undefined') return 'online'
+    const saved = localStorage.getItem('tryvex-user-status') as 'online' | 'offline' | null
+    return saved ?? 'online'
+  })
 
   function toggleStatus() {
     const newStatus = status === 'online' ? 'offline' : 'online'

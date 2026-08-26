@@ -142,13 +142,16 @@ const ThemeContext = createContext<ThemeCtx>({
 })
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<ThemeTokens>(DEFAULT_THEME)
+  // Lazy initializer: lee localStorage una sola vez, antes del primer render,
+  // en vez de arrancar en DEFAULT_THEME y pisarlo en un efecto (evita el flash
+  // de tema por defecto y el setState síncrono dentro de un effect).
+  const [theme, setTheme] = useState<ThemeTokens>(() => loadTheme())
 
-  // Load from localStorage once on mount
+  // Aplicar el tema al DOM (CSS vars) al montar. No es un setState — es
+  // sincronizar con el sistema externo (document.documentElement).
   useEffect(() => {
-    const saved = loadTheme()
-    setTheme(saved)
-    applyTheme(saved)
+    applyTheme(theme)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const set = useCallback(<K extends keyof ThemeTokens>(key: K, value: ThemeTokens[K]) => {

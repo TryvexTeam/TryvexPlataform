@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Sliders, RotateCcw, ChevronDown, Check } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -360,9 +360,25 @@ function ThemePresets() {
  * Main Panel
  * ──────────────────────────────────────────────── */
 
+/**
+ * `useSyncExternalStore` y no `useState`+`useEffect`: el lint del repo
+ * (`react-hooks/set-state-in-effect`) rechaza el `setState` síncrono dentro
+ * de un efecto que necesitaría ese patrón para el flag de "ya montó en el
+ * cliente" (portal SSR-safe). No hay nada a lo que suscribirse — el valor
+ * solo cambia una vez, de servidor a cliente — así que la función de
+ * suscripción es un no-op.
+ */
+function useHasMounted() {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  )
+}
+
 export function ThemePanel() {
   const { theme, set, updateTheme, reset, panelOpen: open, setPanelOpen: setOpen } = useTheme()
-  const [mounted, setMounted] = useState(false)
+  const mounted = useHasMounted()
   const [subiendo, setSubiendo] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -387,12 +403,6 @@ export function ThemePanel() {
       setSubiendo(false)
     }
   }
-
-  // Set mounted on client side
-  useEffect(() => {
-    setMounted(true)
-    return () => setMounted(false)
-  }, [])
 
   // Block scrolling on body when sidebar is open
   useEffect(() => {

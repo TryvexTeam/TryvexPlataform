@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
@@ -142,18 +142,16 @@ export function Sidebar({
   esSuperadmin = false,
 }: SidebarProps) {
   const pathname = usePathname()
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  // Lazy initializer: lee localStorage antes del primer render. Cuando
+  // forceExpand es true el valor queda inerte (ver `collapsed` más abajo),
+  // así que no hace falta releerlo si forceExpand cambia en caliente.
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('tryvex-sidebar-collapsed') === 'true'
+  })
 
   const itemsPrimarios = puedeVerFinanzas ? [...primaryNav, finanzasNav] : primaryNav
   const itemsSistema = esSuperadmin ? [...systemNav, accesosNav] : systemNav
-
-  useEffect(() => {
-    if (forceExpand) return
-    const stored = localStorage.getItem('tryvex-sidebar-collapsed')
-    if (stored !== null) {
-      setIsCollapsed(stored === 'true')
-    }
-  }, [forceExpand])
 
   const toggleCollapse = () => {
     if (forceExpand) return
