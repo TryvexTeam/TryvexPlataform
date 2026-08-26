@@ -25,6 +25,27 @@ export type ArchivoCandidato = {
   bytes: number
 }
 
+/** Extensiones ejecutables/script: no aportan nada a un chat de equipo y son
+ *  el vector clásico de malware por adjunto. Denylist, no allowlist — el chat
+ *  recibe de todo (PDFs, planillas, imágenes, zips) y una allowlist cerrada
+ *  rechazaría cosas legítimas que hoy funcionan. */
+const EXTENSIONES_BLOQUEADAS = [
+  'exe', 'bat', 'cmd', 'com', 'msi', 'msix', 'msp', 'scr', 'ps1', 'psm1',
+  'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh', 'sh', 'bash', 'app', 'jar',
+  'dll', 'gadget', 'reg', 'lnk', 'apk', 'hta', 'cpl', 'pif', 'scf', 'url',
+  'ws', 'wsc',
+]
+
+/** Windows recorta espacios y puntos finales del nombre al guardar el
+ *  archivo en disco (comportamiento Win32 documentado), así que
+ *  "malware.exe " o "malware.exe." terminan siendo "malware.exe"
+ *  ejecutable aunque la extensión cruda no matchee el denylist. */
+function extension(nombreCrudo: string): string {
+  const nombre = nombreCrudo.trim().replace(/[. ]+$/, '')
+  const punto = nombre.lastIndexOf('.')
+  return punto === -1 ? '' : nombre.slice(punto + 1).toLowerCase()
+}
+
 /**
  * Devuelve el motivo del rechazo, o `null` si los archivos se aceptan.
  *
@@ -40,6 +61,9 @@ export function validarArchivos(archivos: ArchivoCandidato[]): string | null {
     if (f.bytes === 0) return `"${f.nombre}" está vacío`
     if (f.bytes > MAX_BYTES) {
       return `"${f.nombre}" pesa ${pesoLegible(f.bytes)} y el máximo es ${MAX_MB} MB`
+    }
+    if (EXTENSIONES_BLOQUEADAS.includes(extension(f.nombre))) {
+      return `"${f.nombre}" no se puede adjuntar (tipo de archivo no permitido)`
     }
   }
   return null

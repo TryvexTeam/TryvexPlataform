@@ -126,7 +126,10 @@ export function PanelHilo({ conversacion, padre, miembros, onCerrar, onRespondid
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo responder')
 
-      setRespuestas((previas) => [...previas, json.data as Mensaje])
+      setRespuestas((previas) => {
+        const nueva = json.data as Mensaje
+        return previas.some((r) => r.id === nueva.id) ? previas : [...previas, nueva]
+      })
       setBorrador('')
       onRespondido(padre.id)
     } catch (err) {

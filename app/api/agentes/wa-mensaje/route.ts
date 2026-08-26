@@ -47,6 +47,15 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient() as SB
 
+  if (cuerpo.lead_id) {
+    const { data: lead } = await admin.from('fact_leads').select('id').eq('id', cuerpo.lead_id).maybeSingle()
+    if (!lead) return NextResponse.json({ success: false, error: 'lead_id no existe' }, { status: 400 })
+  }
+  if (cuerpo.cliente_id) {
+    const { data: cliente } = await admin.from('dim_clientes').select('id').eq('id', cuerpo.cliente_id).maybeSingle()
+    if (!cliente) return NextResponse.json({ success: false, error: 'cliente_id no existe' }, { status: 400 })
+  }
+
   const { data, error } = await admin
     .from('mensajes_wa')
     .insert({
