@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendorizado (PDF.js), no es código propio.
+    "public/pdf.worker.min.mjs",
   ]),
 ]);
 
