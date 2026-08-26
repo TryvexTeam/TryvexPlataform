@@ -67,7 +67,15 @@ export function BottomNav() {
   const [abierto, setAbierto] = useState(false)
 
   // Navegar cierra el panel. Sin esto queda tapando la pantalla a la que se fue.
-  useEffect(() => setAbierto(false), [pathname])
+  // Ajuste de estado durante el render (patrón recomendado por React para
+  // "resetear estado cuando cambia una prop") en vez de un efecto: evita el
+  // setState síncrono dentro de un effect y cierra el panel en el mismo
+  // render en el que cambia la ruta, sin un frame de por medio.
+  const [pathnamePrevia, setPathnamePrevia] = useState(pathname)
+  if (pathname !== pathnamePrevia) {
+    setPathnamePrevia(pathname)
+    setAbierto(false)
+  }
 
   // Con el panel abierto, el fondo no debe scrollear detrás.
   useEffect(() => {
