@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, CalendarDays, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
@@ -153,7 +153,13 @@ export function ProyectosKanban({ initialProyectos, clientes, integrantes = [] }
   const [proyectos, setProyectos] = useState<Proyecto[]>(initialProyectos)
   const [formOpen, setFormOpen] = useState(false)
 
-  useEffect(() => { setProyectos(initialProyectos) }, [initialProyectos])
+  // Ajuste de estado durante el render en vez de un effect: evita el setState
+  // sincrono dentro de un effect (mismo patron que leads-pipeline.tsx).
+  const [initialProyectosPrevios, setInitialProyectosPrevios] = useState(initialProyectos)
+  if (initialProyectos !== initialProyectosPrevios) {
+    setInitialProyectosPrevios(initialProyectos)
+    setProyectos(initialProyectos)
+  }
 
   const integrantePorId = new Map(integrantes.map((i) => [i.id, i]))
 
