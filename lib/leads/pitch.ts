@@ -99,23 +99,23 @@ const OBJECIONES: TurnoPitch[] = [
   },
   {
     rol: 'Objeción — “Mándame información”',
-    texto: '“Claro. Puedo mandarte una presentación, pero sería bastante genérica. Lo que quería mostrarte nace de lo que vimos en tu negocio. Prefiero que usemos una llamada corta y que tú decidas con algo concreto delante.”',
+    texto: '“Claro. Puedo mandarte una presentación, pero sería bastante genérica. Lo que quería mostrarte nace de lo que vimos en tu negocio. Prefiero que usemos una llamada corta y que tú decidas con algo concreto delante. ¿Te acomoda martes o jueves para eso?”',
   },
   {
     rol: 'Objeción — “Ya tenemos página / agencia / alguien que ve eso”',
-    texto: '“Perfecto, mejor todavía. No te estoy proponiendo reemplazar a nadie. Queremos revisar si hay algo entre lo que el cliente ve y cómo funciona el proceso por dentro que hoy esté quedando fuera.”',
+    texto: '“Perfecto, mejor todavía. No te estoy proponiendo reemplazar a nadie. Queremos revisar si hay algo entre lo que el cliente ve y cómo funciona el proceso por dentro que hoy esté quedando fuera. ¿Vemos 20 minutos igual, martes o jueves, para chequear eso puntual?”',
   },
   {
     rol: 'Objeción — “¿Cuánto cuesta?”',
-    texto: '“El diagnóstico inicial no tiene costo. Si después detectamos algo que valga la pena implementar, en la reunión de entrega te mostramos una propuesta con alcance y precio. Tú decides si avanzas o no.”',
+    texto: '“El diagnóstico inicial no tiene costo. Si después detectamos algo que valga la pena implementar, en la reunión de entrega te mostramos una propuesta con alcance y precio. Tú decides si avanzas o no. ¿Partimos por ahí esta semana, martes o jueves?”',
   },
   {
     rol: 'Objeción — “No quiero IA”',
-    texto: '“Está perfecto. Tampoco partimos desde la IA. Partimos desde el problema. Si se arregla con algo simple, te vamos a decir eso.”',
+    texto: '“Está perfecto. Tampoco partimos desde la IA. Partimos desde el problema. Si se arregla con algo simple, te vamos a decir eso. ¿Vemos tu caso igual, martes o jueves, sin ningún compromiso?”',
   },
   {
     rol: 'Objeción — “Estamos bien como estamos”',
-    texto: '“Puede ser. El diagnóstico también puede confirmar eso. La pregunta es si vale la pena revisar en una llamada corta si hay algo que no se esté viendo desde dentro.”',
+    texto: '“Puede ser. El diagnóstico también puede confirmar eso. ¿Vale la pena revisarlo en una llamada corta de 20 minutos, martes o jueves, aunque sea para confirmarlo?”',
   },
   {
     rol: 'Objeción — “Llámame más adelante”',
@@ -175,8 +175,16 @@ export function generarGuionAuto(lead: Lead): Guion {
     turnos: [
       {
         rol: 'Tú — apertura',
-        texto: `“Hola, ${saludo} de ${nom}… Mira, te llamo de Tryvex. Somos una agencia consultora que se encarga de posicionar negocios en internet para que puedan tener mayor visibilidad y aumenten sus ingresos económicos, implementando la inteligencia artificial a medida. Y déjame partir por lo más honesto: **¿sería mala idea que te robe treinta segundos para mostrarte algo que vi en tu negocio?**”`,
+        texto: `“Hola, ${saludo} de ${nom}… Mira, te llamo de Tryvex. Déjame partir por lo más honesto: **¿sería mala idea que te robe treinta segundos para mostrarte algo que vi en tu negocio?**”`,
         guia: 'Es una pregunta hecha para que responda “no, dale” — así siente que él manda, pero te dio el paso. Si dice “no es mala idea”, “¿de qué se trata?” o “ya, dime”, sigue.',
+      },
+      {
+        // Va DESPUES de que diga que si, no antes de pedir el permiso. El
+        // propio Playbook pide evitar decir que hacen antes de que sientan
+        // el problema; meter esto en la apertura obligaba al prospecto a
+        // entender la empresa antes de darle el pie.
+        rol: 'Tú — quiénes somos',
+        texto: '“Somos una agencia consultora que se encarga de posicionar negocios en internet para que puedan tener mayor visibilidad y aumenten sus ingresos económicos, implementando la inteligencia artificial a medida.”',
       },
       { rol: 'Tú — la señal', texto: señal },
       {
@@ -200,11 +208,11 @@ export function generarGuionAuto(lead: Lead): Guion {
       },
       {
         rol: 'Tú — pide sus datos',
-        texto: '“Perfecto, ¿me podría dar su nombre y su correo, por favor, para enviarle el link de la reunión? Le estaría llegando a su correo.”',
+        texto: '“Perfecto, ¿me podrías dar tu nombre y tu correo, por favor, para enviarte el link de la reunión? Te estaría llegando al correo.”',
       },
       {
         rol: 'Tú — despedida',
-        texto: '“Okey, ha sido un placer, [nombre]. De igual manera, nos comunicaremos con usted por WhatsApp para mantener el contacto. Chao, chao.”',
+        texto: '“Okey, ha sido un placer, [nombre]. De igual manera, nos vamos a comunicar contigo por WhatsApp para mantener el contacto. Chao, chao.”',
       },
       ...OBJECIONES,
     ],
