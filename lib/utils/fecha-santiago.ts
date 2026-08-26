@@ -22,6 +22,22 @@ export function diaSantiago(instante: Date | string): string {
 }
 
 /**
+ * Parsea un 'YYYY-MM-DD' (fecha_limite de una tarea, sin hora) como
+ * medianoche LOCAL, no UTC.
+ *
+ * `new Date('YYYY-MM-DD')` lo interpreta como medianoche UTC — regla propia
+ * de ECMAScript para strings de solo fecha, distinta de `new Date(y, m, d)`.
+ * En Chile (UTC-3/-4) esa medianoche UTC cae la tarde/noche anterior en hora
+ * local, así que formatear o comparar el resultado directo corre la fecha un
+ * día para atrás. Bug real: una tarea con fecha_limite '2026-08-25' se
+ * mostraba "24 ago" en la tarjeta.
+ */
+export function parseFechaLocal(fecha: string): Date {
+  const [anios, meses, dias] = fecha.split('-').map(Number)
+  return new Date(anios, meses - 1, dias)
+}
+
+/**
  * Medianoche de Santiago de hace `diasAtras` días (0 = hoy), como Date UTC.
  *
  * El offset de Santiago (-3/-4) no se asume fijo: se parte de la medianoche
