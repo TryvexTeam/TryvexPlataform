@@ -6,7 +6,7 @@
  */
 export function normalizarTelefono(telefono: string | null | undefined): string | null {
   if (!telefono) return null;
-  let d = telefono.replace(/\D/g, "");
+  const d = telefono.replace(/\D/g, "");
   if (d.length < 8) return null;
   if (d.startsWith("56")) return d;
   if (d.length === 9) return "56" + d; // número chileno de 9 dígitos (móvil 9.. o fijo 2..)
