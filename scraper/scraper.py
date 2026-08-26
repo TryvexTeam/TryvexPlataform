@@ -11,9 +11,11 @@ import logging
 import random
 import re
 import os
+import unicodedata
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import httpx
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, Page, BrowserContext
 from playwright.async_api import TimeoutError as PlaywrightTimeout
@@ -87,6 +89,56 @@ SOCIAL_DOMAINS = (
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def es_red_social(url: str) -> bool:
     return any(d in url.lower() for d in SOCIAL_DOMAINS)
+
+
+def slug_dominio(nombre: str) -> list[str]:
+    """Dominios candidatos derivados del nombre del negocio (ej. "Corte y
+    Estilo" -> "corteyestilo.cl", "corteyestilo.com").
+
+    Por que existe: Maps solo muestra el boton "Sitio web" si el dueño cargo
+    la URL en su ficha -- muchos negocios chilenos SI tienen sitio real y
+    nunca completaron ese campo, y hoy quedan marcados "tiene_web: false"
+    aunque no sea cierto. Esto prueba la variante mas obvia del nombre antes
+    de asumir que no tienen nada.
+
+    Nombres muy cortos o genericos (< 4 caracteres tras limpiar) se
+    descartan: un slug como "bar" o "sur" pega contra dominios reales que no
+    tienen nada que ver con el negocio, y ahi el falso positivo es peor que
+    no verificar nada.
+    """
+    base = unicodedata.normalize("NFKD", nombre.lower()).encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "", base)
+    if len(base) < 4:
+        return []
+    return [
+        f"https://{base}.cl",
+        f"https://www.{base}.cl",
+        f"https://{base}.com",
+        f"https://www.{base}.com",
+    ]
+
+
+async def buscar_web_por_nombre(nombre: str) -> Optional[str]:
+    """Prueba los dominios candidatos de `slug_dominio` con una peticion HTTP
+    real. Gratis (httpx ya es dependencia del cliente de Supabase, no se
+    agrega nada nuevo) y sin ninguna API de busqueda de por medio.
+
+    Limitacion conocida, a proposito no resuelta aca: bajo hit-rate (solo
+    encuentra el caso en que el dominio calza con el nombre del negocio) y no
+    distingue un sitio real de una pagina de dominio parqueado/en venta. Para
+    los casos que esto no atrapa (dominio sin relacion al nombre, o el unico
+    rastro esta en la bio de Instagram) hace falta una API de busqueda real
+    -- eso queda pendiente de una decision de costo del equipo.
+    """
+    async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
+        for candidato in slug_dominio(nombre):
+            try:
+                r = await client.get(candidato)
+                if r.status_code < 400:
+                    return candidato
+            except Exception:
+                continue
+    return None
 
 
 def extraer_redes_del_texto(texto: str) -> Optional[str]:
@@ -531,6 +583,16 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
         pass
 
     if tiene_web:
+        return None
+
+    # Segunda verificacion, gratis: el boton oficial de Maps solo aparece si
+    # el dueño cargo la URL ahi. Antes de asumir "no tiene web" se prueba el
+    # dominio obvio a partir del nombre (ver `buscar_web_por_nombre`). Esto es
+    # lo que evita el caso real reportado: llamar a un negocio que SI tiene
+    # sitio, diciendole que no tiene.
+    web_por_nombre = await buscar_web_por_nombre(nombre)
+    if web_por_nombre:
+        log.info(f"  descartado (web encontrada por nombre, no en Maps): {nombre} -> {web_por_nombre}")
         return None
 
     # Un negocio que cerro definitivamente no es un lead: escribirle es la peor
