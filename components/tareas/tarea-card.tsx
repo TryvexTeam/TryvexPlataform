@@ -3,6 +3,7 @@ import { es } from 'date-fns/locale'
 import { CalendarDays, AlertCircle, Trash2 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { TareaConResponsables } from '@/lib/types/tarea'
+import { parseFechaLocal } from '@/lib/utils/fecha-santiago'
 
 const prioridadConfig = {
   alta:  { label: 'Alta',  style: { background: 'oklch(63% 0.21 22 / 12%)', color: 'oklch(72% 0.17 22)',  border: '1px solid oklch(63% 0.21 22 / 28%)' } },
@@ -31,7 +32,7 @@ export function TareaCard({ tarea, onClick, enPapelera }: TareaCardProps) {
     !enPapelera &&
     tarea.fecha_limite &&
     tarea.estado !== 'listo' &&
-    new Date(tarea.fecha_limite) < new Date()
+    parseFechaLocal(tarea.fecha_limite) < new Date()
 
   return (
     <div
@@ -110,7 +111,7 @@ export function TareaCard({ tarea, onClick, enPapelera }: TareaCardProps) {
               style={{ color: isVencida ? 'oklch(72% 0.17 22)' : 'var(--tx-ink-muted)' }}
             >
               {isVencida ? <AlertCircle size={10} /> : <CalendarDays size={10} />}
-              {format(new Date(tarea.fecha_limite), 'd MMM', { locale: es })}
+              {format(parseFechaLocal(tarea.fecha_limite), 'd MMM', { locale: es })}
             </span>
           )}
         </div>

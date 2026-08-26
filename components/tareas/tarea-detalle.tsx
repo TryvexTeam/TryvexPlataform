@@ -15,6 +15,7 @@ import { TareaForm } from './tarea-form'
 import type { TareaConResponsables, Subtarea, TareaInsert } from '@/lib/types/tarea'
 import { etiquetaEstado } from '@/lib/types/tarea'
 import { cn } from '@/lib/utils'
+import { parseFechaLocal } from '@/lib/utils/fecha-santiago'
 
 const prioridadColor = { alta: 'destructive', media: 'secondary', baja: 'outline' } as const
 
@@ -162,7 +163,7 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
         <Badge variant="outline">Esfuerzo: {tarea.esfuerzo}</Badge>
         {tarea.fecha_limite && (
           <Badge variant="outline">
-            Límite: {format(new Date(tarea.fecha_limite), 'd MMM yyyy', { locale: es })}
+            Límite: {format(parseFechaLocal(tarea.fecha_limite), 'd MMM yyyy', { locale: es })}
           </Badge>
         )}
       </div>
