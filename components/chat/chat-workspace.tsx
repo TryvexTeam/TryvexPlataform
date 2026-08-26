@@ -113,6 +113,10 @@ export function ChatWorkspace({
   }, [])
 
   useEffect(() => {
+    // `refrescarSalas` es async: en este tick solo arranca el fetch, y el
+    // setState pasa recien cuando responde. La regla no puede ver a traves
+    // del await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refrescarSalas()
 
     const supabase = createClient()

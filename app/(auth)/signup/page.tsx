@@ -28,15 +28,15 @@ function SignupForm() {
   const [form, setForm] = useState({ email: '', password: '', confirmPassword: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
-  const [tokenValido, setTokenValido] = useState<boolean | null>(null)
-  const [tokenError, setTokenError] = useState<string | null>(null)
+  // Sin token no hay nada que verificar: se sabe de entrada, sin pasar por el
+  // efecto, que la invitación es inválida.
+  const [tokenValido, setTokenValido] = useState<boolean | null>(token ? null : false)
+  const [tokenError, setTokenError] = useState<string | null>(
+    token ? null : 'Se requiere una invitación válida para registrarse.',
+  )
 
   useEffect(() => {
-    if (!token) {
-      setTokenValido(false)
-      setTokenError('Se requiere una invitación válida para registrarse.')
-      return
-    }
+    if (!token) return
 
     fetch(`/api/invitaciones/${token}`)
       .then((r) => r.json())
