@@ -126,22 +126,27 @@ export function LeadsPipeline({ initialLeads }: LeadsPipelineProps) {
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Header. Mismo patrón que tareas-kanban.tsx: apilado en el teléfono
+          (título+contador arriba, botones abajo a ancho completo) y en una
+          sola fila desde `sm`. Antes era un `flex items-center justify-between`
+          fijo con 3 botones + el contador peleando por una sola línea — en un
+          iPhone el texto "X leads en total" y los botones se apretaban o se
+          cortaban, sin forma de leer el número completo. */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[var(--tx-ink-primary)]">Leads</h1>
           <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">{leads.length} leads en total</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant={vista === 'kanban' ? 'default' : 'outline'} size="sm" onClick={() => setVista('kanban')}>
+          <Button variant={vista === 'kanban' ? 'default' : 'outline'} size="sm" className="flex-1 sm:flex-none" onClick={() => setVista('kanban')}>
             <Kanban size={14} className="mr-1.5" />
             Pipeline
           </Button>
-          <Button variant={vista === 'tabla' ? 'default' : 'outline'} size="sm" onClick={() => setVista('tabla')}>
+          <Button variant={vista === 'tabla' ? 'default' : 'outline'} size="sm" className="flex-1 sm:flex-none" onClick={() => setVista('tabla')}>
             <List size={14} className="mr-1.5" />
             Tabla
           </Button>
-          <Button size="sm" onClick={() => setFormOpen(true)}>
+          <Button size="sm" className="flex-1 sm:flex-none" onClick={() => setFormOpen(true)}>
             <Plus size={14} className="mr-1.5" />
             Nuevo lead
           </Button>

@@ -88,10 +88,13 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
         <ArrowLeft size={14} /> Volver
       </button>
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)]">{lead.nombre_negocio}</h1>
+      {/* Header. `flex-wrap` + `min-w-0` en el título: sin esto, un nombre de
+          negocio largo junto a los 3 botones ("Bitácora", "Editar", borrar)
+          no cabían en una fila en el teléfono y se salían de la pantalla —
+          ahora los botones bajan a su propia fila si hace falta. */}
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)] break-words">{lead.nombre_negocio}</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-medium">
               <span className="h-2 w-2 rounded-full" style={{ background: estadoConf?.color }} />
