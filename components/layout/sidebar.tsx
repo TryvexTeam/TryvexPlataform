@@ -208,7 +208,7 @@ export function Sidebar({
             whileTap={{ scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <Link href="/dashboard" className="outline-none" aria-label="Ir al dashboard">
+            <Link href="/dashboard" className="outline-none" aria-label="tryvex, ir al dashboard">
               <TryvexLogo variant="icon" theme="dark" iconSize={20} />
             </Link>
           </motion.div>
@@ -218,7 +218,7 @@ export function Sidebar({
             whileTap={{ scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <Link href="/dashboard" className="outline-none" aria-label="Ir al dashboard">
+            <Link href="/dashboard" className="outline-none" aria-label="tryvex, ir al dashboard">
               <TryvexLogo variant="full" theme="dark" iconSize={20} />
             </Link>
           </motion.div>
