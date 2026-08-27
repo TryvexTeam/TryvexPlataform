@@ -60,9 +60,20 @@ export async function GET(req: Request) {
     return NextResponse.json(
       { success: true, data },
       {
-        // Cinco minutos: suficiente para que el muestreo fino no sirva de
-        // sonda, y poco para que una hora recién ocupada desaparezca pronto.
-        headers: { 'Cache-Control': 'public, max-age=300, s-maxage=300' },
+        /* Un minuto, no cinco.
+         *
+         * La landing invalida su propio caché en cuanto alguien guarda sus
+         * horas (tag `disponibilidad`), pero si acá se retienen cinco minutos,
+         * al re-preguntar recibe la MISMA respuesta vieja y la invalidación no
+         * sirve de nada. Dos cachés en serie sin coordinar fue exactamente lo
+         * que hizo que marcar las horas pareciera no funcionar.
+         *
+         * Un minuto sigue amortiguando el muestreo fino —que es lo que
+         * revelaría la agenda del equipo por diferencia— y acota a eso la
+         * ventana en que una hora recién ocupada podría seguir ofreciéndose.
+         * La defensa real contra el sondeo es el token, no el caché.
+         */
+        headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' },
       }
     )
   } catch (err) {

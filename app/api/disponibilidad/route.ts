@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { DisponibilidadRepository } from '@/lib/repos/disponibilidad'
 import { DisponibilidadPutSchema } from '@/lib/types/disponibilidad'
+import { revalidarEnLanding } from '@/lib/revalidate-landing'
 
 export async function GET() {
   const supabase = await createClient()
@@ -38,5 +39,18 @@ export async function PUT(req: Request) {
   }
 
   await repo.replaceOwn(integranteId, result.data.celdas)
+
+  /* Avisar a la landing que sus horas cambiaron.
+     Sin esto, quien acaba de marcar sus horas ve el formulario de tryvex.tech
+     diciendo «no queda ninguna hora libre» hasta diez minutos después —cinco
+     del caché del CRM y cinco del de la landing— y concluye, con razón, que no
+     funcionó. Pasó exactamente así la primera vez que se encendió.
+
+     Se espera el resultado en vez de dispararlo y olvidarlo: en una función
+     serverless, una promesa suelta puede morir cuando la respuesta se envía y
+     el aviso no llegaría nunca. Y no puede tumbar el guardado — la propia
+     función se traga sus errores. */
+  await revalidarEnLanding('disponibilidad')
+
   return NextResponse.json({ success: true })
 }
