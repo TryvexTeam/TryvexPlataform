@@ -60,20 +60,24 @@ export async function GET(req: Request) {
     return NextResponse.json(
       { success: true, data },
       {
-        /* Un minuto, no cinco.
+        /* NUNCA `public`, y esto no es una preferencia: es un agujero medido.
          *
-         * La landing invalida su propio caché en cuanto alguien guarda sus
-         * horas (tag `disponibilidad`), pero si acá se retienen cinco minutos,
-         * al re-preguntar recibe la MISMA respuesta vieja y la invalidación no
-         * sirve de nada. Dos cachés en serie sin coordinar fue exactamente lo
-         * que hizo que marcar las horas pareciera no funcionar.
+         * El CDN de Vercel cachea por URL e ignora las cabeceras de la
+         * petición, así que con `Cache-Control: public` guardaba la respuesta
+         * de una llamada CON token y se la servía a cualquiera que pidiera la
+         * misma URL SIN token. Comprobado contra producción: la segunda
+         * petición, sin credencial alguna, devolvía la agenda completa. El
+         * token quedaba de adorno.
          *
-         * Un minuto sigue amortiguando el muestreo fino —que es lo que
-         * revelaría la agenda del equipo por diferencia— y acota a eso la
-         * ventana en que una hora recién ocupada podría seguir ofreciéndose.
-         * La defensa real contra el sondeo es el token, no el caché.
+         * `no-store` cierra eso y además es lo que hace que un cambio de horas
+         * se vea al instante: la landing invalida su propio caché al recibir el
+         * aviso, y acá ya no hay nada viejo que devolverle.
+         *
+         * Lo que se pierde —amortiguar el muestreo fino de la agenda— nunca lo
+         * dio de verdad: la defensa contra el sondeo es el token, y el caché
+         * era justamente lo que lo anulaba.
          */
-        headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' },
+        headers: { 'Cache-Control': 'private, no-store' },
       }
     )
   } catch (err) {
