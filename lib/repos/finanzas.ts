@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import type { FiltroFinanzas, Movimiento, MovimientoInsert, MovimientoUpdate } from '@/lib/types/finanzas'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 /** Minutos que vive la URL firmada de un voucher. Corta a propósito: el comprobante
  *  lleva montos y a veces datos bancarios, y una URL larga se comparte sola. */
@@ -95,6 +96,8 @@ export class FinanzasRepository {
     if (desde) q = q.gte('mes', desde)
     const { data, error } = await q
     if (error) throw new Error(error.message)
-    return data ?? []
+    // Es una vista agregada: PostgREST marca todas sus columnas como nulables
+    // porque no puede saber que el GROUP BY siempre las llena.
+    return (data ?? []) as { mes: string; ingresos_clp: number; egresos_clp: number; saldo_clp: number; movimientos: number }[]
   }
 }

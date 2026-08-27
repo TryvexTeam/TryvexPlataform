@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/server'
 import {
   ESTADOS_ACTIVOS,
@@ -6,8 +8,7 @@ import {
   type ScraperRunConAutor,
 } from '@/lib/types/scraper'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 /** La corrida ya estaba tomada por otro. Se distingue para contestar 409 y no 500. */
 export class YaHayUnaCorriendo extends Error {

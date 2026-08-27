@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { normalizarConsulta, salaVacia, type CambioSala, type Pista, type SalaMusica } from '@/lib/types/musica'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 export class MusicaRepository {
   private sb: SB

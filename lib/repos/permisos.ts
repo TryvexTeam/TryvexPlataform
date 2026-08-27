@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import type { IntegrantePermisos, Permiso, Privilegio } from '@/lib/types/permisos'
 import { normalizarPermisos } from '@/lib/types/permisos'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 const CAMPOS =
   'id, nombre, email, avatar_url, activo, es_superadmin, ver_jornadas_equipo, ver_finanzas, gestionar_finanzas, visible_en_landing'

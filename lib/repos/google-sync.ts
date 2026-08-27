@@ -1,7 +1,8 @@
 import type { GoogleSyncState } from '@/lib/types/evento'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 /** Estado del sync con Google Calendar (fila única por calendar_id). Solo service role. */
 export class GoogleSyncRepository {
@@ -18,7 +19,7 @@ export class GoogleSyncRepository {
       .eq('calendar_id', calendarId)
       .maybeSingle()
     if (error) throw new Error(error.message)
-    return data
+    return data as GoogleSyncState | null
   }
 
   async upsert(state: Partial<GoogleSyncState> & { calendar_id: string }): Promise<void> {

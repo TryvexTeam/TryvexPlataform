@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import type { CrearNotaInput, EntradaCerebro, FiltroBitacora } from '@/lib/types/cerebro'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 export class CerebroRepository {
   private sb: SB

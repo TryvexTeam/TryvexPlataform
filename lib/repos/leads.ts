@@ -3,9 +3,10 @@ import type { LeadInsert, LeadUpdate, Lead, Interaccion } from '@/lib/types/lead
 import type { FilaAccionHoy, SerieDia } from '@/lib/types/dashboard'
 import { debeAvanzarAContactado, esContacto } from '@/lib/types/lead'
 import { diaSantiago } from '@/lib/utils/fecha-santiago'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 export class LeadsRepository {
   private sb: SB

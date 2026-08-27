@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/server'
 import type {
   AdjuntoMensaje,
@@ -8,8 +10,7 @@ import type {
   TipoConversacion,
 } from '@/lib/types/chat'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 interface MiembroRow {
   conversacion_id: string
@@ -138,7 +139,9 @@ export class ChatRepository {
     if (error) throw new Error(error.message)
 
     // Se piden los más nuevos, se muestran en orden cronológico.
-    const mensajes = ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[])
+    // `as unknown` primero: cuando el embed falla, PostgREST devuelve
+    // `GenericStringError[]`, que no se solapa con el tipo del dominio.
+    const mensajes = ((data ?? []) as unknown as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[])
       .map(({ mensaje_adjuntos, ...m }) => ({ ...m, adjuntos: mensaje_adjuntos ?? [] }))
       .reverse()
 

@@ -1,10 +1,18 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import type { Database } from '@/lib/types/database'
 import type { Celda, DisponibilidadIntegrante, SlotPublico } from '@/lib/types/disponibilidad'
 import { calcularSlots, type CeldaOfrecida, type Ocupacion } from '@/lib/citas/slots'
 import { sumarDias } from '@/lib/utils/fecha-santiago'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+/**
+ * El cliente, tipado contra el esquema real.
+ *
+ * Antes era `any`, así que ninguna consulta de este archivo estaba validada:
+ * una columna mal escrita compilaba y fallaba recién en producción. Ver
+ * lib/types/database.ts.
+ */
+type SB = SupabaseClient<Database>
 
 interface CeldaRow {
   integrante_id: string

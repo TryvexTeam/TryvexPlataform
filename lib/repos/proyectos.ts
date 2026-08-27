@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import type { Proyecto, ProyectoInsert, ProyectoUpdate, Venta } from '@/lib/types/proyecto'
 import { plantillaDe, type IdServicio } from '@/lib/types/servicios'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 /** Tope de ids por consulta: más arriba, la URL se vuelve impracticable. */
 const LOTE_IDS = 200

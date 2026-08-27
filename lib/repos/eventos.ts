@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import type { AsistenteExterno, Evento, EventoInsert, EventoDesdeGoogle } from '@/lib/types/evento'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 interface EventoRow {
   id: string
@@ -151,7 +152,7 @@ export class EventosRepository {
     if (existente) {
       const { error } = await this.sb
         .from('eventos')
-        .update(evento)
+        .update(evento as never)
         .eq('id', existente.id)
       if (error) throw new Error(error.message)
       return
@@ -159,7 +160,7 @@ export class EventosRepository {
 
     const { error } = await this.sb
       .from('eventos')
-      .insert({ ...evento, origen: 'google', creado_por: null })
+      .insert({ ...evento, origen: 'google', creado_por: null } as never)
     if (error) throw new Error(error.message)
   }
 
@@ -179,7 +180,9 @@ export class EventosRepository {
       .select('google_event_id, origen')
       .eq('id', id)
       .maybeSingle()
-    return data ?? null
+    // `origen` lleva CHECK ('crm','google') en la base; el tipo generado dice
+    // `string` porque el esquema no expresa los CHECK.
+    return (data as { google_event_id: string | null; origen: Evento['origen'] } | null) ?? null
   }
 
   /** Emails de integrantes activos por id (para invitaciones de calendario) */
