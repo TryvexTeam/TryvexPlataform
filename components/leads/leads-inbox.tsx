@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { Search, SlidersHorizontal, X, PhoneCall, PhoneOff } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 import type { AsignacionConIntegrante } from '@/lib/types/asignacion'
 import { AvatarStack } from '@/components/shared/avatar-stack'
@@ -366,15 +366,39 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
                     <p className="text-[12px] text-[var(--tx-ink-muted)] leading-tight truncate min-w-0">
                       {lead.info_texto || lead.nicho || 'Sin descripción'}
                     </p>
-                    <span
-                      className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                      style={{
-                        background: `${cfg.dot}22`,
-                        color: cfg.dot,
-                        border: `1px solid ${cfg.dot}44`,
-                      }}
-                    >
-                      {cfg.label}
+                    <span className="flex items-center gap-1 shrink-0">
+                      {/* Mismo criterio que en la tarjeta del tablero
+                          (lead-card.tsx): el resultado de la última llamada
+                          se ve acá también, sin abrir la ficha — verde si
+                          contestó, apagado si no, nada si nunca se le llamó. */}
+                      {lead.ultima_llamada_respondio === true && (
+                        <PhoneCall
+                          size={11}
+                          style={{ color: 'oklch(72% 0.17 145)' }}
+                          aria-label="Última llamada: contestó"
+                        >
+                          <title>Última llamada: contestó</title>
+                        </PhoneCall>
+                      )}
+                      {lead.ultima_llamada_respondio === false && (
+                        <PhoneOff
+                          size={11}
+                          style={{ color: 'var(--tx-ink-muted)' }}
+                          aria-label="Última llamada: sin respuesta"
+                        >
+                          <title>Última llamada: sin respuesta</title>
+                        </PhoneOff>
+                      )}
+                      <span
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        style={{
+                          background: `${cfg.dot}22`,
+                          color: cfg.dot,
+                          border: `1px solid ${cfg.dot}44`,
+                        }}
+                      >
+                        {cfg.label}
+                      </span>
                     </span>
                   </div>
                   {/* Fila 3: quién tiene este lead. Abajo a la derecha, como en
