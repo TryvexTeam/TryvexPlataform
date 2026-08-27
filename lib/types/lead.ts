@@ -87,6 +87,9 @@ export const LeadSchema = z.object({
   responsable_id: z.string().uuid().nullable(),
   origen: z.enum(['scraper', 'manual', 'referido']),
   ultimo_contacto: z.string().nullable(),
+  // Si la ULTIMA llamada registrada fue contestada (migración 092). NULL =
+  // nunca se le registró una llamada — distinto de `false` (llamó, no contestó).
+  ultima_llamada_respondio: z.boolean().nullable().optional(),
   notas: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),

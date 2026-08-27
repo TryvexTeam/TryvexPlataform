@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Globe, Phone, MapPin, Star } from 'lucide-react'
+import { Globe, Phone, PhoneCall, PhoneOff, MapPin, Star } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 
 const origenConfig = {
@@ -117,8 +117,34 @@ export const LeadCard = memo(function LeadCard({ lead, onClick, noLeidos = 0 }: 
           {origenConfig[lead.origen].label}
         </span>
         <div className="flex items-center gap-2">
-          {lead.telefono && (
+          {/*
+            Antes de que se registrara ninguna llamada: solo el ícono de
+            "tiene teléfono" (gris, informativo). Después de la primera
+            llamada, el ícono pasa a contar el resultado — verde si contestó,
+            apagado si no — para distinguir de un vistazo, sin abrir la
+            ficha, a quién ya se le habló de verdad de a quién solo se le
+            marcó sin suerte.
+          */}
+          {lead.telefono && lead.ultima_llamada_respondio == null && (
             <Phone size={11} style={{ color: 'var(--tx-ink-muted)' }} />
+          )}
+          {lead.telefono && lead.ultima_llamada_respondio === true && (
+            <PhoneCall
+              size={11}
+              style={{ color: 'oklch(72% 0.17 145)' }}
+              aria-label="Última llamada: contestó"
+            >
+              <title>Última llamada: contestó</title>
+            </PhoneCall>
+          )}
+          {lead.telefono && lead.ultima_llamada_respondio === false && (
+            <PhoneOff
+              size={11}
+              style={{ color: 'var(--tx-ink-muted)' }}
+              aria-label="Última llamada: sin respuesta"
+            >
+              <title>Última llamada: sin respuesta</title>
+            </PhoneOff>
           )}
           {lead.tiene_web && (
             <Globe size={11} style={{ color: 'var(--tx-ink-muted)' }} />

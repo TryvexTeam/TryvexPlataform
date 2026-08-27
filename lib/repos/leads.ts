@@ -477,10 +477,17 @@ export class LeadsRepository {
       const lead = await this.getById(data.lead_id)
       if (!lead) return
 
-      const cambios: { ultimo_contacto: string; estado?: Lead['estado'] } = {
+      const cambios: {
+        ultimo_contacto: string
+        estado?: Lead['estado']
+        ultima_llamada_respondio?: boolean | null
+      } = {
         ultimo_contacto: new Date().toISOString(),
       }
       if (debeAvanzarAContactado(lead.estado, data.tipo)) cambios.estado = 'contactado'
+      // Solo las llamadas mueven este campo — es lo que pinta el icono de
+      // telefono en la tarjeta, no tiene sentido que un WhatsApp lo toque.
+      if (data.tipo === 'llamada') cambios.ultima_llamada_respondio = data.respondio ?? null
 
       await this.sb.from('fact_leads').update(cambios).eq('id', data.lead_id)
     } catch {
