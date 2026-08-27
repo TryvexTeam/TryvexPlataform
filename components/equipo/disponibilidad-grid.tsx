@@ -6,6 +6,7 @@ import type { Celda, DisponibilidadIntegrante } from '@/lib/types/disponibilidad
 import { AvatarIntegrante } from '@/components/shared/avatar-integrante'
 import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
 import { hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
+import { PanelCitasWeb, type ModoRejilla } from '@/components/equipo/panel-citas-web'
 
 /**
  * Lado del avatar dentro de una celda de la rejilla.
@@ -52,6 +53,12 @@ export function DisponibilidadGrid() {
   const [data, setData] = useState<DisponibilidadIntegrante[] | null>(null)
   const [myCells, setMyCells] = useState<Set<string>>(new Set())
   const [savedCells, setSavedCells] = useState<Set<string>>(new Set())
+  const [publicCells, setPublicCells] = useState<Set<string>>(new Set())
+  const [savedPublic, setSavedPublic] = useState<Set<string>>(new Set())
+  const [recibeCitas, setRecibeCitas] = useState(false)
+  const [savedRecibeCitas, setSavedRecibeCitas] = useState(false)
+  const [visibleEnLanding, setVisibleEnLanding] = useState(false)
+  const [modo, setModo] = useState<ModoRejilla>('propia')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -76,6 +83,12 @@ export function DisponibilidadGrid() {
           const s = buildSet(own.celdas)
           setMyCells(s)
           setSavedCells(new Set(s))
+          const pub = buildSet(own.celdas.filter((c) => c.publica))
+          setPublicCells(pub)
+          setSavedPublic(new Set(pub))
+          setRecibeCitas(own.recibe_citas)
+          setSavedRecibeCitas(own.recibe_citas)
+          setVisibleEnLanding(own.visible_en_landing)
         }
       })
       .catch(() => {
@@ -96,13 +109,16 @@ export function DisponibilidadGrid() {
   }, [])
 
   // ---------- Derived ----------
-  const hasChanges = (() => {
-    if (myCells.size !== savedCells.size) return true
-    for (const k of myCells) {
-      if (!savedCells.has(k)) return true
-    }
-    return false
-  })()
+  const mismosSets = (a: Set<string>, b: Set<string>) => {
+    if (a.size !== b.size) return false
+    for (const k of a) if (!b.has(k)) return false
+    return true
+  }
+
+  const hasChanges =
+    !mismosSets(myCells, savedCells) ||
+    !mismosSets(publicCells, savedPublic) ||
+    recibeCitas !== savedRecibeCitas
 
   const totalMembers = data?.length ?? 0
 
@@ -128,27 +144,57 @@ export function DisponibilidadGrid() {
   // ---------- Handlers ----------
   const toggleCell = useCallback(
     (key: string) => {
+      if (modo === 'publica') {
+        setPublicCells((prev) => {
+          // Solo se puede ofrecer afuera una hora en la que uno está: marcar
+          // como pública una celda que no es propia publicaría una hora en la
+          // que no se atiende.
+          if (dragMode.current === 'add' && !myCells.has(key)) return prev
+          const next = new Set(prev)
+          if (dragMode.current === 'add') next.add(key)
+          else next.delete(key)
+          return next
+        })
+        return
+      }
+
       setMyCells((prev) => {
         const next = new Set(prev)
-        if (dragMode.current === 'add') {
-          next.add(key)
-        } else {
-          next.delete(key)
-        }
+        if (dragMode.current === 'add') next.add(key)
+        else next.delete(key)
         return next
       })
+
+      /* Dejar de estar disponible a una hora la retira también de las que se
+         ofrecen afuera: si no, quedaría publicada una hora que ya no se
+         trabaja y un visitante podría reservarla.
+
+         Va FUERA del updater de `myCells` y no dentro. Un updater tiene que
+         ser una función pura de su estado anterior — React puede llamarlo dos
+         veces en modo estricto, y un `setState` escondido ahí adentro se
+         ejecutaría dos veces. Acá los dos updates son hermanos, y React los
+         agrupa en un solo render igual. */
+      if (dragMode.current === 'remove') {
+        setPublicCells((prev) => {
+          if (!prev.has(key)) return prev
+          const next = new Set(prev)
+          next.delete(key)
+          return next
+        })
+      }
     },
-    [],
+    [modo, myCells],
   )
 
   const handleMouseDown = useCallback(
     (dia: number, hora: number) => {
       const key = celdaKey(dia, hora)
       isDragging.current = true
-      dragMode.current = myCells.has(key) ? 'remove' : 'add'
+      const yaMarcada = modo === 'publica' ? publicCells.has(key) : myCells.has(key)
+      dragMode.current = yaMarcada ? 'remove' : 'add'
       toggleCell(key)
     },
-    [myCells, toggleCell],
+    [modo, myCells, publicCells, toggleCell],
   )
 
   const handleMouseEnter = useCallback(
@@ -164,17 +210,19 @@ export function DisponibilidadGrid() {
     const celdas: Celda[] = []
     for (const k of myCells) {
       const [d, h] = k.split('-').map(Number)
-      celdas.push({ dia_semana: d, hora: h })
+      celdas.push({ dia_semana: d, hora: h, publica: publicCells.has(k) })
     }
     try {
       const res = await fetch('/api/disponibilidad', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ celdas }),
+        body: JSON.stringify({ celdas, recibe_citas: recibeCitas }),
       })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error ?? 'Error al guardar')
       setSavedCells(new Set(myCells))
+      setSavedPublic(new Set(publicCells))
+      setSavedRecibeCitas(recibeCitas)
       toast.success('Disponibilidad guardada')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Error al guardar'
@@ -213,6 +261,15 @@ export function DisponibilidadGrid() {
   // ---------- Render ----------
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <PanelCitasWeb
+        recibeCitas={recibeCitas}
+        onRecibeCitasChange={setRecibeCitas}
+        visibleEnLanding={visibleEnLanding}
+        horasOfrecidas={publicCells.size}
+        modo={modo}
+        onModoChange={setModo}
+      />
+
       {/* Legend */}
       <div
         style={{
@@ -283,6 +340,33 @@ export function DisponibilidadGrid() {
           />
           Todos disponibles
         </span>
+
+        {/* Solo cuando hay horas ofrecidas: una clave para algo que no está en
+            pantalla es ruido. */}
+        {publicCells.size > 0 && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12.5px',
+              fontWeight: 500,
+              color: 'var(--tx-ink-secondary)',
+            }}
+          >
+            <span
+              style={{
+                width: '22px',
+                height: '14px',
+                borderRadius: '5px',
+                background: 'color-mix(in srgb, var(--tx-accent) 22%, transparent)',
+                boxShadow: 'inset 0 0 0 1.5px var(--tx-accent)',
+                flexShrink: 0,
+              }}
+            />
+            Ofrecida en la web
+          </span>
+        )}
       </div>
 
       {/* Common window counter */}
@@ -384,6 +468,12 @@ export function DisponibilidadGrid() {
                 const isCommon = commonSet.has(key)
                 const members = membersByCell.get(key) ?? []
                 const isOwn = myCells.has(key)
+                const isPublica = publicCells.has(key)
+                /* En modo "horas para citas" la rejilla baja el contraste de
+                   todo lo que no es propio: lo que se está decidiendo es sobre
+                   las horas de uno, y ver el resto igual de fuerte invita a
+                   pulsar celdas que ese modo no edita. */
+                const atenuada = modo === 'publica' && !isOwn
 
                 return (
                   <div
@@ -399,15 +489,24 @@ export function DisponibilidadGrid() {
                       borderLeft: '1px solid rgba(255,255,255,0.05)',
                       borderBottom: '1px solid rgba(255,255,255,0.05)',
                       cursor: 'pointer',
-                      transition: 'background 0.1s, box-shadow 0.1s',
-                      background: isCommon
-                        ? 'var(--tx-accent-subtle)'
-                        : isOwn
-                          ? 'rgba(255,255,255,0.05)'
-                          : 'transparent',
-                      boxShadow: isCommon
+                      transition: 'background 0.1s, box-shadow 0.1s, opacity 0.1s',
+                      opacity: atenuada ? 0.35 : 1,
+                      background: isPublica
+                        ? /* Las horas ofrecidas afuera se distinguen por
+                             RELLENO propio y no solo por un borde: en modo
+                             citas hay que poder barrerlas de un vistazo, y un
+                             borde se pierde entre las líneas de la rejilla. */
+                          'color-mix(in srgb, var(--tx-accent) 22%, transparent)'
+                        : isCommon
+                          ? 'var(--tx-accent-subtle)'
+                          : isOwn
+                            ? 'rgba(255,255,255,0.05)'
+                            : 'transparent',
+                      boxShadow: isPublica
                         ? 'inset 0 0 0 1.5px var(--tx-accent)'
-                        : 'none',
+                        : isCommon
+                          ? 'inset 0 0 0 1.5px var(--tx-accent)'
+                          : 'none',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',

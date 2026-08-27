@@ -39,14 +39,21 @@
 -- ejemplo al restaurar un backup); la comprobacion (a) de la seccion 5 lo
 -- detecta si pasa.
 --
--- == Condicion previa, fuera de este repo ===================================
+-- == Los procesos del VPS: verificado, no supuesto =========================
 --
--- `scraper/` escribe desde el VPS con la clave que le inyecta el entorno
--- (scraper.py lee SUPABASE_KEY, y si falta, SUPABASE_SERVICE_KEY). El nombre
--- de la variable no prueba su valor: hay que confirmar que la cargada sea la
--- de servicio y no la publica, o este REVOKE lo rompe.
--- `wa-bridge/` esta verificado: usa WA_BRIDGE_DB_SECRET, documentada como
--- service_role en su ENV-SETUP.md, y no depende de `anon`.
+-- El riesgo de este REVOKE es romper lo que escribe desde fuera de Next.js.
+-- `scraper/` lee SUPABASE_KEY y, si falta, SUPABASE_SERVICE_KEY (scraper.py:43),
+-- y el valor vive en el VPS. El nombre de la variable no prueba su contenido.
+--
+-- Se resolvio sin acceso al VPS, por deduccion sobre datos: `fact_leads` no
+-- tiene NINGUNA policy para `anon`, asi que con la clave publica la RLS le
+-- rechazaria toda escritura. La ultima corrida del scraper es del 2026-08-26
+-- 07:19 UTC y grabo (29 filas en scraper_runs). Si escribe, no es `anon`.
+--
+-- `wa-bridge/` usa WA_BRIDGE_DB_SECRET, documentada como service_role en su
+-- ENV-SETUP.md, y no depende de `anon`.
+--
+-- Conclusion: ningun proceso externo depende de los privilegios que se revocan.
 
 -- == 1 - Primero el default, despues los objetos =============================
 -- El orden importa y es lo que fallo antes: si se recrea la vista ANTES de
@@ -55,6 +62,13 @@
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
   ON TABLES FROM anon;
+
+-- Y lo mismo para las funciones, que es de donde salia el otro agujero: el
+-- default de Supabase incluye `anon=X` sobre FUNCTIONS, asi que cada funcion
+-- nueva de `public` nace siendo llamable sin login por /rest/v1/rpc/.
+-- Ver la seccion 4 para por que `REVOKE ... FROM PUBLIC` no lo evita.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE EXECUTE ON FUNCTIONS FROM anon;
 
 -- == 2 - Los objetos que ya existen =========================================
 -- ON ALL TABLES alcanza tambien a las vistas. MAINTAIN es de PostgreSQL 17
@@ -121,16 +135,66 @@ WHERE activo = true
 GRANT SELECT ON v_equipo_publico TO anon;
 
 -- == 4 - Las funciones que `anon` no deberia poder ejecutar =================
--- Los triggers no los llama nadie por RPC: no tienen por que ser ejecutables.
--- El resto son helpers internos de RLS.
+--
+-- == Por que `REVOKE ... FROM PUBLIC` no alcanza ============================
+--
+-- Varias migraciones (069, 085, 087) cierran sus funciones asi:
+--
+--   REVOKE ALL ON FUNCTION f() FROM PUBLIC;
+--   GRANT EXECUTE ON FUNCTION f() TO authenticated;
+--
+-- y eso NO cierra nada. `PUBLIC` es el pseudo-rol; el default de Supabase le
+-- da EXECUTE a `anon` de forma EXPLICITA, y un grant explicito no se va
+-- revocando el del pseudo-rol. Medido despues de aplicar la 087:
+--
+--   proacl de cerrar_llamadas_zombis_global:
+--     {postgres=X/postgres, anon=X/postgres, authenticated=X/postgres, ...}
+--
+-- Resultado: 29 de las 30 funciones de `public` son ejecutables por `anon`, y
+-- 18 de ellas son SECURITY DEFINER -- o sea corren con los privilegios del
+-- dueño, saltando la RLS. Se cierran las 18 nombrando a `anon`, no a PUBLIC.
+--
+-- Revocar EXECUTE a un trigger NO impide que el trigger dispare: Postgres no
+-- chequea ese privilegio en la ejecucion disparada por un evento, solo en la
+-- llamada directa. Por eso el grupo A se puede cerrar a los dos roles.
+--
+-- Y se verifico antes de tocar nada que no hay NINGUNA policy `TO anon` en el
+-- esquema (0 filas), asi que quitarle EXECUTE a los helpers de RLS no deja
+-- ninguna policy sin poder evaluarse.
 
-REVOKE EXECUTE ON FUNCTION public.handle_new_auth_user()      FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.guardar_flags_privilegio()  FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.soy_superadmin()            FROM anon;
-REVOKE EXECUTE ON FUNCTION public.mi_integrante_id()          FROM anon;
-REVOKE EXECUTE ON FUNCTION public.tengo_permiso(text)         FROM anon;
-REVOKE EXECUTE ON FUNCTION public.abrir_dm(uuid)              FROM anon;
-REVOKE EXECUTE ON FUNCTION public.crear_grupo(text, uuid[])   FROM anon;
+-- Grupo A - triggers. No los llama nadie por RPC; no tienen por que ser
+-- llamables. Se cierran a los dos roles.
+REVOKE EXECUTE ON FUNCTION public.handle_new_auth_user()          FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.guardar_flags_privilegio()      FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.guardar_fijado_mensaje()        FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.touch_conversacion()            FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.cerebro_desde_estado_lead()     FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.cerebro_desde_interaccion()     FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.cerebro_desde_mensaje_wa()      FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.cerebro_desde_reunion()         FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.cerebro_desde_venta()           FROM anon, authenticated;
+
+-- Grupo B - solo service_role. `cerrar_llamadas_zombis_global` la llama el cron
+-- (app/api/cron/llamadas-zombis/route.ts) con el cliente admin; hoy cualquiera
+-- con la clave publica puede dispararla por /rest/v1/rpc/.
+-- `limpiar_reset_intentos` no la llama nadie desde el codigo (solo se define en
+-- la 030).
+REVOKE EXECUTE ON FUNCTION public.cerrar_llamadas_zombis_global() FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.limpiar_reset_intentos()        FROM anon, authenticated;
+
+-- Grupo C - las usa la app con sesion, o las policias de RLS. Se le quita a
+-- `anon` y se le deja a `authenticated`, que es quien las necesita:
+--   abrir_dm / crear_grupo        -> lib/repos/chat.ts
+--   cerrar_llamadas_zombis        -> lib/repos/llamadas.ts
+--   es_miembro_conversacion, mi_integrante_id, soy_superadmin, tengo_permiso
+--                                 -> se evaluan dentro de las policies
+REVOKE EXECUTE ON FUNCTION public.abrir_dm(uuid)                  FROM anon;
+REVOKE EXECUTE ON FUNCTION public.crear_grupo(text, uuid[])       FROM anon;
+REVOKE EXECUTE ON FUNCTION public.cerrar_llamadas_zombis(uuid)    FROM anon;
+REVOKE EXECUTE ON FUNCTION public.es_miembro_conversacion(uuid)   FROM anon;
+REVOKE EXECUTE ON FUNCTION public.mi_integrante_id()              FROM anon;
+REVOKE EXECUTE ON FUNCTION public.soy_superadmin()                FROM anon;
+REVOKE EXECUTE ON FUNCTION public.tengo_permiso(text)             FROM anon;
 
 -- == 5 - Comprobacion =======================================================
 -- Correr DESPUES de aplicar. Las cuatro, no solo la primera: un candado que
@@ -156,3 +220,12 @@ REVOKE EXECUTE ON FUNCTION public.crear_grupo(text, uuid[])   FROM anon;
 --       SELECT count(*) FROM v_equipo_publico;   -- debe dar 4
 --       -- y volver a dejarlo en true
 --     Verificar el efecto, no la definicion de la vista.
+--
+-- (e) Ninguna funcion SECURITY DEFINER queda llamable sin login. Debe dar 0:
+--       SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+--        WHERE n.nspname='public' AND p.prokind='f' AND p.prosecdef
+--          AND has_function_privilege('anon', p.oid, 'EXECUTE');
+--
+-- (f) Y la app con sesion sigue pudiendo lo suyo -- la otra mitad, otra vez:
+--       SELECT has_function_privilege('authenticated','public.abrir_dm(uuid)','EXECUTE');
+--       -- debe seguir dando true; si da false, el chat de DMs quedo roto.

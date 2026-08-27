@@ -29,6 +29,14 @@ export async function PUT(req: Request) {
     return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
   }
 
+  // El interruptor primero: si la grilla se guarda y esto falla, quedarían
+  // horas marcadas como públicas con el maestro apagado — inofensivo pero
+  // mentiroso en pantalla. Al revés, si falla la grilla, el maestro encendido
+  // sin celdas públicas no publica nada.
+  if (result.data.recibe_citas !== undefined) {
+    await repo.setRecibeCitas(integranteId, result.data.recibe_citas)
+  }
+
   await repo.replaceOwn(integranteId, result.data.celdas)
   return NextResponse.json({ success: true })
 }

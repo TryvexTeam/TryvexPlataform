@@ -72,7 +72,15 @@ export async function updateSession(request: NextRequest) {
     // token por su cuenta (hash + comparaciÃ³n en tiempo constante) y sin uno vÃ¡lido
     // responde 401. Va solo `/mensajes`: el alta de agentes (POST /api/agentes) sigue
     // exigiendo sesiÃ³n de admin, que es la que reparte llaves nuevas.
-    pathname.startsWith('/api/agentes/')
+    pathname.startsWith('/api/agentes/') ||
+    // Mismo caso que `/api/agentes/`: lo llama el SERVIDOR de tryvex.tech con
+    // `x-landing-token`, no un navegador con sesión. Sin esta línea el
+    // middleware lo rebota a /login con un 307 y el handler nunca corre — que
+    // es exactamente lo que pasó la primera vez que se probó la ruta.
+    // "Pública" acá solo significa que el middleware la deja pasar: cada
+    // handler bajo este prefijo valida el token por su cuenta, en tiempo
+    // constante, y sin uno válido responde 401.
+    pathname.startsWith('/api/publico/')
 
   // /nueva-password queda deliberadamente FUERA de las pÃºblicas: se llega con la
   // sesiÃ³n de recuperaciÃ³n ya abierta, asÃ­ que necesita sesiÃ³n. Si estuviera en la
