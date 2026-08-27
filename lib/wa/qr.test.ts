@@ -2,123 +2,146 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { obtenerEstadoQr } from './qr'
 
 /**
- * El wa-bridge sirve el QR como HTML (está pensado para abrirse directo en el
- * navegador), así que este parseo es el punto frágil de la vista: si el markup
- * del bridge cambia, la vinculación deja de mostrar el código.
+ * El agente (`Vex-Agente`) sirve el estado como JSON, no como HTML: antes esto
+ * raspaba el markup del `wa-bridge` con una expresión regular, y cualquier
+ * cambio de maqueta dejaba al equipo sin poder escanear.
  *
- * Los HTML de acá están copiados textualmente de `wa-bridge/index.js` para que,
- * si Spike cambia ese endpoint, este test falle y lo veamos antes que el equipo
- * quede sin poder escanear.
+ * Las respuestas de acá replican las de `src/app/api/connection/status/route.ts`
+ * del agente. Si ese contrato cambia, estos tests fallan y lo vemos antes que el
+ * equipo se quede mirando una pantalla vacía.
  */
 
-const BRIDGE = 'http://bridge.test:4600'
+const AGENTE = 'https://agente.test'
+const TOKEN = 'txa_token_de_prueba'
+const QR_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='
 
-function htmlConQr(dataUrl: string): string {
-  return `<html><head><meta http-equiv="refresh" content="20"></head><body style="font-family:sans-serif;text-align:center;margin-top:2em">
-      <h2>Escanea con WhatsApp -> Dispositivos vinculados</h2>
-      <img src="${dataUrl}" alt="QR de WhatsApp" />
-      <p>Esta pagina se refresca sola cada 20s (el QR expira y se regenera solo).</p>
-    </body></html>`
+function responder(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
-const HTML_CONECTADA =
-  '<html><body style="font-family:sans-serif;text-align:center;margin-top:4em"><h2>Sesion ya conectada</h2><p>No hace falta escanear nada.</p></body></html>'
-
-function responder(status: number, body: string): Response {
-  return new Response(body, { status })
+/** Deja `fetch` devolviendo esa respuesta y expone la llamada para inspeccionarla. */
+function simularAgente(res: Response) {
+  return vi.spyOn(globalThis, 'fetch').mockResolvedValue(res)
 }
 
 beforeEach(() => {
-  process.env.WA_BRIDGE_URL = BRIDGE
-  process.env.WA_BRIDGE_QR_TOKEN = 'token-de-prueba'
+  process.env.VEX_AGENT_URL = AGENTE
+  process.env.VEX_AGENT_TOKEN = TOKEN
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
-  delete process.env.WA_BRIDGE_URL
-  delete process.env.WA_BRIDGE_QR_TOKEN
+  delete process.env.VEX_AGENT_URL
+  delete process.env.VEX_AGENT_TOKEN
 })
 
 describe('obtenerEstadoQr', () => {
-  it('devuelve no_configurado cuando falta la URL del puente', async () => {
-    delete process.env.WA_BRIDGE_URL
+  it('devuelve el QR cuando el agente lo tiene listo', async () => {
+    simularAgente(responder(200, { status: 'qr', qrPng: QR_PNG, phone: null }))
 
-    const resultado = await obtenerEstadoQr()
-
-    expect(resultado).toEqual({ estado: 'no_configurado' })
+    expect(await obtenerEstadoQr()).toEqual({ estado: 'qr_listo', imagen: QR_PNG })
   })
 
-  it('devuelve no_configurado cuando falta el token del QR', async () => {
-    delete process.env.WA_BRIDGE_QR_TOKEN
+  it('informa el número cuando la sesión ya está conectada', async () => {
+    simularAgente(responder(200, { status: 'connected', phone: '56950358818' }))
 
-    const resultado = await obtenerEstadoQr()
-
-    expect(resultado).toEqual({ estado: 'no_configurado' })
+    expect(await obtenerEstadoQr()).toEqual({
+      estado: 'conectado',
+      telefono: '56950358818',
+    })
   })
 
-  it('extrae la imagen del QR del HTML que sirve el puente', async () => {
-    const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(responder(200, htmlConQr(dataUrl)))
+  it('propaga el posible baneo — es el estado que no se puede perder', async () => {
+    simularAgente(responder(200, { status: 'posible_baneo', phone: '56950358818' }))
 
-    const resultado = await obtenerEstadoQr()
-
-    expect(resultado).toEqual({ estado: 'qr_listo', imagen: dataUrl })
+    expect(await obtenerEstadoQr()).toEqual({
+      estado: 'posible_baneo',
+      telefono: '56950358818',
+    })
   })
 
-  it('manda el token por query param y no lo expone en el resultado', async () => {
-    const spy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(responder(200, htmlConQr('data:image/png;base64,AAAA')))
+  it('trata connecting y disconnected como espera', async () => {
+    simularAgente(responder(200, { status: 'connecting', phone: null }))
+    expect((await obtenerEstadoQr()).estado).toBe('esperando_qr')
 
-    const resultado = await obtenerEstadoQr()
-
-    const urlLlamada = String(spy.mock.calls[0][0])
-    expect(urlLlamada).toBe(`${BRIDGE}/qr?token=token-de-prueba`)
-    expect(JSON.stringify(resultado)).not.toContain('token-de-prueba')
+    vi.restoreAllMocks()
+    simularAgente(responder(200, { status: 'disconnected', phone: null }))
+    expect((await obtenerEstadoQr()).estado).toBe('esperando_qr')
   })
 
-  it('reconoce la sesión ya vinculada', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(responder(200, HTML_CONECTADA))
+  it('degrada a espera un qr sin imagen, en vez de anunciar un QR que no existe', async () => {
+    simularAgente(responder(200, { status: 'qr', phone: null }))
 
-    const resultado = await obtenerEstadoQr()
-
-    expect(resultado).toEqual({ estado: 'conectado' })
+    const r = await obtenerEstadoQr()
+    expect(r.estado).toBe('esperando_qr')
+    expect(r.imagen).toBeUndefined()
   })
 
-  it('reporta esperando_qr cuando el puente todavía no emitió el código (503)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      responder(503, '<html><body><h2>Todavia no hay QR</h2></body></html>')
-    )
+  it('trata un estado desconocido como espera, sin romper', async () => {
+    simularAgente(responder(200, { status: 'algo_que_no_existe_todavia' }))
 
-    const resultado = await obtenerEstadoQr()
-
-    expect(resultado).toEqual({ estado: 'esperando_qr' })
+    expect((await obtenerEstadoQr()).estado).toBe('esperando_qr')
   })
 
-  it('reporta token_invalido cuando el puente rechaza la credencial (401)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(responder(401, 'token invalido'))
+  it('manda el token por cabecera, nunca en la URL', async () => {
+    const spy = simularAgente(responder(200, { status: 'qr', qrPng: QR_PNG }))
+    await obtenerEstadoQr()
 
-    const resultado = await obtenerEstadoQr()
-
-    expect(resultado).toEqual({ estado: 'token_invalido' })
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${AGENTE}/api/connection/status`)
+    expect(url).not.toContain(TOKEN)
+    expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`)
   })
 
-  it('reporta esperando_qr, sin romper, si el HTML del puente cambia', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      responder(200, '<html><body>markup nuevo, sin imagen</body></html>')
-    )
+  it('quita la barra final de la URL configurada', async () => {
+    process.env.VEX_AGENT_URL = `${AGENTE}///`
+    const spy = simularAgente(responder(200, { status: 'qr', qrPng: QR_PNG }))
+    await obtenerEstadoQr()
 
-    const resultado = await obtenerEstadoQr()
-
-    expect(resultado).toEqual({ estado: 'esperando_qr' })
+    expect(spy.mock.calls[0][0]).toBe(`${AGENTE}/api/connection/status`)
   })
 
-  it('reporta sin_respuesta cuando el puente está caído', async () => {
+  it('reporta token inválido con 401 y con 403', async () => {
+    simularAgente(responder(401, { ok: false }))
+    expect((await obtenerEstadoQr()).estado).toBe('token_invalido')
+
+    vi.restoreAllMocks()
+    simularAgente(responder(403, { ok: false }))
+    expect((await obtenerEstadoQr()).estado).toBe('token_invalido')
+  })
+
+  it('reporta token inválido si el agente corre sin credenciales y se cerró solo', async () => {
+    simularAgente(responder(503, { ok: false, error: 'Panel sin credenciales configuradas.' }))
+
+    expect((await obtenerEstadoQr()).estado).toBe('token_invalido')
+  })
+
+  it('reporta sin respuesta ante un error del agente', async () => {
+    simularAgente(responder(500, { ok: false }))
+
+    expect((await obtenerEstadoQr()).estado).toBe('sin_respuesta')
+  })
+
+  it('reporta sin respuesta cuando el agente no contesta', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'))
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const resultado = await obtenerEstadoQr()
+    expect((await obtenerEstadoQr()).estado).toBe('sin_respuesta')
+  })
 
-    expect(resultado).toEqual({ estado: 'sin_respuesta' })
+  it('no llama a nadie si falta configuración', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+
+    delete process.env.VEX_AGENT_URL
+    expect((await obtenerEstadoQr()).estado).toBe('no_configurado')
+
+    process.env.VEX_AGENT_URL = AGENTE
+    delete process.env.VEX_AGENT_TOKEN
+    expect((await obtenerEstadoQr()).estado).toBe('no_configurado')
+
+    expect(spy).not.toHaveBeenCalled()
   })
 })

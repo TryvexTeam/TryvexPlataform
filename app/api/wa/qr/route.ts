@@ -6,8 +6,9 @@ import { obtenerEstadoQr } from '@/lib/wa/qr'
 /**
  * GET /api/wa/qr
  *
- * Sirve el QR del wa-bridge para el escaneo REMOTO: quien tiene el chip no está
- * en la máquina que corre el puente, así que entra logueado al CRM y escanea.
+ * Sirve el QR del agente de WhatsApp para el escaneo REMOTO: quien tiene el chip
+ * no está en la máquina que corre el agente, así que entra logueado al CRM y
+ * escanea desde acá.
  * La página de ajustes pinta el primer QR desde el servidor; este endpoint
  * alimenta el refresco (el código caduca cada ~20s).
  */
