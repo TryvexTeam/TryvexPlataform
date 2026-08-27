@@ -5,6 +5,7 @@ import { normalizarTelefono } from '@/lib/vex/telefono'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { AsignacionesRepository } from '@/lib/repos/asignaciones'
 import { debeAvanzarAContactado } from '@/lib/types/lead'
+import { transporteActivo, enviarPorVex } from '@/lib/wa/transporte'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -64,20 +65,43 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient() as SB
   let telefono = parsed.data.telefono ?? null
+  let nombreNegocio: string | null = null
 
   if (lead_id) {
     const { data: lead } = await admin
       .from('fact_leads')
-      .select('telefono')
+      .select('telefono, nombre_negocio')
       .eq('id', lead_id)
       .single()
     if (!lead) return NextResponse.json({ error: 'Lead no encontrado.' }, { status: 404 })
     telefono = lead.telefono
+    nombreNegocio = lead.nombre_negocio ?? null
   }
 
   const numero = normalizarTelefono(telefono)
   if (!numero) {
     return NextResponse.json({ error: 'Teléfono inválido o inexistente para ese destinatario.' }, { status: 400 })
+  }
+
+  // Con el agente como transporte, el mensaje sale por ahí y NO se anota en el
+  // buzón: dos transportes tirando del mismo mensaje lo mandarían dos veces.
+  // El registro en `outreach_messages` se hace igual más abajo, pero ya como
+  // 'enviado', no como pendiente de que alguien lo recoja.
+  //
+  // Si el agente falla no se cae al puente en silencio: son dos sesiones
+  // distintas del mismo número y elegir sola cuál usa es justo la clase de
+  // decisión que no debe tomar un `catch`. Se devuelve el error y la persona
+  // decide.
+  let referenciaVex: string | number | undefined
+  if (transporteActivo() === 'vex') {
+    const envio = await enviarPorVex(numero, texto, nombreNegocio ?? undefined)
+    if (!envio.ok) {
+      return NextResponse.json(
+        { error: envio.error ?? 'El agente no pudo enviar el mensaje.' },
+        { status: 502 }
+      )
+    }
+    referenciaVex = envio.referencia
   }
 
   // El CRM ya no llama al puente: lo anota aca y el puente lo pasa a buscar.
@@ -91,7 +115,8 @@ export async function POST(req: Request) {
       lead_id,
       canal: 'whatsapp',
       texto,
-      estado: 'encolado',
+      // Por el agente ya salió: queda 'enviado' para que nadie lo recoja otra vez.
+      estado: referenciaVex !== undefined ? 'enviado' : 'encolado',
       enviado_por: autorNombre,
       integrante_id: perfil.id,
       aprobado_por: perfil.id,
