@@ -134,6 +134,15 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
 
   const porId = new Map(equipo.map((p) => [p.id, p]))
   const timbre = useRef<{ ctx: AudioContext; parar: () => void } | null>(null)
+  /**
+   * Dedupe de `buscarEnCurso`: se dispara desde tres sitios en cada montaje
+   * (efecto de arranque, callback SUBSCRIBED del canal, y visibilitychange/
+   * focus), lo que provocaba hasta 3 `GET /api/llamadas/activas` por carga.
+   * `enVuelo` corta las simultáneas; `ultima` ignora las que llegan pisadas.
+   */
+  const buscando = useRef(false)
+  const ultimaBusqueda = useRef(0)
+  const MIN_ENTRE_BUSQUEDAS_MS = 1500
 
   const pararTimbre = useCallback(() => {
     timbre.current?.parar()
@@ -246,6 +255,12 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
    * evento: los navegadores congelan sockets en pestañas dormidas.
    */
   const buscarEnCurso = useCallback(async () => {
+    // Una a la vez, y no más de una cada MIN_ENTRE_BUSQUEDAS_MS: los tres
+    // disparadores de arranque colapsan en una sola petición.
+    if (buscando.current) return
+    if (Date.now() - ultimaBusqueda.current < MIN_ENTRE_BUSQUEDAS_MS) return
+    buscando.current = true
+    ultimaBusqueda.current = Date.now()
     try {
       const res = await fetch('/api/llamadas/activas')
       const json = await res.json()
@@ -296,6 +311,8 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
       })
     } catch {
       // Sin esto solo se pierde el ofrecimiento; el chat sigue mostrando la sala.
+    } finally {
+      buscando.current = false
     }
   }, [miIntegranteId, sonar, pararTimbre])
 
@@ -303,6 +320,11 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
   useEffect(() => {
     const supabase = createClient()
     const canal = supabase.channel(`llamadas-de-${miIntegranteId}-${++contadorCanal}`)
+    // El CLOSED que llega cuando NOSOTROS cerramos el canal (remonte del layout,
+    // StrictMode) es esperado y no significa que las llamadas dejen de llegar:
+    // el canal nuevo ya quedó suscrito. Solo es señal de alarma un CLOSED que
+    // aparece sin que hayamos pedido el cierre.
+    let cerrandoAdrede = false
 
     canal
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'llamadas' }, ({ new: fila }) => {
@@ -342,6 +364,10 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
          * Al reconectar se vuelve a preguntar qué hay vivo: mientras el canal
          * estuvo caído pudo empezar una llamada, y ese evento ya no vuelve.
          */
+        if (estado === 'CLOSED' && cerrandoAdrede) {
+          console.debug('[llamadas] canal de Realtime cerrado (remonte esperado)')
+          return
+        }
         if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT' || estado === 'CLOSED') {
           console.warn('[llamadas] canal de Realtime en estado', estado)
           return
@@ -350,6 +376,7 @@ export function ProveedorLlamadas({ miIntegranteId, equipo, children }: Proveedo
       })
 
     return () => {
+      cerrandoAdrede = true
       pararTimbre()
       supabase.removeChannel(canal)
     }

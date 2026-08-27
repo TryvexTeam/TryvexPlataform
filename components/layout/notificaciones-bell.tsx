@@ -21,6 +21,41 @@ import type { Notificacion } from '@/lib/repos/notificaciones'
 let contadorCanales = 0
 
 /**
+ * Dedupe de la carga inicial. El efecto se monta dos veces (StrictMode en dev, y
+ * cualquier remonte del topbar) y sin esto se ve `GET /api/notificaciones`
+ * abortado + reintento en cada vista. Guardamos la promesa en vuelo y su
+ * resultado por una ventana corta: el segundo montaje reusa en vez de refetch.
+ */
+interface CargaNotis { items: Notificacion[]; integrante_id: string | null }
+let promesaEnVuelo: Promise<CargaNotis | null> | null = null
+let cacheHasta = 0
+const VENTANA_DEDUPE_MS = 10_000
+
+function cargarNotificacionesInicial(): Promise<CargaNotis | null> {
+  const ahora = Date.now()
+  if (promesaEnVuelo && ahora < cacheHasta) return promesaEnVuelo
+
+  promesaEnVuelo = (async () => {
+    try {
+      const res = await fetch('/api/notificaciones')
+      const json = await res.json()
+      if (json.success) {
+        return { items: json.data.items as Notificacion[], integrante_id: json.data.integrante_id as string | null }
+      }
+      return null
+    } catch {
+      return null
+    }
+  })()
+  cacheHasta = ahora + VENTANA_DEDUPE_MS
+  // Al asentar, dejar caducar la promesa para que la próxima montada pida fresco.
+  void promesaEnVuelo.finally(() => {
+    setTimeout(() => { promesaEnVuelo = null }, VENTANA_DEDUPE_MS)
+  })
+  return promesaEnVuelo
+}
+
+/**
  * Centro de notificaciones del topbar.
  *
  * La bandeja se agrupa por tipo y cada grupo se apila, al modo del centro de
@@ -85,23 +120,15 @@ export function NotificacionesBell() {
   // antes de que llegue — sin él, la respuesta tardía escribiría en un
   // componente que ya no existe.
   useEffect(() => {
-    const corte = new AbortController()
+    let vivo = true
 
-    async function cargar() {
-      try {
-        const res = await fetch('/api/notificaciones', { signal: corte.signal })
-        const json = await res.json()
-        if (json.success) {
-          setItems(json.data.items)
-          setIntegranteId(json.data.integrante_id)
-        }
-      } catch {
-        /* red caída o petición cancelada: la campana no rompe el topbar */
-      }
-    }
+    void cargarNotificacionesInicial().then((datos) => {
+      if (!vivo || !datos) return
+      setItems(datos.items)
+      setIntegranteId(datos.integrante_id)
+    })
 
-    void cargar()
-    return () => corte.abort()
+    return () => { vivo = false }
   }, [])
 
   // Realtime: las nuevas aparecen sin recargar.

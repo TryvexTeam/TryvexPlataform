@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -21,19 +21,31 @@ export function InvitacionesPendientes({ refreshKey }: { refreshKey: number }) {
   const [pendientes, setPendientes] = useState<Pendiente[] | null>(null)
   const [aprobando, setAprobando] = useState<string | null>(null)
 
-  const cargar = useCallback(async () => {
-    const res = await fetch('/api/invitaciones/pendientes')
-    if (!res.ok) { setPendientes(null); return }
-    const json = await res.json()
-    setPendientes(json.data)
-  }, [])
-
   useEffect(() => {
-    // `cargar` es async: en este tick solo arranca el fetch, y el setState
-    // pasa recien cuando responde. La regla no puede ver a traves del await.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    cargar()
-  }, [cargar, refreshKey])
+    // Un solo fetch por carga: el AbortController cancela el del primer montaje
+    // cuando el doble-montaje de efecto (StrictMode / remonte) dispara el
+    // segundo, y el abort se traga en el catch sin logearse como error.
+    const ctrl = new AbortController()
+
+    async function cargar() {
+      try {
+        const res = await fetch('/api/invitaciones/pendientes', { signal: ctrl.signal })
+        if (!res.ok) {
+          // 403 esperado si dejo de ser superadmin entre el render del server y
+          // este fetch: la seccion simplemente no se ve, sin ruido en consola.
+          setPendientes(null)
+          return
+        }
+        const json = await res.json()
+        setPendientes(json.data)
+      } catch {
+        /* red caida o fetch abortado: la seccion no rompe la pagina */
+      }
+    }
+
+    void cargar()
+    return () => ctrl.abort()
+  }, [refreshKey])
 
   async function aprobar(inv: Pendiente) {
     setAprobando(inv.id)

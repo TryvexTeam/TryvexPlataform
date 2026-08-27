@@ -1,14 +1,17 @@
-'use client'
-
-import { useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { InvitacionForm } from '@/components/admin/invitacion-form'
-import { InvitacionesLista } from '@/components/admin/invitaciones-lista'
-import { InvitacionesPendientes } from '@/components/admin/invitaciones-pendientes'
+import { redirect } from 'next/navigation'
 import { Mail } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
+import { PermisosRepository } from '@/lib/repos/permisos'
+import { InvitacionesPanel } from '@/components/admin/invitaciones-panel'
 
-export default function AdminInvitacionesPage() {
-  const [refreshKey, setRefreshKey] = useState(0)
+export const dynamic = 'force-dynamic'
+
+export default async function AdminInvitacionesPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const yo = await new PermisosRepository(supabase).misPermisos(user.id)
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
@@ -20,27 +23,7 @@ export default function AdminInvitacionesPage() {
         </div>
       </div>
 
-      <InvitacionesPendientes refreshKey={refreshKey} />
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Nueva invitación</CardTitle>
-          <CardDescription>El link expira en 30 minutos y solo puede usarse una vez</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <InvitacionForm onCreada={() => setRefreshKey((k) => k + 1)} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Enviadas</CardTitle>
-          <CardDescription>Últimas 50 invitaciones generadas por ti</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <InvitacionesLista refreshKey={refreshKey} />
-        </CardContent>
-      </Card>
+      <InvitacionesPanel esSuperadmin={yo?.es_superadmin ?? false} />
     </div>
   )
 }
