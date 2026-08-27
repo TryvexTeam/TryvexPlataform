@@ -1681,6 +1681,24 @@ export interface Database {
           }
         ]
       }
+      intentos_reserva_publica: {
+        Row: {
+          id: string
+          ip: string
+          creado_at: string
+        }
+        Insert: {
+          id?: string
+          ip: string
+          creado_at?: string
+        }
+        Update: {
+          id?: string
+          ip?: string
+          creado_at?: string
+        }
+        Relationships: []
+      }
       password_reset_intentos: {
         Row: {
           id: string

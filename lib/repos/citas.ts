@@ -15,7 +15,13 @@ interface ReservaRow {
 }
 
 /** Motivos por los que una reserva se rechaza, ya traducidos desde Postgres. */
-export type MotivoRechazo = 'slot_no_disponible' | 'hora_no_ofrecida' | 'demasiado_pronto'
+export type MotivoRechazo =
+  | 'slot_no_disponible'
+  | 'hora_no_ofrecida'
+  | 'demasiado_pronto'
+  | 'demasiado_lejos'
+  | 'duracion_invalida'
+  | 'consentimiento_faltante'
 
 export class RechazoDeReserva extends Error {
   constructor(readonly motivo: MotivoRechazo) {
@@ -32,21 +38,30 @@ export class CitasRepository {
   }
 
   /**
-   * Cuántas reservas hizo esta IP en la última hora.
+   * Cuántos INTENTOS hizo esta IP en la última hora.
    *
-   * El freno de la landing vive en memoria del proceso, así que cada instancia
-   * serverless lleva su propio contador y basta con conseguir instancias nuevas
-   * para reiniciarlo. Contar filas es un freno compartido por todas.
+   * Antes contaba filas de `reservas_landing` —solo reservas exitosas—, así que
+   * el que probaba mil horas ocupadas y fallaba mil veces nunca tocaba el
+   * límite. Ahora cuenta `intentos_reserva_publica`, donde el endpoint registra
+   * cada intento válido ANTES de llamar al RPC (migración 093). El freno de la
+   * landing vive en memoria del proceso y cada instancia serverless lleva el
+   * suyo; contar filas es un freno compartido por todas.
    */
   async superaElLimite(ip: string): Promise<boolean> {
     const desde = new Date(Date.now() - 60 * 60 * 1000).toISOString()
     const { count, error } = await this.sb
-      .from('reservas_landing')
+      .from('intentos_reserva_publica')
       .select('id', { count: 'exact', head: true })
       .eq('ip', ip)
-      .gte('created_at', desde)
+      .gte('creado_at', desde)
     if (error) throw new Error(error.message)
     return (count ?? 0) >= MAX_RESERVAS_POR_IP_HORA
+  }
+
+  /** Deja constancia de un intento de reserva de esta IP, para el rate limit. */
+  async registrarIntento(ip: string): Promise<void> {
+    const { error } = await this.sb.from('intentos_reserva_publica').insert({ ip })
+    if (error) throw new Error(error.message)
   }
 
   /**
@@ -83,7 +98,14 @@ export class CitasRepository {
       // El RPC levanta estos tres a propósito, con su ERRCODE. Un rechazo mudo
       // —un error genérico con cuerpo vacío— es indiagnosticable: si se
       // rechaza, se explica.
-      const motivos: MotivoRechazo[] = ['slot_no_disponible', 'hora_no_ofrecida', 'demasiado_pronto']
+      const motivos: MotivoRechazo[] = [
+        'slot_no_disponible',
+        'hora_no_ofrecida',
+        'demasiado_pronto',
+        'demasiado_lejos',
+        'duracion_invalida',
+        'consentimiento_faltante',
+      ]
       const motivo = motivos.find((m) => error.message.includes(m))
       if (motivo) throw new RechazoDeReserva(motivo)
 
