@@ -200,7 +200,20 @@ function SortableCard<T extends { id: string }>({
       {...listeners}
       animate={isDragging ? 'arrastrando' : 'show'}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-      className="touch-none"
+      // `touch-manipulation`, no `touch-none`. `touch-action: none` le dice al
+      // navegador, desde el primer toque, que nunca haga scroll nativo con un
+      // gesto que empiece sobre esta tarjeta — sin importar lo que decida
+      // despues el sensor. El delay de 200ms de arriba solo controla cuando
+      // dnd-kit arranca SU propio drag; no le devuelve el gesto al navegador.
+      // Resultado real: el primer swipe sobre una tarjeta se "perdía" (ni
+      // arrastraba ni scrolleaba) y recien el segundo, que ya no tocaba una
+      // tarjeta, scrolleaba — el sintoma exacto que reporto Adley ("hay que
+      // pasar el scroll muchas veces para que pesque"). `manipulation` deja
+      // que el navegador scrollee nativo de inmediato; dnd-kit sigue recibiendo
+      // los eventos de touch en paralelo y decide el drag con el mismo delay,
+      // sin bloquear nada de entrada. Patron oficial de dnd-kit para esto:
+      // https://dndkit.com/react/guides/sensors
+      className="touch-manipulation"
     >
       {renderCard(item, isDragging)}
     </motion.div>
