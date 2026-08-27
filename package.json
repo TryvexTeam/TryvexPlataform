@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "tipos:db": "node scripts/generar-tipos-db.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/server'
 import type {
   AsignacionConIntegrante,
@@ -5,8 +7,7 @@ import type {
   RolAsignacion,
 } from '@/lib/types/asignacion'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 /**
  * Asignación de leads y citas a integrantes.
@@ -137,7 +138,9 @@ export class AsignacionesRepository {
       .order('rol', { ascending: true })
 
     if (error) throw new Error(error.message)
-    return mapearAsignaciones(data)
+    // `rol` es TEXT con CHECK en la base, así que el tipo generado dice
+    // `string`. El CHECK garantiza el dominio; la conversión lo afirma acá.
+    return mapearAsignaciones(data as unknown as FilaAsignacion[])
   }
 
   /**
@@ -181,7 +184,7 @@ export class AsignacionesRepository {
 
       for (const fila of data ?? []) {
         const lista = (porLead[fila.lead_id] ??= [])
-        lista.push(...mapearAsignaciones([fila]))
+        lista.push(...mapearAsignaciones([fila as unknown as FilaAsignacion]))
       }
     }
     // El owner primero: es el que se ve cuando el stack se recorta a "+N".

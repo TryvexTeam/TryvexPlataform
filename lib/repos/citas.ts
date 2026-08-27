@@ -1,9 +1,10 @@
 import type { createAdminClient } from '@/lib/supabase/server'
 import { DURACION_CITA_MIN } from '@/lib/types/disponibilidad'
 import { MAX_RESERVAS_POR_IP_HORA } from '@/lib/types/cita'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 /** Lo que devuelve el RPC `reservar_cita_publica` (migración 091). */
 interface ReservaRow {
