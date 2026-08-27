@@ -21,6 +21,28 @@ import { crearEventoEnGoogle } from '@/lib/google/calendar-write'
  * segundo cero y con dueño asignado, en vez de existir solo en una bandeja de
  * correo.
  */
+/**
+ * IP de origen, tal como la deja el proxy.
+ *
+ * En Vercel el cliente puede mandar su propio `x-forwarded-for` y el proxy le
+ * antepone —no reemplaza— la IP real, así que el PRIMER elemento es spoofeable y
+ * el ÚLTIMO es el que puso la infraestructura. `x-real-ip`, cuando está, ya es
+ * esa IP y se prefiere. Mismo criterio que `app/api/auth/recuperar`.
+ *
+ * Si no se puede determinar, se devuelve null y el endpoint corta: un rate
+ * limit que no sabe a quién contar no se salta, se aplica igual.
+ */
+function ipDeLaSolicitud(req: Request): string | null {
+  const real = req.headers.get('x-real-ip')?.trim()
+  if (real) return real
+  const fwd = req.headers.get('x-forwarded-for')
+  if (fwd) {
+    const partes = fwd.split(',').map((p) => p.trim()).filter(Boolean)
+    if (partes.length > 0) return partes[partes.length - 1]
+  }
+  return null
+}
+
 function secretoValido(recibido: string | null): boolean {
   const esperado = process.env.LANDING_API_TOKEN
   if (!recibido || !esperado) return false
@@ -48,22 +70,34 @@ export async function POST(req: Request) {
   }
   const datos = parseo.data
 
-  // La IP la pone el proxy, no el cliente. Se toma la primera de la cadena,
-  // que es la del origen real cuando el proxy es de confianza.
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
+  const ip = ipDeLaSolicitud(req)
   const userAgent = req.headers.get('user-agent')?.slice(0, 180) ?? null
+
+  // Sin IP no hay a quién frenar. Antes esto salteaba el rate limit por
+  // completo; ahora corta, que es el lado seguro para un endpoint público.
+  if (ip === null) {
+    return NextResponse.json(
+      { success: false, error: 'Demasiadas solicitudes' },
+      { status: 429 }
+    )
+  }
 
   const repo = new CitasRepository(createAdminClient())
 
   try {
     // El freno se cobra sobre solicitudes ya validadas: contarlo antes
     // castigaría a quien se equivoca escribiendo, y quien abusa no se equivoca.
-    if (ip && (await repo.superaElLimite(ip))) {
+    if (await repo.superaElLimite(ip)) {
       return NextResponse.json(
         { success: false, error: 'Demasiadas solicitudes' },
         { status: 429 }
       )
     }
+
+    // Se deja constancia del intento ANTES de tocar el RPC: lo que cuenta el
+    // freno son los intentos, no las reservas logradas. Si no, mil pruebas
+    // fallidas contra horas ocupadas nunca alcanzarían el límite.
+    await repo.registrarIntento(ip)
 
     const reserva = await repo.reservar({
       inicio: datos.inicio,
@@ -114,10 +148,12 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ success: true, data: respuesta })
   } catch (err) {
-    /* Un rechazo mudo es indiagnosticable: si se rechaza, se explica. Los tres
+    /* Un rechazo mudo es indiagnosticable: si se rechaza, se explica. Los
        motivos que levanta el RPC son distintos para quien reserva —la hora se
-       ocupó, la hora no se ofrece, es demasiado sobre la hora— y merecen
-       mensajes distintos en el formulario. */
+       ocupó, la hora no se ofrece, es demasiado pronto o demasiado lejos, falta
+       el consentimiento, la duración no es la esperada— y merecen mensajes
+       distintos en el formulario. Solo el choque de slot es un 409 (conflicto
+       con el estado actual); el resto son entradas que no debieron mandarse. */
     if (err instanceof RechazoDeReserva) {
       const status = err.motivo === 'slot_no_disponible' ? 409 : 422
       return NextResponse.json({ success: false, error: err.motivo }, { status })
