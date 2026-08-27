@@ -394,10 +394,37 @@ consulta directa; sin `Cache-Control: public` en nada autenticado.
    Fase 0 pasa de recomendable a obligatoria. Si está baneado, hay que apelar
    desde la app (Ajustes → Ayuda → Contáctanos) antes de cualquier otra cosa.
 
-7. **¿Se ejecutó la migración al VPS propio de Tryvex?** Ariel la anunció el
-   3-ago —scraper y puente se mudaban del servidor personal de Cristian al VPS de
-   la empresa— y no hay registro posterior. Tres semanas de silencio. La Fase 1
-   necesita saber contra qué servidor verificar.
+7. ✅ **RESUELTA (27-ago) — el VPS de Tryvex existe, pero la migración NO se
+   ejecutó.** Inventariado en vivo, confirmado por el señor Ignacio como el
+   servidor de la empresa:
+
+   | | |
+   |---|---|
+   | Host | `srv1877698` · Ubuntu 24.04.4 · 3 semanas de uptime |
+   | Recursos | 7.8 GB RAM (6.5 libres) · 96 GB disco (90 libres) |
+   | Ya instalado | Node **v22.23.2** ✓ · Docker 29.6.1 · sin EasyPanel · sin nginx |
+   | Puertos | 3000, 3001 y 4600 **libres** · 80 y 443 ocupados |
+   | Servicios | `claude-ignacio` (Jarvis 24/7), `docker`, `containerd`, `monarx-agent` |
+
+   **Lo que NO está ahí: el scraper ni `tryvex-wa-bridge`.** Siguen en el
+   servidor personal de Cristian (`179.197.224.95`). La mudanza que Ariel
+   anunció el 3-ago quedó en diseño.
+
+   Tres consecuencias para el plan:
+   - **Desplegar Vex acá no puede romperle nada a Cristian**, porque su
+     infraestructura no vive en esta máquina. Cae el requisito de coordinar la
+     ventana de corte *para instalar* — sigue vigente para *retirar* el puente.
+   - La máquina **sobra** para Vex: pide ~500 MB y hay 6.5 GB libres, con la
+     versión de Node exacta que necesita ya instalada.
+   - **Falta resolver el HTTPS.** 80 y 443 están tomados sin nginx a la vista, así
+     que hay un reverse proxy que identificar. Si es Caddy o Traefik, se reutiliza;
+     si pertenece a `claude-ignacio`, hay que buscar otra vía sin tocarlo — ese
+     servicio no se interrumpe.
+
+8. **¿Se mueve también el puente a este VPS, o se retira?** Si Vex queda como
+   transporte único (Fase 0), la migración pendiente de Ariel deja de tener
+   sentido para el puente y pasa a ser solo la del scraper. Conviene decírselo
+   antes de que la ejecute.
 
 ---
 
