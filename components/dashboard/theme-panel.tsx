@@ -419,7 +419,12 @@ export function ThemePanel() {
       {/* Configuration Sidebar */}
       <div
         ref={panelRef}
-        className="fixed top-0 bottom-0 right-0 w-[360px] flex flex-col overflow-hidden border-l"
+        // `w-full` en móvil y 360px recién desde `sm`: con el ancho fijo, en un
+        // iPhone el panel dejaba una franja muerta al costado (15 px en un SE,
+        // 30 en un 14) — se veía como un panel mal encajado, no como una
+        // pantalla. El padding de safe-area evita que el encabezado quede
+        // debajo del notch, ya que el layout declara viewportFit:'cover'.
+        className="fixed top-0 bottom-0 right-0 w-full sm:w-[360px] flex flex-col overflow-hidden border-l"
         style={{
           zIndex: 100000,
           background: 'rgba(10, 10, 12, 0.95)',
@@ -428,6 +433,8 @@ export function ThemePanel() {
           borderLeftColor: 'rgba(255, 255, 255, 0.1)',
           boxShadow: '-10px 0 40px rgba(0, 0, 0, 0.6), inset 1px 0 0 rgba(255, 255, 255, 0.1)',
           animation: 'themeSlideInRight 260ms cubic-bezier(.16,1,.3,1)',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
         {/* Header */}

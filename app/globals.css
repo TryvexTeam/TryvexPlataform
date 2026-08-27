@@ -1230,9 +1230,22 @@
   height: 100svh;
 }
 
+/* El `max-h` que DialogContent trae por defecto (calc(100svh - 2rem), para que
+   los formularios largos no se salgan de la pantalla) le robaría esos 2rem a
+   los modales que SÍ quieren ocupar todo — el chat de WhatsApp y el pitch.
+   Acá se les devuelve. El selector lleva el data-slot para ganar por
+   especificidad (0,2,0) a la utilidad de Tailwind (0,1,0) sin recurrir a
+   !important, que dependería del orden de las capas. */
+[data-slot='dialog-content'].modal-pantalla-movil {
+  max-height: 100svh;
+}
+
 @media (min-width: 640px) {
   .modal-pantalla-movil {
     height: 85vh;
+  }
+  [data-slot='dialog-content'].modal-pantalla-movil {
+    max-height: 85vh;
   }
 }
 
@@ -1438,5 +1451,27 @@
 @media (prefers-reduced-motion: reduce) {
   .tx-page-enter {
     animation: none;
+  }
+}
+
+/* ── iOS: campos a 16px en móvil, para que Safari no haga zoom solo ─────────
+   Safari (y Chrome en iOS) amplían la página automáticamente al enfocar un
+   campo cuyo texto mide menos de 16px. Es una función de accesibilidad del
+   sistema, no un bug del sitio — pero hace que la app "salte" al escribir y
+   se sienta poco nativa cuando está instalada como ícono.
+
+   Va como regla global y no campo por campo a propósito: los inputs viven en
+   26 archivos entre CSS propio y clases de Tailwind, y cualquiera nuevo
+   volvería a traer el problema. Acá se cubren todos, presentes y futuros.
+
+   Solo bajo 768px: en escritorio no existe ese zoom y el diseño conserva sus
+   tamaños originales.
+
+   Fuente del umbral de 16px: https://css-tricks.com/16px-or-larger-text-prevents-ios-form-zoom/ */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
   }
 }
