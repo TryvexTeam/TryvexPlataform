@@ -79,6 +79,7 @@ export function AvatarIntegrante({
           width={size}
           height={size}
           loading="lazy"
+          decoding="async"
           onError={() => setFallo(true)}
           className="relative h-full w-full object-cover"
         />
