@@ -9,6 +9,8 @@ import {
   CheckSquare,
   MessageCircle,
   Phone,
+  PhoneCall,
+  PhoneOff,
   Globe,
   MapPin,
   Tag,
@@ -92,6 +94,9 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   // el botón de WhatsApp haría que el atajo no sirviera de nada.
   const [chatAbierto, setChatAbierto] = useState(searchParams.get('chat') === '1')
   const [pitchAbierto, setPitchAbierto] = useState(false)
+  // "Llamé" no abre un formulario: solo pregunta si contestó, para poder
+  // pintar el ícono de teléfono distinto en la tarjeta sin abrir la ficha.
+  const [showLlamada, setShowLlamada] = useState(false)
   const prevLeadId = useRef<string | null>(null)
 
   // Fade transition when lead changes.
@@ -165,6 +170,35 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   const markGanado = () => updateEstado({ estado: 'ganado' }, '🏆 Lead ganado')
   const markPerdido = (razon: string) =>
     updateEstado({ estado: 'perdido', razon_perdida: razon }, 'Lead marcado como perdido')
+
+  /**
+   * Registra la llamada en un clic, sin abrir el panel de "Registrar
+   * Contacto". El único dato que pide es si contestó — eso ya alcanza para
+   * mover el lead a "Contactado" (createInteraccion lo hace solo) y para
+   * pintar el ícono correcto en la tarjeta del tablero.
+   */
+  const registrarLlamada = async (respondio: boolean) => {
+    if (!lead) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/interacciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: lead.id, tipo: 'llamada', respondio }),
+      })
+      if (res.ok) {
+        toast.success(respondio ? 'Llamada registrada — contestó' : 'Llamada registrada — sin respuesta')
+        setShowLlamada(false)
+        router.refresh()
+      } else {
+        toast.error('No se pudo registrar la llamada')
+      }
+    } catch {
+      toast.error('Error de red al registrar la llamada')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const deleteLead = async () => {
     if (!lead) return
@@ -482,6 +516,33 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             </button>
           </div>
         )}
+        {showLlamada && (
+          <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
+            <span className="text-[var(--tx-ink-muted)] mr-1">¿Contestó?</span>
+            <button
+              onClick={() => registrarLlamada(true)}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-green-500/20 bg-green-500/10 hover:bg-green-500/20 text-green-400 transition-colors"
+            >
+              <PhoneCall size={12} />
+              Sí, contestó
+            </button>
+            <button
+              onClick={() => registrarLlamada(false)}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.08] text-[var(--tx-ink-secondary)] transition-colors"
+            >
+              <PhoneOff size={12} />
+              No contestó
+            </button>
+            <button
+              onClick={() => setShowLlamada(false)}
+              className="px-2 py-1 text-[var(--tx-ink-muted)] hover:text-white transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
         <button
           onClick={markGanado}
@@ -499,6 +560,16 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           <XCircle size={12} />
           <span>Perdido</span>
         </button>
+        {lead.telefono && (
+          <button
+            onClick={() => setShowLlamada(true)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-blue-500/15 bg-blue-500/5 hover:bg-blue-500/15 text-blue-400 transition-colors disabled:opacity-40"
+          >
+            <PhoneCall size={12} />
+            <span>Llamé</span>
+          </button>
+        )}
         <button
           onClick={onToggleTaskPanel}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.06] text-purple-400 transition-colors"

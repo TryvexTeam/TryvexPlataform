@@ -720,6 +720,11 @@ export interface Database {
           email: string | null
           nombre_contacto: string | null
           pitch: Json | null
+          // Migración 092. Agregado a mano porque este archivo se regenera
+          // con scripts/generar-tipos-db.mjs contra la base real, y no hay
+          // credenciales disponibles en este entorno para correrlo — alguien
+          // con acceso debería regenerarlo cuando pueda, esto es un parche.
+          ultima_llamada_respondio: boolean | null
         }
         Insert: {
           id?: string
@@ -750,6 +755,7 @@ export interface Database {
           email?: string | null
           nombre_contacto?: string | null
           pitch?: Json | null
+          ultima_llamada_respondio?: boolean | null
         }
         Update: {
           id?: string
@@ -780,6 +786,7 @@ export interface Database {
           email?: string | null
           nombre_contacto?: string | null
           pitch?: Json | null
+          ultima_llamada_respondio?: boolean | null
         }
         Relationships: [
           {
