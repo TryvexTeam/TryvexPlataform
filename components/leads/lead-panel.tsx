@@ -543,7 +543,13 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             </button>
           </div>
         )}
-        <div className="flex items-center gap-2">
+        {/* `flex-wrap`: son 6 botones ("Ganado", "Perdido", "Llamé",
+            "Registrar Contacto", "WhatsApp", "Pitch") y sin esto no entraban
+            en una sola fila en un teléfono — como `<main>` tiene
+            `overflow-x-hidden` (necesario en el resto de la app para que no
+            aparezca scroll lateral), los últimos botones quedaban cortados y
+            no se podía llegar a ellos. Ahora pasan a una segunda fila. */}
+        <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={markGanado}
           disabled={loading || lead.estado === 'ganado'}
