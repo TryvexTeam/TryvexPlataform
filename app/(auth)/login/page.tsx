@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -41,9 +41,10 @@ export default function LoginPage() {
   }
 
   return (
-    <Card>
+    <main>
+      <Card>
       <CardHeader>
-        <CardTitle>Iniciar sesión</CardTitle>
+        <h1 className="font-heading text-base leading-snug font-medium">Iniciar sesión</h1>
         <CardDescription>Ingresa tus credenciales para acceder</CardDescription>
       </CardHeader>
       <CardContent>
@@ -76,7 +77,7 @@ export default function LoginPage() {
             {loading ? 'Entrando...' : 'Entrar'}
           </Button>
           <p className="text-center text-sm">
-            <Link href="/recuperar" className="text-neutral-500 hover:text-neutral-900 hover:underline">
+            <Link href="/recuperar" className="text-neutral-400 hover:text-neutral-900 hover:underline">
               ¿Olvidaste tu contraseña?
             </Link>
           </p>
@@ -88,6 +89,7 @@ export default function LoginPage() {
           </p>
         </form>
       </CardContent>
-    </Card>
+      </Card>
+    </main>
   )
 }

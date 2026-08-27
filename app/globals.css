@@ -1163,6 +1163,9 @@
     border-radius: 100px;
     border: 1px solid rgba(255, 255, 255, 0.10);
     padding: 5px 12px;
+    /* El chip se ajusta al contenido: sin gap, el número queda pegado a la
+       etiqueta ("Todos558"). */
+    gap: 6px;
   }
 
   /* Workspace apilado: chips arriba, lista debajo */
@@ -1469,9 +1472,14 @@
 
    Fuente del umbral de 16px: https://css-tricks.com/16px-or-larger-text-prevents-ios-form-zoom/ */
 @media (max-width: 767px) {
-  input,
+  /* !important a propósito: los tamaños viven repartidos en reglas de clase
+     (.search input, .field__input input, .tp__desc textarea…) y en utilidades
+     Tailwind (text-[13px]) que le ganan por especificidad a un selector de
+     elemento. Forzar 16px es la única forma de cubrirlos a todos y es lo que
+     exige WCAG 1.4.4 (no capar el zoom desde el viewport). */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
   textarea,
   select {
-    font-size: 16px;
+    font-size: 16px !important;
   }
 }

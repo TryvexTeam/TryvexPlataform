@@ -66,7 +66,16 @@ export function RelojJornada({ jornadaInicial, variante = 'completo' }: RelojJor
   if (compacto) {
     if (!jornada) {
       return (
-        <Button size="sm" disabled={ocupado} onClick={() => marcar('entrada')}>
+        <Button
+          size="sm"
+          disabled={ocupado}
+          onClick={() => marcar('entrada')}
+          // El rojo de marca (--tx-accent) con texto blanco da 4.22:1, por
+          // debajo del 4.5:1 de WCAG 1.4.3. Se oscurece solo este botón a
+          // --tx-accent-surface (misma familia, más oscuro) en vez de tocar
+          // la variable global, que se usa en muchos otros lugares sin texto.
+          className="bg-[var(--tx-accent-surface)] hover:bg-[var(--tx-accent-surface)]"
+        >
           <LogInIcon className="size-4" />
           Marcar entrada
         </Button>
