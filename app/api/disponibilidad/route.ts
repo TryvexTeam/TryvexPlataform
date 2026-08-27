@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { DisponibilidadRepository } from '@/lib/repos/disponibilidad'
 import { DisponibilidadPutSchema } from '@/lib/types/disponibilidad'
@@ -46,11 +46,13 @@ export async function PUT(req: Request) {
      del caché del CRM y cinco del de la landing— y concluye, con razón, que no
      funcionó. Pasó exactamente así la primera vez que se encendió.
 
-     Se espera el resultado en vez de dispararlo y olvidarlo: en una función
-     serverless, una promesa suelta puede morir cuando la respuesta se envía y
-     el aviso no llegaría nunca. Y no puede tumbar el guardado — la propia
-     función se traga sus errores. */
-  await revalidarEnLanding('disponibilidad')
+     Con `after()` (Next 16) el aviso corre DESPUÉS de mandar la respuesta, así
+     que el usuario no espera los hasta 5 s del fetch a la landing. `after`
+     mantiene viva la invocación serverless hasta que la promesa termina
+     (waitUntil por debajo), y se ejecuta aunque la respuesta ya se haya
+     enviado. La propia función se traga sus errores, así que no puede tumbar
+     nada. */
+  after(() => revalidarEnLanding('disponibilidad'))
 
   return NextResponse.json({ success: true })
 }
