@@ -22,12 +22,15 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
   width: 'device-width',
   initialScale: 1,
-  // Se deja llegar hasta 5x a propósito. Bloquear el zoom arregla el síntoma y
-  // rompe la accesibilidad de quien necesita agrandar; el zoom molesto de iPhone
-  // no es este, es el automático al enfocar un campo de menos de 16px — y eso se
-  // corrige con el tamaño de fuente, no prohibiendo ampliar.
-  maximumScale: 5,
-  userScalable: true,
+  // Pedido explícito de Adley (27-ago-2026), probando primero esta vía: el
+  // CRM instalado como ícono en iPhone (PWA) se sentía "no nativo" por el
+  // zoom. La razón documentada acá antes (dejarlo hasta 5x, y arreglar el
+  // font-size de los inputs en vez de esto) sigue siendo válida en teoría —
+  // si este cambio no resuelve el problema real, el siguiente paso es ESE
+  // (subir a 16px los inputs por debajo de eso: .search input, .field__input
+  // input, .tp__desc textarea en globals.css), no volver a tocar este número.
+  maximumScale: 1,
+  userScalable: false,
   // El teclado achica el área visible en vez de tapar el contenido: sin esto, al
   // escribir en el chat el campo queda debajo del teclado.
   interactiveWidget: 'resizes-content',
