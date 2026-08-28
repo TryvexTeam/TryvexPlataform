@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { LeadInsertSchema, RAZONES_PERDIDA, type Lead, type LeadInsert } from '@/lib/types/lead'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,12 @@ interface LeadFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   lead?: Lead
+  /**
+   * Campos ya rellenos al abrir, para crear un lead a partir de alguien que
+   * escribió por WhatsApp sin copiar el número a mano de una pantalla a otra.
+   * Solo aplica al crear: editando manda lo que ya tiene el lead.
+   */
+  inicial?: Partial<Pick<LeadInsert, 'nombre_negocio' | 'telefono'>>
   onSubmit: (data: LeadInsert) => Promise<void>
 }
 
@@ -29,10 +35,10 @@ const defaults = {
   score: '' as unknown as number,
 }
 
-export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) {
+export function LeadForm({ open, onOpenChange, lead, inicial, onSubmit }: LeadFormProps) {
   const [form, setForm] = useState({
-    nombre_negocio: lead?.nombre_negocio ?? defaults.nombre_negocio,
-    telefono: lead?.telefono ?? defaults.telefono,
+    nombre_negocio: lead?.nombre_negocio ?? inicial?.nombre_negocio ?? defaults.nombre_negocio,
+    telefono: lead?.telefono ?? inicial?.telefono ?? defaults.telefono,
     nicho: lead?.nicho ?? defaults.nicho,
     localidad: lead?.localidad ?? defaults.localidad,
     url_web: lead?.url_web ?? defaults.url_web,
@@ -45,6 +51,19 @@ export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) 
   })
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // `useState` solo lee su valor inicial la PRIMERA vez que el componente
+  // monta. El diálogo vive montado entre aperturas, así que sin esto un
+  // teléfono precargado no entraría: se abriría con el formulario vacío, o
+  // peor, con lo que quedó de la vez anterior.
+  useEffect(() => {
+    if (!open || lead) return
+    setForm((p) => ({
+      ...p,
+      nombre_negocio: inicial?.nombre_negocio ?? p.nombre_negocio,
+      telefono: inicial?.telefono ?? p.telefono,
+    }))
+  }, [open, lead, inicial?.nombre_negocio, inicial?.telefono])
 
   // `null` entra a propósito: es el valor de "no sé" de `tiene_web`, y sin él
   // el campo no tendría cómo quedar indeterminado.
