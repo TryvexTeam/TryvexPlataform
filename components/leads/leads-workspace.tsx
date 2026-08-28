@@ -28,15 +28,11 @@ export function LeadsWorkspace({
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false)
-  const [formOpen, setFormOpen] = useState(searchParams.get('nuevo') === '1')
-
-  // El workspace no se desmonta al navegar dentro de /leads, así que `useState`
-  // no vuelve a leer la URL: sin esto, llegar con ?nuevo=1 desde otra parte de
-  // la misma pantalla no abría el formulario — el estado quedaba en el valor
-  // del primer montaje.
-  useEffect(() => {
-    if (searchParams.get('nuevo') === '1') setFormOpen(true)
-  }, [searchParams])
+  // Abierto o no lo dice la URL, no un estado propio. Antes era `useState`, que
+  // lee su valor inicial una sola vez: llegar con ?nuevo=1 desde otra parte de
+  // /leads no abría nada, porque el componente ya estaba montado. Derivarlo de
+  // la URL lo mantiene siempre en sincronía sin efectos.
+  const formOpen = searchParams.get('nuevo') === '1'
 
   // Datos que vienen en la URL, para abrir el formulario ya con el teléfono
   // puesto cuando se crea un lead a partir de alguien que escribió por
@@ -49,7 +45,6 @@ export function LeadsWorkspace({
 
   function handleCloseForm(open: boolean) {
     if (!open) {
-      setFormOpen(false)
       const params = new URLSearchParams(window.location.search)
       params.delete('nuevo')
       params.delete('telefono')
@@ -113,7 +108,11 @@ export function LeadsWorkspace({
         />
       )}
 
+      {/* `key` con los datos precargados: cambiarlos remonta el formulario, que
+          es como React recomienda resetear estado. Sin esto, abrirlo por segunda
+          vez con otro teléfono mostraría el de la vez anterior. */}
       <LeadForm
+        key={`${precargado.telefono ?? ''}|${precargado.nombre_negocio ?? ''}`}
         open={formOpen}
         onOpenChange={handleCloseForm}
         inicial={precargado}

@@ -40,33 +40,56 @@ export function EntrantesPanel() {
   const [cargando, setCargando] = useState(false)
   const [yaMiro, setYaMiro] = useState(false)
 
-  const cargar = useCallback(async (conSpinner = false) => {
-    if (conSpinner) setCargando(true)
+  /**
+   * Trae la lista y devuelve lo que encontró. No toca estado: quien la llama
+   * decide qué hacer con el resultado.
+   *
+   * Esa separación no es estética. Un `setState` alcanzable de forma síncrona
+   * desde un efecto encadena un render sobre otro, y el linter lo marca con
+   * razón — así el efecto de montaje solo escribe estado después del `await`.
+   */
+  const consultar = useCallback(async (): Promise<EntranteSinIdentificar[] | null> => {
     try {
       const res = await fetch('/api/leads/entrantes', { cache: 'no-store' })
       const cuerpo = await res.json().catch(() => ({}))
-      if (res.ok && Array.isArray(cuerpo.data)) setEntrantes(cuerpo.data)
+      return res.ok && Array.isArray(cuerpo.data) ? cuerpo.data : null
     } catch {
-      // Silencioso: es una consulta de fondo. Si el agente no responde, la
-      // lista se queda con lo último bueno en vez de vaciarse de golpe.
-    } finally {
-      setCargando(false)
-      setYaMiro(true)
+      // Es una consulta de fondo: si el agente no responde, la lista se queda
+      // con lo último bueno en vez de vaciarse de golpe.
+      return null
     }
   }, [])
+
+  /** Refresco manual: acá sí hay spinner, porque lo pidió una persona. */
+  const refrescar = useCallback(async () => {
+    setCargando(true)
+    const datos = await consultar()
+    if (datos) setEntrantes(datos)
+    setCargando(false)
+  }, [consultar])
 
   // Una consulta al montar para saber si hay algo, y de ahí en más solo
   // mientras el panel esté abierto: sin esto se estaría preguntando al agente
   // cada 30 segundos para una lista que nadie está mirando.
   useEffect(() => {
-    void cargar()
-  }, [cargar])
+    let vigente = true
+    void consultar().then((datos) => {
+      if (!vigente) return
+      if (datos) setEntrantes(datos)
+      setYaMiro(true)
+    })
+    return () => {
+      vigente = false
+    }
+  }, [consultar])
 
   useEffect(() => {
     if (!abierto) return
-    const id = setInterval(() => cargar(), REFRESCO_MS)
+    const id = setInterval(() => {
+      void consultar().then((datos) => datos && setEntrantes(datos))
+    }, REFRESCO_MS)
     return () => clearInterval(id)
-  }, [abierto, cargar])
+  }, [abierto, consultar])
 
   const crearLead = useCallback(
     (telefono: string, nombre: string | null) => {
@@ -89,7 +112,7 @@ export function EntrantesPanel() {
         size="sm"
         onClick={() => {
           setAbierto(true)
-          void cargar(true)
+          void refrescar()
         }}
         className="gap-1.5"
         style={{ borderColor: 'var(--tx-warning)', color: 'var(--tx-warning)' }}
@@ -109,7 +132,7 @@ export function EntrantesPanel() {
           </DialogHeader>
 
           <div className="flex justify-end">
-            <Button variant="ghost" size="sm" onClick={() => cargar(true)} disabled={cargando}>
+            <Button variant="ghost" size="sm" onClick={() => void refrescar()} disabled={cargando}>
               <RefreshCw size={13} className={cn('mr-1.5', cargando && 'animate-spin')} />
               Actualizar
             </Button>

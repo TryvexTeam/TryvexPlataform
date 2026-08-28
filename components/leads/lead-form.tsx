@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from '@/lib/toast'
 import { LeadInsertSchema, RAZONES_PERDIDA, type Lead, type LeadInsert } from '@/lib/types/lead'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,12 @@ const defaults = {
   score: '' as unknown as number,
 }
 
+/**
+ * `useState` lee su valor inicial UNA sola vez, así que un `inicial` que cambie
+ * después no entraría. Quien renderiza este formulario lo remonta con `key`
+ * cuando cambian esos datos — es la forma que React recomienda para resetear
+ * estado, y evita sincronizar con un efecto, que dispara renders en cascada.
+ */
 export function LeadForm({ open, onOpenChange, lead, inicial, onSubmit }: LeadFormProps) {
   const [form, setForm] = useState({
     nombre_negocio: lead?.nombre_negocio ?? inicial?.nombre_negocio ?? defaults.nombre_negocio,
@@ -51,19 +57,6 @@ export function LeadForm({ open, onOpenChange, lead, inicial, onSubmit }: LeadFo
   })
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-
-  // `useState` solo lee su valor inicial la PRIMERA vez que el componente
-  // monta. El diálogo vive montado entre aperturas, así que sin esto un
-  // teléfono precargado no entraría: se abriría con el formulario vacío, o
-  // peor, con lo que quedó de la vez anterior.
-  useEffect(() => {
-    if (!open || lead) return
-    setForm((p) => ({
-      ...p,
-      nombre_negocio: inicial?.nombre_negocio ?? p.nombre_negocio,
-      telefono: inicial?.telefono ?? p.telefono,
-    }))
-  }, [open, lead, inicial?.nombre_negocio, inicial?.telefono])
 
   // `null` entra a propósito: es el valor de "no sé" de `tiene_web`, y sin él
   // el campo no tendría cómo quedar indeterminado.
