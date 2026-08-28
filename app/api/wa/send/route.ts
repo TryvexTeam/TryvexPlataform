@@ -117,6 +117,11 @@ export async function POST(req: Request) {
       texto,
       // Por el agente ya salió: queda 'enviado' para que nadie lo recoja otra vez.
       estado: referenciaVex !== undefined ? 'enviado' : 'encolado',
+      // Esta ruta es el chat del CRM, no el primer contacto. La distinción
+      // importa: `uq_outreach_primer_contacto` deja un solo 'enviado' por lead,
+      // y sin marcarlo el segundo mensaje de una conversación reventaba con 500
+      // (migración 097).
+      tipo: 'chat',
       enviado_por: autorNombre,
       integrante_id: perfil.id,
       aprobado_por: perfil.id,

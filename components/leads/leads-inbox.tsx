@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, SlidersHorizontal, X, PhoneCall, PhoneOff } from 'lucide-react'
+import { Search, SlidersHorizontal, X, PhoneCall, PhoneOff, Plus } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 import type { AsignacionConIntegrante } from '@/lib/types/asignacion'
 import { AvatarStack } from '@/components/shared/avatar-stack'
@@ -298,14 +298,26 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
         </div>
       )}
 
-      {/* Contador + traer leads nuevos */}
+      {/* Contador + crear lead + traer leads nuevos */}
       <div className="feed__chips" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span className="feed__count">
           {filtered.length} {filtrosActivos > 0 || q ? `de ${leads.length}` : 'leads'}
         </span>
-        <span style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Antes este botón solo existía en el estado vacío, así que la vista
+              donde el equipo pasa el día era justo la que no dejaba agregar un
+              lead: había que cambiar a Pipeline para algo que se hace desde acá. */}
+          <button
+            type="button"
+            onClick={() => router.push('/leads?nuevo=1')}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-opacity hover:opacity-85"
+            style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
+          >
+            <Plus size={13} />
+            Nuevo lead
+          </button>
           <ScraperPanel nichos={nichosDisponibles} />
-        </span>
+        </div>
       </div>
 
       {/* Feed List */}
