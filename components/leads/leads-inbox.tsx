@@ -10,6 +10,7 @@ import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { ScraperPanel } from './scraper-panel'
 import { EntrantesPanel } from './entrantes-panel'
 import { useWaNoLeidos } from '@/lib/hooks/use-wa-no-leidos'
+import { calidadLead, telefonoLlamable, COLOR_CALIDAD, ETIQUETA_CALIDAD } from '@/lib/leads/calidad'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
   sin_contactar:    { label: 'Sin contactar',   dot: 'oklch(63% 0.008 240)' },
@@ -108,6 +109,7 @@ interface LeadsInboxProps {
  */
 interface Filtros {
   nichos: Set<string>
+  soloLlamables: boolean
   ratingAlto: boolean
   muchasResenas: boolean
   conTelefono: boolean
@@ -117,6 +119,7 @@ interface Filtros {
 
 const FILTROS_VACIOS: Filtros = {
   nichos: new Set(),
+  soloLlamables: false,
   ratingAlto: false,
   muchasResenas: false,
   conTelefono: false,
@@ -162,6 +165,7 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
 
   const filtrosActivos =
     filtros.nichos.size +
+    (filtros.soloLlamables ? 1 : 0) +
     (filtros.ratingAlto ? 1 : 0) +
     (filtros.muchasResenas ? 1 : 0) +
     (filtros.conTelefono ? 1 : 0) +
@@ -176,6 +180,7 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
       (l.localidad ?? '').toLowerCase().includes(q)
     )) return false
     if (filtros.nichos.size > 0 && !(l.nicho && filtros.nichos.has(l.nicho))) return false
+    if (filtros.soloLlamables && !telefonoLlamable(l.telefono)) return false
     if (filtros.ratingAlto && (l.google_rating ?? 0) < RATING_MIN) return false
     if (filtros.muchasResenas && (l.google_resenas ?? 0) < RESENAS_MIN) return false
     if (filtros.conTelefono && !l.telefono) return false
@@ -255,6 +260,9 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
         <div className="px-3 pb-3 pt-1 border-b border-white/[0.06] space-y-3">
           {/* Filtros de calidad / estado del dato */}
           <div className="flex flex-wrap gap-1.5">
+            <ChipFiltro activo={filtros.soloLlamables} onClick={() => toggleFlag('soloLlamables')}>
+              Solo llamables
+            </ChipFiltro>
             <ChipFiltro activo={filtros.ratingAlto} onClick={() => toggleFlag('ratingAlto')}>
               ★ {RATING_MIN}+
             </ChipFiltro>
@@ -368,8 +376,21 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
                 <div className="flex-1 min-w-0">
                   {/* Fila 1: nombre + timestamp */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] truncate leading-tight">
-                      {lead.nombre_negocio}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      {(() => {
+                        const cal = calidadLead(lead)
+                        return (
+                          <span
+                            title={`${ETIQUETA_CALIDAD[cal.nivel]}${cal.motivos.length ? ' — ' + cal.motivos.join(', ') : ''}`}
+                            aria-label={ETIQUETA_CALIDAD[cal.nivel]}
+                            className="shrink-0 h-2 w-2 rounded-full"
+                            style={{ background: COLOR_CALIDAD[cal.nivel] }}
+                          />
+                        )
+                      })()}
+                      <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] truncate leading-tight">
+                        {lead.nombre_negocio}
+                      </span>
                     </span>
                     <span className="text-[10px] text-[var(--tx-ink-muted)] shrink-0">
                       {relativeTime(lead.created_at)}
