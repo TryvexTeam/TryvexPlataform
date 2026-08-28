@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from '@/lib/toast'
 import { LeadsInbox } from './leads-inbox'
@@ -28,13 +28,27 @@ export function LeadsWorkspace({
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false)
-  const [formOpen, setFormOpen] = useState(searchParams.get('nuevo') === '1')
+  // Abierto o no lo dice la URL, no un estado propio. Antes era `useState`, que
+  // lee su valor inicial una sola vez: llegar con ?nuevo=1 desde otra parte de
+  // /leads no abría nada, porque el componente ya estaba montado. Derivarlo de
+  // la URL lo mantiene siempre en sincronía sin efectos.
+  const formOpen = searchParams.get('nuevo') === '1'
+
+  // Datos que vienen en la URL, para abrir el formulario ya con el teléfono
+  // puesto cuando se crea un lead a partir de alguien que escribió por
+  // WhatsApp. Sin esto habría que copiar el número a mano de una pantalla a
+  // otra, que es justo donde se equivoca un dígito.
+  const precargado = {
+    telefono: searchParams.get('telefono') ?? undefined,
+    nombre_negocio: searchParams.get('nombre') ?? undefined,
+  }
 
   function handleCloseForm(open: boolean) {
     if (!open) {
-      setFormOpen(false)
       const params = new URLSearchParams(window.location.search)
       params.delete('nuevo')
+      params.delete('telefono')
+      params.delete('nombre')
       router.replace(`/leads?${params.toString()}`, { scroll: false })
     }
   }
@@ -94,7 +108,16 @@ export function LeadsWorkspace({
         />
       )}
 
-      <LeadForm open={formOpen} onOpenChange={handleCloseForm} onSubmit={handleCreate} />
+      {/* `key` con los datos precargados: cambiarlos remonta el formulario, que
+          es como React recomienda resetear estado. Sin esto, abrirlo por segunda
+          vez con otro teléfono mostraría el de la vez anterior. */}
+      <LeadForm
+        key={`${precargado.telefono ?? ''}|${precargado.nombre_negocio ?? ''}`}
+        open={formOpen}
+        onOpenChange={handleCloseForm}
+        inicial={precargado}
+        onSubmit={handleCreate}
+      />
     </div>
   )
 }

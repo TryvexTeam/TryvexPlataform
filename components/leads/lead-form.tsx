@@ -14,6 +14,12 @@ interface LeadFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   lead?: Lead
+  /**
+   * Campos ya rellenos al abrir, para crear un lead a partir de alguien que
+   * escribió por WhatsApp sin copiar el número a mano de una pantalla a otra.
+   * Solo aplica al crear: editando manda lo que ya tiene el lead.
+   */
+  inicial?: Partial<Pick<LeadInsert, 'nombre_negocio' | 'telefono'>>
   onSubmit: (data: LeadInsert) => Promise<void>
 }
 
@@ -29,10 +35,16 @@ const defaults = {
   score: '' as unknown as number,
 }
 
-export function LeadForm({ open, onOpenChange, lead, onSubmit }: LeadFormProps) {
+/**
+ * `useState` lee su valor inicial UNA sola vez, así que un `inicial` que cambie
+ * después no entraría. Quien renderiza este formulario lo remonta con `key`
+ * cuando cambian esos datos — es la forma que React recomienda para resetear
+ * estado, y evita sincronizar con un efecto, que dispara renders en cascada.
+ */
+export function LeadForm({ open, onOpenChange, lead, inicial, onSubmit }: LeadFormProps) {
   const [form, setForm] = useState({
-    nombre_negocio: lead?.nombre_negocio ?? defaults.nombre_negocio,
-    telefono: lead?.telefono ?? defaults.telefono,
+    nombre_negocio: lead?.nombre_negocio ?? inicial?.nombre_negocio ?? defaults.nombre_negocio,
+    telefono: lead?.telefono ?? inicial?.telefono ?? defaults.telefono,
     nicho: lead?.nicho ?? defaults.nicho,
     localidad: lead?.localidad ?? defaults.localidad,
     url_web: lead?.url_web ?? defaults.url_web,

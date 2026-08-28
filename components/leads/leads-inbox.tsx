@@ -8,6 +8,7 @@ import type { AsignacionConIntegrante } from '@/lib/types/asignacion'
 import { AvatarStack } from '@/components/shared/avatar-stack'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { ScraperPanel } from './scraper-panel'
+import { EntrantesPanel } from './entrantes-panel'
 import { useWaNoLeidos } from '@/lib/hooks/use-wa-no-leidos'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
@@ -298,7 +299,7 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
         </div>
       )}
 
-      {/* Contador + crear lead + traer leads nuevos */}
+      {/* Contador + acciones: crear lead, atender entrantes, traer del scraper */}
       <div className="feed__chips" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span className="feed__count">
           {filtered.length} {filtrosActivos > 0 || q ? `de ${leads.length}` : 'leads'}
@@ -316,6 +317,7 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
             <Plus size={13} />
             Nuevo lead
           </button>
+          <EntrantesPanel />
           <ScraperPanel nichos={nichosDisponibles} />
         </div>
       </div>

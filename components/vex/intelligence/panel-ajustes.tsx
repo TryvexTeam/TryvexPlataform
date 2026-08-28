@@ -245,8 +245,14 @@ interface CampoNumericoProps {
 function CampoNumerico({ campo, valor, guardando, onGuardar }: CampoNumericoProps) {
   const [borrador, setBorrador] = useState(valor)
 
-  // Si el valor real cambia (lo acotó el agente, u otro lo tocó), gana ese.
-  useEffect(() => setBorrador(valor), [valor])
+  // Si el valor real cambia —el agente lo acotó, u otra persona lo tocó— gana
+  // ese. Se ajusta DURANTE el render y no con un efecto: así no hay un instante
+  // en el que la pantalla muestre el valor viejo, ni renders encadenados.
+  const [valorVisto, setValorVisto] = useState(valor)
+  if (valor !== valorVisto) {
+    setValorVisto(valor)
+    setBorrador(valor)
+  }
 
   const sinGuardar = borrador !== valor
 
@@ -293,7 +299,13 @@ interface CampoDeTextoProps {
 
 function CampoDeTexto({ campo, valor, porDefecto, guardando, onGuardar }: CampoDeTextoProps) {
   const [borrador, setBorrador] = useState(valor)
-  useEffect(() => setBorrador(valor), [valor])
+
+  // Igual que arriba: se ajusta durante el render, sin efecto.
+  const [valorVisto, setValorVisto] = useState(valor)
+  if (valor !== valorVisto) {
+    setValorVisto(valor)
+    setBorrador(valor)
+  }
 
   return (
     <div className="flex flex-col gap-1.5">
