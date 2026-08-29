@@ -4,6 +4,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { normalizarTelefono } from '@/lib/vex/telefono'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { AsignacionesRepository } from '@/lib/repos/asignaciones'
+import { MensajesWaRepository } from '@/lib/repos/mensajes-wa'
 import { debeAvanzarAContactado } from '@/lib/types/lead'
 import { transporteActivo, enviarPorVex } from '@/lib/wa/transporte'
 
@@ -93,6 +94,7 @@ export async function POST(req: Request) {
   // decisión que no debe tomar un `catch`. Se devuelve el error y la persona
   // decide.
   let referenciaVex: string | number | undefined
+  let avisoRegistro: string | undefined
   if (transporteActivo() === 'vex') {
     const envio = await enviarPorVex(numero, texto, nombreNegocio ?? undefined)
     if (!envio.ok) {
@@ -102,6 +104,39 @@ export async function POST(req: Request) {
       )
     }
     referenciaVex = envio.referencia
+
+    // El mensaje ya salió: hay que dejarlo en el hilo del lead. Lo escribe esta
+    // ruta porque con el agente como transporte nadie más lo hace.
+    //
+    // El chat del lead dibuja `mensajes_wa`, y el ÚNICO que escribía ahí era el
+    // puente, al confirmar cada envío. Al pasar el transporte al agente el
+    // puente quedó fuera del camino y ese registro se perdió con él: el mensaje
+    // salía de verdad, `outreach_messages` decía 'enviado', y el hilo quedaba
+    // vacío. Desde la pantalla se ve exactamente igual que no haber mandado
+    // nada — que fue justo lo que reportó Cristian.
+    try {
+      await new MensajesWaRepository(admin).registrarSaliente({
+        lead_id,
+        cliente_id: null,
+        texto,
+        // Lo escribió una persona en el chat del CRM, no el bot.
+        es_bot: false,
+        enviado_por: autorNombre,
+        // El chip lo pone el agente, que es quien tiene la sesión.
+        chip_id: null,
+        waMessageId: referenciaVex !== undefined ? String(referenciaVex) : null,
+      })
+    } catch (e) {
+      // No se devuelve error: el WhatsApp YA salió y decirle a la persona que
+      // falló la haría mandarlo de nuevo. Se registra fuerte y se avisa en la
+      // respuesta, que es lo que permite mostrarlo en pantalla en vez de dejar
+      // un hilo vacío sin explicación.
+      console.error(
+        `[api/wa/send] CRITICO: el mensaje salio por el agente pero no se pudo anotar en mensajes_wa (lead ${lead_id}). No va a aparecer en el hilo. Texto: ${texto}`,
+        e
+      )
+      avisoRegistro = 'El mensaje salió, pero no se pudo dejar en el hilo del chat.'
+    }
   }
 
   // El CRM ya no llama al puente: lo anota aca y el puente lo pasa a buscar.
@@ -173,7 +208,13 @@ export async function POST(req: Request) {
 
   // 202 y no 200: el mensaje esta aceptado, todavia no entregado.
   return NextResponse.json(
-    { ok: true, encolado: true, id: encolado.id, asignado_como: rolAsignado },
+    {
+      ok: true,
+      encolado: true,
+      id: encolado.id,
+      asignado_como: rolAsignado,
+      ...(avisoRegistro ? { advertencia: avisoRegistro } : {}),
+    },
     { status: 202 }
   )
 }
