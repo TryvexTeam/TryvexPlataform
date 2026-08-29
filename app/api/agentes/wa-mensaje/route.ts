@@ -2,7 +2,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
 import { excedeLimite } from '@/lib/agentes/rate-limit'
-import { buscarDestinatario } from '@/lib/agentes/destinatario'
+import { resolverDestinatario } from '@/lib/agentes/destinatario'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -56,8 +56,24 @@ export async function POST(req: Request) {
   let clienteId: string | null = cuerpo.cliente_id ?? null
 
   if (!leadId && !clienteId && cuerpo.telefono) {
-    const destinatario = await buscarDestinatario(admin, cuerpo.telefono)
-    if (!destinatario) {
+    const quien = await resolverDestinatario(admin, cuerpo.telefono)
+
+    // 409 y no 404: el número SÍ corresponde a alguien, el problema es que
+    // corresponde a dos. Colgar el mensaje de cualquiera de las dos fichas lo
+    // mete en la conversación de otro negocio, así que no se guarda hasta que
+    // una persona corrija el teléfono duplicado.
+    if (quien.estado === 'ambiguo') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Ese teléfono está en más de una ficha; el mensaje no se guardó para no colgarlo de la equivocada',
+          candidatos: quien.candidatos.map((c) => ({ tipo: c.tipo, id: c.id, nombre: c.nombre })),
+        },
+        { status: 409 },
+      )
+    }
+
+    if (quien.estado === 'desconocido') {
       // 404 y no 400: la petición está bien formada, simplemente ese número no
       // corresponde a nadie en la base. Quien llama decide qué hacer — y la
       // decisión de crear una ficha con un desconocido no se toma acá.
@@ -66,8 +82,9 @@ export async function POST(req: Request) {
         { status: 404 },
       )
     }
-    if (destinatario.tipo === 'lead') leadId = destinatario.id
-    else clienteId = destinatario.id
+
+    if (quien.destinatario.tipo === 'lead') leadId = quien.destinatario.id
+    else clienteId = quien.destinatario.id
   }
 
   if (!leadId && !clienteId) {

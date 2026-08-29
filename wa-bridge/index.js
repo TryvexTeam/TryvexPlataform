@@ -326,7 +326,32 @@ waClient.on('message', async (msg) => {
     }
 
     await enFilaPara(numero, async () => {
-      let lead = await resolverLeadPorTelefono(numero)
+      const quien = await resolverLeadPorTelefono(numero)
+
+      // Dos fichas con este numero: no se elige ninguna y no se crea una
+      // tercera. Colgar el mensaje de la ficha equivocada es peor que no
+      // guardarlo — el equipo lee esa conversacion creyendo que es de otro
+      // negocio. Queda el texto completo en el log para no perder la
+      // evidencia, y los nombres para que un humano corrija el duplicado.
+      if (quien.estado === 'ambiguo') {
+        const nombres = quien.candidatos.map((c) => c.nombre ?? c.id).join(' / ')
+        console.error(
+          `[wa-bridge] AMBIGUO: ...${numero.slice(-4)} esta en ${quien.candidatos.length} fichas (${nombres}). ` +
+            `El mensaje NO se guardo para no colgarlo de la equivocada. Corregir el telefono duplicado en el CRM. Texto: ${msg.body}`
+        )
+        return
+      }
+
+      // Un fallo de la consulta tampoco crea ficha: se reintentara cuando la
+      // base responda. Crear un lead acá seria duplicar por un problema de red.
+      if (quien.estado === 'error') {
+        console.error(
+          `[wa-bridge] no se pudo resolver el lead de ...${numero.slice(-4)}; el mensaje no se guardo. Texto: ${msg.body}`
+        )
+        return
+      }
+
+      let lead = quien.estado === 'encontrado' ? quien.lead : null
       let leadCreadoAhora = false
 
       if (!lead) {
@@ -388,23 +413,51 @@ async function crearLeadDesdeNumeroDesconocido(numero) {
   return data
 }
 
+// De quien es este numero. Devuelve uno de tres:
+//   { estado: 'encontrado', lead }  · una sola ficha, se usa
+//   { estado: 'desconocido' }       · nadie, se crea ficha nueva
+//   { estado: 'ambiguo', candidatos } · dos o mas, NO se elige
+//
+// Antes esto era un `ilike '%<ultimos 8 digitos>'` con `.limit(1)`, y tenia
+// dos fallas que se comprobaron contra la base de produccion:
+//
+//   1. ADIVINABA. Con dos fichas empatadas devolvia la primera que saliera.
+//      Hay cuatro pares de negocios DISTINTOS con el mismo numero anotado
+//      ("Urgencia electricas 24 Hrs" / "Electricista, Certificado SEC", entre
+//      otros): el mensaje quedaba en la conversacion del otro, a cara o cruz.
+//   2. NO VEIA 75 LEADS. Los que tienen el telefono guardado con 7 digitos,
+//      sin codigo de area, no pueden terminar en una cadena de 8 → nunca
+//      casaban, y a cada mensaje suyo se les abria una ficha nueva.
+//
+// La comparacion ahora la hace `buscar_por_telefono` en la base (migracion
+// 098), que compara digitos contra digitos, rescata los cortos y devuelve
+// TODAS las coincidencias. Es la misma funcion que usa el CRM: una sola
+// definicion de "de quien es este numero", no dos que se van separando.
 async function resolverLeadPorTelefono(numero) {
-  // Heuristica simple: matchea por los ultimos 8 digitos para tolerar
-  // diferencias de formato/prefijo entre lo que guarda fact_leads y lo que
-  // entrega WhatsApp.
   const sufijo = numero.replace(/\D/g, '').slice(-8)
-  const { data, error } = await supabase
-    .from('fact_leads')
-    .select('id, telefono')
-    .not('telefono', 'is', null)
-    .ilike('telefono', `%${sufijo}`)
-    .limit(1)
+  if (sufijo.length < 8) return { estado: 'desconocido' }
+
+  const { data, error } = await supabase.rpc('buscar_por_telefono', {
+    p_sufijo: sufijo,
+    p_tabla: 'fact_leads',
+  })
 
   if (error) {
     console.error('[wa-bridge] error resolviendo lead por telefono:', error)
-    return null
+    // Un fallo de la consulta NO es "no existe": tratarlo como desconocido
+    // crearia una ficha duplicada cada vez que la base tosa.
+    return { estado: 'error' }
   }
-  return data?.[0] ?? null
+
+  // La misma ficha puede venir por mas de un camino; eso es una persona, no dos.
+  const unicos = []
+  for (const fila of data ?? []) {
+    if (!unicos.some((u) => u.id === fila.id)) unicos.push(fila)
+  }
+
+  if (unicos.length === 0) return { estado: 'desconocido' }
+  if (unicos.length === 1) return { estado: 'encontrado', lead: unicos[0] }
+  return { estado: 'ambiguo', candidatos: unicos }
 }
 
 waClient.initialize()

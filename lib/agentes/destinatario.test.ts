@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { sufijoTelefono, buscarDestinatario } from './destinatario'
+import { describe, it, expect } from 'vitest'
+import { sufijoTelefono, buscarDestinatario, resolverDestinatario } from './destinatario'
 
 /**
  * El caso que este módulo resuelve, con datos reales de la base: el mismo
@@ -82,6 +82,86 @@ describe('buscarDestinatario', () => {
       tipo: 'lead',
       id: 'lead-2',
       nombre: null,
+    })
+  })
+})
+
+/**
+ * El bug que estas pruebas cierran: antes la búsqueda terminaba en `limit 1` y
+ * devolvía la primera ficha que saliera. Los pares de abajo son reales, sacados
+ * de producción: dos negocios distintos con el mismo número anotado.
+ */
+describe('cuando dos fichas comparten el número, no se elige ninguna', () => {
+  const empateReal = [
+    { id: 'lead-urgencia', nombre: 'Urgencia electricas 24 Hrs' },
+    { id: 'lead-sec', nombre: 'Electricista, Certificado SEC' },
+  ]
+
+  it('lo reporta como ambiguo, con los dos candidatos', async () => {
+    const db = baseFalsa({ fact_leads: empateReal })
+
+    const r = await resolverDestinatario(db, '56985917200')
+
+    expect(r.estado).toBe('ambiguo')
+    expect(r.estado === 'ambiguo' && r.candidatos.map((c) => c.nombre)).toEqual([
+      'Urgencia electricas 24 Hrs',
+      'Electricista, Certificado SEC',
+    ])
+  })
+
+  it('la versión corta devuelve null: no cuelga el mensaje de una ficha al azar', async () => {
+    expect(await buscarDestinatario(baseFalsa({ fact_leads: empateReal }), '56985917200')).toBeNull()
+  })
+
+  it('también vale para dos clientes con el mismo número', async () => {
+    const db = baseFalsa({
+      dim_clientes: [
+        { id: 'cli-a', nombre: 'Uno' },
+        { id: 'cli-b', nombre: 'Otro' },
+      ],
+      fact_leads: [{ id: 'lead-solo', nombre: 'No debería llegar acá' }],
+    })
+
+    const r = await resolverDestinatario(db, '56983376557')
+
+    expect(r.estado).toBe('ambiguo')
+    // Un empate entre clientes no se «resuelve» cayendo a los leads.
+    expect(db.consultadas).not.toContain('fact_leads')
+  })
+
+  it('la misma ficha repetida NO es un empate', async () => {
+    // La base puede devolver el mismo lead dos veces si el número calza por más
+    // de un camino. Eso es una persona, no dos.
+    const db = baseFalsa({
+      fact_leads: [
+        { id: 'lead-1', nombre: 'Tienda BR' },
+        { id: 'lead-1', nombre: 'Tienda BR' },
+      ],
+    })
+
+    const r = await resolverDestinatario(db, '56983376557')
+
+    expect(r).toEqual({ estado: 'encontrado', destinatario: { tipo: 'lead', id: 'lead-1', nombre: 'Tienda BR' } })
+  })
+})
+
+describe('resolverDestinatario distingue los tres desenlaces', () => {
+  it('desconocido cuando no calza nadie', async () => {
+    expect(await resolverDestinatario(baseFalsa({}), '56900000000')).toEqual({
+      estado: 'desconocido',
+    })
+  })
+
+  it('desconocido cuando el número que llega es demasiado corto', async () => {
+    expect(await resolverDestinatario(baseFalsa({}), '1234')).toEqual({ estado: 'desconocido' })
+  })
+
+  it('encontrado cuando hay una sola ficha', async () => {
+    const db = baseFalsa({ fact_leads: [{ id: 'lead-1', nombre: 'Tienda BR' }] })
+
+    expect(await resolverDestinatario(db, '56983376557')).toEqual({
+      estado: 'encontrado',
+      destinatario: { tipo: 'lead', id: 'lead-1', nombre: 'Tienda BR' },
     })
   })
 })
