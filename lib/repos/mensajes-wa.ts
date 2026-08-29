@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import type { MensajeWa, MensajeWaSalienteInsert } from '@/lib/types/mensaje-wa'
+import type { EstadoEnvio } from '@/lib/wa/acuse'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/types/database'
 
@@ -41,8 +42,18 @@ export class MensajesWaRepository {
     return Array.from(ids)
   }
 
-  /** Registra un mensaje saliente (lo escribe el wa-bridge tras confirmar el envío). */
-  async registrarSaliente(msg: MensajeWaSalienteInsert & { waMessageId?: string | null }): Promise<string> {
+  /**
+   * Registra un mensaje saliente.
+   *
+   * `estado_envio` entra como `pendiente` por defecto y NO como `enviado`: en
+   * este punto el mensaje salió de nuestras manos, pero WhatsApp todavía no
+   * acusó recibo. Afirmar entrega acá fue lo que sostuvo dos días de mensajes
+   * descartados con `error: 463` mientras la pantalla decía enviado. Lo
+   * confirma después `/api/agentes/wa-estado`, con el acuse en la mano.
+   */
+  async registrarSaliente(
+    msg: MensajeWaSalienteInsert & { waMessageId?: string | null; estado?: EstadoEnvio }
+  ): Promise<string> {
     const { data, error } = await this.sb
       .from('mensajes_wa')
       .insert({
@@ -54,7 +65,7 @@ export class MensajesWaRepository {
         chip_id: msg.chip_id ?? null,
         es_bot: msg.es_bot,
         enviado_por: msg.enviado_por,
-        estado_envio: 'enviado',
+        estado_envio: msg.estado ?? 'pendiente',
       })
       .select('id')
       .single()
