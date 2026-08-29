@@ -7,6 +7,19 @@ export type EstadoQr =
   | 'posible_baneo'
   | 'sin_respuesta'
   | 'token_invalido'
+  /**
+   * El agente dice estar vinculado pero hace rato que no da señales de vida.
+   *
+   * Distinto de `sin_respuesta`: ahí el agente ni contesta. Acá contesta, y lo
+   * que responde es que su última confirmación es vieja — típicamente el socket
+   * de WhatsApp se cayó y quedó reintentando sin lograrlo.
+   *
+   * Merece estado propio porque la reacción es OTRA: NO hay que reescanear
+   * nada. La vinculación está bien; lo que falla es la salida a internet. Sin
+   * esto, `sin_latido` caía en el caso por defecto, se mostraba un QR, y el
+   * equipo terminaba desvinculando un número que estaba perfecto.
+   */
+  | 'sin_latido'
 
 export interface ResultadoQr {
   estado: EstadoQr
@@ -14,6 +27,8 @@ export interface ResultadoQr {
   imagen?: string
   /** Número vinculado, cuando el agente lo conoce. */
   telefono?: string
+  /** Segundos sin señal del agente. Solo con estado `sin_latido`. */
+  sinLatidoHace?: number
 }
 
 /** Lo que devuelve `GET /api/connection/status` del agente. */
@@ -21,6 +36,8 @@ interface RespuestaAgente {
   status?: string
   qrPng?: string
   phone?: string | null
+  /** Segundos desde el último latido. Solo viene con `sin_latido`. */
+  sinLatidoHace?: number
 }
 
 /**
@@ -34,6 +51,7 @@ const ESTADOS: Record<string, EstadoQr> = {
   posible_baneo: 'posible_baneo',
   connecting: 'esperando_qr',
   disconnected: 'esperando_qr',
+  sin_latido: 'sin_latido',
 }
 
 const TIEMPO_LIMITE_MS = 10_000
@@ -79,6 +97,13 @@ export async function obtenerEstadoQr(): Promise<ResultadoQr> {
       return datos.qrPng
         ? { estado, imagen: datos.qrPng, telefono }
         : { estado: 'esperando_qr', telefono }
+    }
+
+    // El "hace cuánto" viaja hasta la pantalla: "sin señal" a secas no deja
+    // distinguir un parpadeo de una caída de tres horas, y es justo esa
+    // diferencia la que dice si hay que ir a mirar el proxy.
+    if (estado === 'sin_latido') {
+      return { estado, telefono, sinLatidoHace: datos.sinLatidoHace }
     }
 
     return { estado, telefono }

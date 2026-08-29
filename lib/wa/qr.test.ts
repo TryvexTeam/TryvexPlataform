@@ -145,3 +145,49 @@ describe('obtenerEstadoQr', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * El estado que faltaba, y que costó dos días de ceguera.
+ *
+ * El agente puede afirmar estar conectado con una marca de tiempo de hace
+ * horas. Pasó el 28-ago: el socket de WhatsApp murió, el proceso siguió vivo,
+ * y como nadie escribía un evento nuevo el último 'connected' se leyó como
+ * verdad presente. El agente ahora responde `sin_latido`; acá se comprueba que
+ * el CRM lo entienda y NO lo confunda con "hay que escanear de nuevo".
+ */
+describe('sin_latido', () => {
+  it('lo reconoce como estado propio, no como espera de QR', async () => {
+    simularAgente(responder(200, { status: 'sin_latido', phone: '56950358818', sinLatidoHace: 12001 }))
+
+    const r = await obtenerEstadoQr()
+
+    expect(r.estado).toBe('sin_latido')
+    expect(r.telefono).toBe('56950358818')
+  })
+
+  it('trae el tiempo sin señal, que es lo que distingue un parpadeo de una caída', async () => {
+    simularAgente(responder(200, { status: 'sin_latido', phone: '56950358818', sinLatidoHace: 12001 }))
+
+    const r = await obtenerEstadoQr()
+
+    expect(r.sinLatidoHace).toBe(12001)
+  })
+
+  it('NO muestra un QR: la vinculación está bien, lo que se cayó es la salida', async () => {
+    // Esta es la razón de que el estado exista. Cayendo en el caso por defecto
+    // se anunciaba un QR, y el equipo terminaba desvinculando un número sano.
+    simularAgente(responder(200, { status: 'sin_latido', phone: '56950358818', sinLatidoHace: 300 }))
+
+    const r = await obtenerEstadoQr()
+
+    expect(r.estado).not.toBe('qr_listo')
+    expect(r.estado).not.toBe('esperando_qr')
+    expect(r.imagen).toBeUndefined()
+  })
+
+  it('sigue distinguiéndose de sin_respuesta, que es no contestar', async () => {
+    simularAgente(responder(500, {}))
+    expect((await obtenerEstadoQr()).estado).toBe('sin_respuesta')
+  })
+})
+
