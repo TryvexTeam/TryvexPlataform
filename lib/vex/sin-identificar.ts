@@ -1,5 +1,5 @@
 import { obtenerConversaciones, obtenerMensajes, type ConversacionAgente } from './agente'
-import { buscarDestinatario } from '@/lib/agentes/destinatario'
+import { resolverDestinatario, type Destinatario } from '@/lib/agentes/destinatario'
 
 /**
  * Quién le escribió al WhatsApp de la empresa sin estar en la base.
@@ -23,7 +23,26 @@ const MENSAJES_DE_MUESTRA = 5
 /** Tope de hilos a revisar. Cada uno cuesta una consulta a la base. */
 const MAX_HILOS = 40
 
+/**
+ * Por qué esta conversación no tiene ficha. No es lo mismo, y lo que hay que
+ * hacer con cada una es distinto:
+ *
+ * - `desconocido`: nadie con ese número en la base. Se crea la ficha.
+ * - `ambiguo`: hay DOS o más fichas con ese número. Crear una tercera sería
+ *   empeorar el problema — hay que elegir cuál queda y corregir la otra.
+ *
+ * La distinción sale de `resolverDestinatario`. Antes acá se usaba
+ * `buscarDestinatario`, que devuelve `null` para los dos casos, así que un
+ * empate se mostraba como si fuera gente nueva y el botón "Crear lead"
+ * duplicaba una ficha más.
+ */
+export type MotivoSinFicha = 'desconocido' | 'ambiguo'
+
 export interface EntranteSinIdentificar {
+  /** Por qué no tiene ficha: cambia qué se le ofrece hacer al equipo. */
+  motivo: MotivoSinFicha
+  /** Las fichas que empatan. Solo con `motivo: 'ambiguo'`. */
+  candidatos?: Destinatario[]
   /** Id de la conversación en el agente, para pedir el hilo completo. */
   conversacion: number
   telefono: string
@@ -53,13 +72,26 @@ export async function entrantesSinIdentificar(admin: SB): Promise<EntranteSinIde
   const revisadas = await Promise.all(
     candidatas.map(async (c) => ({
       conversacion: c,
-      destinatario: await buscarDestinatario(admin, c.phone).catch(() => null),
+      // Si la consulta falla, se trata como desconocido: es preferible mostrar
+      // a alguien de más que esconderlo. Lo que no se hace es inventar que
+      // tiene ficha.
+      resultado: await resolverDestinatario(admin, c.phone).catch(
+        () => ({ estado: 'desconocido' }) as const
+      ),
     }))
   )
 
-  const huerfanas = revisadas.filter((r) => r.destinatario === null).map((r) => r.conversacion)
+  const sinFicha = revisadas.filter((r) => r.resultado.estado !== 'encontrado')
 
-  return Promise.all(huerfanas.map((c) => conMuestra(c)))
+  return Promise.all(
+    sinFicha.map((r) =>
+      conMuestra(
+        r.conversacion,
+        r.resultado.estado === 'ambiguo' ? 'ambiguo' : 'desconocido',
+        r.resultado.estado === 'ambiguo' ? r.resultado.candidatos : undefined
+      )
+    )
+  )
 }
 
 /**
@@ -69,8 +101,14 @@ export async function entrantesSinIdentificar(admin: SB): Promise<EntranteSinIde
  * un lead exige saber qué dijo esa persona. Si el hilo no se puede traer, la
  * fila igual aparece: es peor esconder a alguien que mostrarlo sin su texto.
  */
-async function conMuestra(c: ConversacionAgente): Promise<EntranteSinIdentificar> {
+async function conMuestra(
+  c: ConversacionAgente,
+  motivo: MotivoSinFicha,
+  candidatos?: Destinatario[]
+): Promise<EntranteSinIdentificar> {
   const base = {
+    motivo,
+    candidatos,
     conversacion: c.id,
     telefono: c.phone,
     nombre: c.name,
