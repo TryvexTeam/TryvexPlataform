@@ -51,6 +51,7 @@ export function WhatsappVinculacion({ inicial }: WhatsappVinculacionProps) {
   const [imagen, setImagen] = useState<string | null>(inicial.imagen ?? null)
   const [telefono, setTelefono] = useState<string | null>(inicial.telefono ?? null)
   const [bridge, setBridge] = useState<EstadoBridge | null>(null)
+  const [sinLatidoHace, setSinLatidoHace] = useState<number | undefined>(inicial.sinLatidoHace)
   const [refrescando, setRefrescando] = useState(false)
 
   // `mostrarSpinner` solo en el refresco manual: en el automático (montaje y
@@ -69,6 +70,7 @@ export function WhatsappVinculacion({ inicial }: WhatsappVinculacionProps) {
           setEstado(body.data.estado)
           setImagen(body.data.imagen ?? null)
           setTelefono(body.data.telefono ?? null)
+          setSinLatidoHace(body.data.sinLatidoHace)
         }
       }
 
@@ -93,8 +95,8 @@ export function WhatsappVinculacion({ inicial }: WhatsappVinculacionProps) {
   const conectado = !baneado && (estado === 'conectado' || bridge?.sesionLista === true)
 
   const contenido = useMemo(
-    () => cuerpoPara({ estado, imagen, conectado, baneado }),
-    [estado, imagen, conectado, baneado]
+    () => cuerpoPara({ estado, imagen, conectado, baneado, sinLatidoHace }),
+    [estado, imagen, conectado, baneado, sinLatidoHace]
   )
 
   return (
@@ -155,6 +157,8 @@ interface CuerpoArgs {
   imagen: string | null
   conectado: boolean
   baneado: boolean
+  /** Segundos sin señal del agente. Solo llega con estado `sin_latido`. */
+  sinLatidoHace?: number
 }
 
 /**
@@ -164,7 +168,7 @@ interface CuerpoArgs {
  * de ternarios anidados: agregar un estado obligaba a insertar una rama en el
  * medio, y el orden entre ramas escondía cuál ganaba.
  */
-function cuerpoPara({ estado, imagen, conectado, baneado }: CuerpoArgs) {
+function cuerpoPara({ estado, imagen, conectado, baneado, sinLatidoHace }: CuerpoArgs) {
   // El baneo se evalúa primero: es el único estado ante el cual la acción
   // correcta NO es reintentar ni reescanear.
   if (baneado) {
@@ -253,6 +257,29 @@ function cuerpoPara({ estado, imagen, conectado, baneado }: CuerpoArgs) {
         />
       )
 
+    // El agente contesta, pero lo que dice es que su última confirmación es
+    // vieja: la sesión sigue vinculada y el socket de WhatsApp no.
+    //
+    // El detalle nombra el proxy a propósito. La primera vez que pasó, el
+    // síntoma era mudo y se terminó desvinculando un número que estaba
+    // perfecto. Decir "no reescanees" acá ahorra ese rodeo entero.
+    case 'sin_latido':
+      return (
+        <Mensaje
+          icono={<WifiOff size={18} className="text-amber-500" />}
+          titulo={
+            sinLatidoHace
+              ? `Vinculado, pero sin señal hace ${describirEspera(sinLatidoHace)}`
+              : 'Vinculado, pero sin señal'
+          }
+          detalle={
+            'La vinculación está bien: no hace falta reescanear. Lo que se cayó es la salida a ' +
+            'internet del agente — casi siempre el proxy. Mientras tanto no se envía nada, para ' +
+            'que no quede acumulándose sin avisar.'
+          }
+        />
+      )
+
     default:
       return (
         <Mensaje
@@ -289,4 +316,24 @@ function Mensaje({ icono, titulo, detalle, tono = 'normal' }: MensajeProps) {
       </div>
     </div>
   )
+}
+
+/**
+ * El tiempo sin señal, dicho como lo diría una persona.
+ *
+ * "sin señal hace 12001s" obliga a hacer la división mental justo cuando algo
+ * está fallando. "hace 3 horas" se entiende de una y dice sola la gravedad:
+ * un minuto es un parpadeo, tres horas es andá a mirar el proxy.
+ */
+function describirEspera(segundos: number): string {
+  if (segundos < 90) return `${segundos} segundos`
+
+  const minutos = Math.round(segundos / 60)
+  if (minutos < 60) return `${minutos} minutos`
+
+  const horas = Math.floor(minutos / 60)
+  if (horas < 24) return horas === 1 ? '1 hora' : `${horas} horas`
+
+  const dias = Math.floor(horas / 24)
+  return dias === 1 ? '1 día' : `${dias} días`
 }
