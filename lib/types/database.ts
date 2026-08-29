@@ -2215,6 +2215,7 @@ export interface Database {
           rol: string
           texto: string
           created_at: string
+          leads_propuestos: string[] | null
         }
         Insert: {
           id?: string
@@ -2222,6 +2223,7 @@ export interface Database {
           rol: string
           texto: string
           created_at?: string
+          leads_propuestos?: string[] | null
         }
         Update: {
           id?: string
@@ -2229,6 +2231,7 @@ export interface Database {
           rol?: string
           texto?: string
           created_at?: string
+          leads_propuestos?: string[] | null
         }
         Relationships: [
           {

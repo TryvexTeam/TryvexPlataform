@@ -65,10 +65,20 @@ export async function reporteCartera(
  * - Con `estado` explícito, lista los leads de ESE estado (ej. "quiénes son los
  *   contactados") — sin exigir canal de contacto, porque acá el usuario quiere
  *   VER quiénes son, no a quién contactar.
+ * - `excluir` saca de la lista a quienes ya se propusieron. Sin eso el orden es
+ *   determinista (score descendente) y dos pedidos seguidos devuelven los mismos
+ *   negocios: hay que repetirle el contexto entero a Vex para que pase al
+ *   siguiente, y trabajar con él se siente como empezar de cero cada vez.
  */
 export async function recomendarLeads(
   sb: SupabaseClient,
-  opts: { nicho?: string; localidad?: string; cantidad?: number; estado?: EstadoLead } = {}
+  opts: {
+    nicho?: string
+    localidad?: string
+    cantidad?: number
+    estado?: EstadoLead
+    excluir?: readonly string[]
+  } = {}
 ): Promise<LeadResumen[]> {
   const limite = Math.max(1, Math.min(opts.cantidad ?? 10, 50));
   const estado = opts.estado ?? "sin_contactar";
@@ -88,6 +98,10 @@ export async function recomendarLeads(
   if (!opts.estado) leads = leads.filter((l) => l.telefono || l.redes_sociales);
   if (opts.nicho) leads = leads.filter((l) => coincideTermino(l.nicho, opts.nicho));
   if (opts.localidad) leads = leads.filter((l) => coincideTermino(l.localidad, opts.localidad));
+  if (opts.excluir?.length) {
+    const ya = new Set(opts.excluir);
+    leads = leads.filter((l) => !ya.has(l.id));
+  }
   return leads.slice(0, limite);
 }
 
