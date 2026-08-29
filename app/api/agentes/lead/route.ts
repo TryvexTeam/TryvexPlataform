@@ -77,9 +77,11 @@ export async function GET(req: Request) {
   }
 
   if (quien.estado === 'encontrado' && quien.destinatario.tipo === 'cliente') {
+    // `nombre_negocio`, no `nombre`: esa columna no existe en dim_clientes y la
+    // consulta moría en silencio, devolviendo siempre «no es cliente».
     const { data: cliente } = await admin
       .from('dim_clientes')
-      .select('id, nombre, estado')
+      .select('id, nombre_negocio, estado')
       .eq('id', quien.destinatario.id)
       .maybeSingle()
 
@@ -89,7 +91,7 @@ export async function GET(req: Request) {
         existe: true,
         es_cliente: true,
         cliente: cliente
-          ? { id: cliente.id, nombre: cliente.nombre, estado: cliente.estado }
+          ? { id: cliente.id, nombre: cliente.nombre_negocio, estado: cliente.estado }
           : null,
         lead: null,
       },

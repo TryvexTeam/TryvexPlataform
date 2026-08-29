@@ -73,7 +73,21 @@ async function candidatosEn(
   sufijo: string,
   tabla: 'dim_clientes' | 'fact_leads'
 ): Promise<Destinatario[]> {
-  const { data } = await admin.rpc('buscar_por_telefono', { p_sufijo: sufijo, p_tabla: tabla })
+  const { data, error } = await admin.rpc('buscar_por_telefono', {
+    p_sufijo: sufijo,
+    p_tabla: tabla,
+  })
+
+  // Un fallo de la consulta NO es «no hay nadie». Antes se descartaba el error
+  // y se seguía de largo, y eso escondió durante semanas que la búsqueda de
+  // clientes estaba rota: la 096 pedía una columna que no existe, cada llamada
+  // moría, y la respuesta era un tranquilo «no es cliente». Que se caiga fuerte
+  // es lo correcto — un lookup roto que devuelve vacío hace tomar decisiones
+  // sobre datos que nadie miró.
+  if (error) {
+    throw new Error(`buscar_por_telefono(${tabla}) falló: ${error.message ?? error}`)
+  }
+
   const tipo = tabla === 'dim_clientes' ? 'cliente' : 'lead'
   return unicas((data ?? []) as Array<{ id: string; nombre: string | null }>).map((f) => ({
     tipo,

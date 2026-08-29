@@ -23,6 +23,14 @@
 --      terminar en una cadena de 8, así que jamás casaban: si escribían, se
 --      les abría ficha nueva y quedaban duplicados.
 --
+--   3. LA BÚSQUEDA DE CLIENTES NUNCA FUNCIONÓ. La 096 seleccionaba
+--      `c.nombre` de `dim_clientes`, y esa columna no existe: se llama
+--      `nombre_negocio`. Cada consulta moría con «column c.nombre does not
+--      exist», el código descartaba el error en silencio y seguía de largo a
+--      los leads. Efecto real: a un cliente que escribía se le respondía con
+--      su ficha vieja de lead, o se le trataba como desconocido. Salió a la
+--      luz probando esta migración contra la base de verdad, no con tests.
+--
 -- Esta versión devuelve TODAS las coincidencias en vez de quedarse con una.
 -- Quién decide qué hacer con dos candidatos no es la base: es el código que
 -- llama, y ahí la regla es no elegir (ver lib/agentes/destinatario.ts).
@@ -96,7 +104,7 @@ begin
 
   elsif p_tabla = 'dim_clientes' then
     return query
-      select c.id, c.nombre, c.telefono
+      select c.id, c.nombre_negocio, c.telefono
       from public.dim_clientes c
       where c.telefono is not null
         and right(regexp_replace(c.telefono, '\D', '', 'g'), 8) = right(v_sufijo, 8)
@@ -104,7 +112,7 @@ begin
 
     if not found then
       return query
-        select c.id, c.nombre, c.telefono
+        select c.id, c.nombre_negocio, c.telefono
         from public.dim_clientes c
         where c.telefono is not null
           and length(regexp_replace(c.telefono, '\D', '', 'g')) between 6 and 7

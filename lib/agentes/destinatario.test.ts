@@ -165,3 +165,31 @@ describe('resolverDestinatario distingue los tres desenlaces', () => {
     })
   })
 })
+
+/**
+ * El error que se descartaba. La 096 pedía `c.nombre` de `dim_clientes`, una
+ * columna que no existe: cada búsqueda de clientes moría, el código se comía el
+ * error y respondía «no es cliente». Nadie lo vio hasta probar contra la base
+ * real, porque en verde se veía idéntico a «no hay match».
+ */
+describe('un fallo de la consulta no se confunde con «no hay nadie»', () => {
+  function baseRota(mensaje: string) {
+    return {
+      async rpc() {
+        return { data: null, error: { message: mensaje } }
+      },
+    }
+  }
+
+  it('propaga el error en vez de devolver vacío', async () => {
+    await expect(
+      resolverDestinatario(baseRota('column c.nombre does not exist'), '56983376557')
+    ).rejects.toThrow('column c.nombre does not exist')
+  })
+
+  it('la versión corta tampoco lo esconde', async () => {
+    await expect(
+      buscarDestinatario(baseRota('timeout'), '56983376557')
+    ).rejects.toThrow('timeout')
+  })
+})
