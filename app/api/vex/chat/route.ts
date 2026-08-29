@@ -35,8 +35,12 @@ type SB = any;
 
 async function ejecutarAccion(
   sb: SB,
-  a: Accion
-): Promise<{ tipo: string; datos: unknown; borradores?: DraftLead[] }> {
+  a: Accion,
+  // A quiénes ya se les propuso un mensaje en esta conversación. No se vuelven
+  // a ofrecer: el orden por score es determinista, así que sin esto el segundo
+  // pedido devuelve los mismos negocios que el primero.
+  yaPropuestos: readonly string[] = []
+): Promise<{ tipo: string; datos: unknown; borradores?: DraftLead[]; propuestos?: string[] }> {
   switch (a.tipo) {
     case "reporte":
       return { tipo: a.tipo, datos: await reporteCartera(sb) };
@@ -79,11 +83,22 @@ async function ejecutarAccion(
       // lote grande sin pedirlo empuja a aprobar a ciegas — que es justo lo que
       // no queremos con clientes reales. Pedir más es una frase; deshacer un
       // mensaje enviado, no.
-      const leads = await recomendarLeads(sb, {
+      const filtros = {
         nicho: a.nicho,
         localidad: a.localidad,
         cantidad: Math.min(a.cantidad ?? 3, 10),
-      });
+      };
+      const leads = await recomendarLeads(sb, { ...filtros, excluir: yaPropuestos });
+
+      // Si no queda ninguno, hay que saber POR QUÉ para poder decirlo: que se
+      // hayan agotado los candidatos («ya te los propuse a todos») no es lo
+      // mismo que no tener leads de ese rubro, y con el mismo mensaje para los
+      // dos casos el usuario prueba otro filtro sin necesidad.
+      const agotados =
+        leads.length === 0 &&
+        yaPropuestos.length > 0 &&
+        (await recomendarLeads(sb, filtros)).length > 0;
+
       const borradores = await Promise.all(
         leads.map((lead) => generarDraftLead(lead, a.instrucciones).catch(marcarErrorLLM))
       );
@@ -92,8 +107,9 @@ async function ejecutarAccion(
         // Los filtros viajan con el resultado para poder decir QUE se busco
         // cuando no aparece nada. Sin eso, un rubro mal entendido se ve igual
         // que una cartera vacia.
-        datos: { total: borradores.length, nicho: a.nicho, localidad: a.localidad },
+        datos: { total: borradores.length, nicho: a.nicho, localidad: a.localidad, agotados },
         borradores,
+        propuestos: leads.map((l) => l.id),
       };
     }
 
@@ -132,22 +148,36 @@ export async function POST(req: Request) {
   try {
     const { data: historialRaw } = await admin
       .from("vex_conversaciones")
-      .select("rol, texto")
+      .select("rol, texto, leads_propuestos")
       .eq("integrante_id", integranteId)
       .order("created_at", { ascending: false })
       .limit(20);
 
-    const historial: Turno[] = ((historialRaw ?? []) as Turno[]).slice().reverse();
+    const filas = (historialRaw ?? []) as Array<Turno & { leads_propuestos: string[] | null }>;
+    const historial: Turno[] = filas
+      .map(({ rol, texto }) => ({ rol, texto }))
+      .slice()
+      .reverse();
+
+    // A quiénes ya les propuso un mensaje en esta ventana de conversación. Es la
+    // misma ventana de 20 turnos que usa la intención: lo que Vex «tiene
+    // presente». Más atrás no cuenta — a los tres días es razonable que vuelva a
+    // ofrecer un negocio que quedó sin contactar.
+    const yaPropuestos = [...new Set(filas.flatMap((f) => f.leads_propuestos ?? []))];
 
     const acciones = await clasificarIntencion(mensaje, historial).catch(marcarErrorLLM);
 
     const resultados: { tipo: string; datos: unknown }[] = [];
     let borradores: DraftLead[] | undefined;
+    const propuestosAhora: string[] = [];
 
     for (const a of acciones) {
-      const r = await ejecutarAccion(supabase, a);
+      // Se suma lo propuesto en ESTA vuelta: si una misma petición dispara dos
+      // acciones que preparan envíos, la segunda no repite lo de la primera.
+      const r = await ejecutarAccion(supabase, a, [...yaPropuestos, ...propuestosAhora]);
       resultados.push({ tipo: r.tipo, datos: r.datos });
       if (r.borradores) borradores = r.borradores;
+      if (r.propuestos) propuestosAhora.push(...r.propuestos);
     }
 
     // Los resultados se traducen a frases antes de dárselos al modelo. Antes se
@@ -170,6 +200,9 @@ export async function POST(req: Request) {
             d?.nicho ? `del rubro "${d.nicho}"` : null,
             d?.localidad ? `en "${d.localidad}"` : null,
           ].filter(Boolean).join(" ")
+          if (d?.agotados) {
+            return `Ya te propuse a todos los que quedaban ${filtros || "sin contactar"} en esta conversación. Para volver a verlos, empieza un tema nuevo o dime otro rubro o comuna.`
+          }
           return filtros
             ? `No hay leads sin contactar ${filtros}. Puede ser que el rubro no exista en la cartera: conviene probar sin ese filtro o con otro nombre.`
             : "No hay leads sin contactar con teléfono disponible, así que no hay borradores."
@@ -195,7 +228,15 @@ contenido de los borradores: ya se ven abajo.
 
     await admin.from("vex_conversaciones").insert([
       { integrante_id: integranteId, rol: "user", texto: mensaje },
-      { integrante_id: integranteId, rol: "vex", texto: respuesta },
+      {
+        integrante_id: integranteId,
+        rol: "vex",
+        texto: respuesta,
+        // Queda anotado a quién propuso, que es lo único que permite no
+        // repetirlo: un borrador solo llega a `outreach_messages` cuando se
+        // ENVÍA, así que uno descartado no dejaba rastro en ninguna parte.
+        leads_propuestos: propuestosAhora.length ? propuestosAhora : null,
+      },
     ]);
 
     return NextResponse.json({ respuesta, borradores });
