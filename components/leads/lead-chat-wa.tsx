@@ -25,6 +25,7 @@ interface MensajeWa {
   es_bot?: boolean | null
   enviado_por?: string | null
   estado_envio?: string | null
+  ack_codigo?: string | null
   created_at: string
 }
 
@@ -44,6 +45,37 @@ export function textoSugerido(lead: Lead): string {
 /** ¿Este estado de envío significa que el mensaje NO llegó? */
 function fallado(estado: string): boolean {
   return /no se envió|fallido|error/i.test(estado)
+}
+
+/**
+ * Cómo se lee cada estado, en palabras y no en jerga.
+ *
+ * «pendiente» se muestra como «sin confirmar» a propósito: pendiente suena a
+ * que está en camino, y lo que dice de verdad es que NO SABEMOS. Durante dos
+ * días WhatsApp descartó mensajes devolviendo `error: 463` mientras la pantalla
+ * decía enviado — la palabra tranquilizadora fue parte del problema.
+ */
+function comoSeLee(estado: string): string {
+  switch (estado) {
+    case 'pendiente':
+    case 'enviado':
+      return 'sin confirmar'
+    case 'entregado':
+      return 'entregado'
+    case 'leido':
+      return 'leído'
+    case 'fallido':
+      return 'no llegó'
+    default:
+      return estado
+  }
+}
+
+/** El estilo del estado: rojo si no llegó, apagado mientras nadie confirme. */
+function estiloEstado(estado: string): string | undefined {
+  if (fallado(estado)) return 'text-red-400 font-medium'
+  if (estado === 'pendiente' || estado === 'enviado') return 'italic opacity-70'
+  return undefined
 }
 
 function hora(iso: string): string {
@@ -291,8 +323,15 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
                       que la hora, nadie lo lee, y creer que un cliente recibió
                       un mensaje que nunca salió es el peor final posible. */}
                   {mio && m.estado_envio ? (
-                    <span className={fallado(m.estado_envio) ? 'text-red-400 font-medium' : undefined}>
-                      {' · '}{m.estado_envio}
+                    <span
+                      className={estiloEstado(m.estado_envio)}
+                      // El motivo va en el title y no en la burbuja: "no llegó"
+                      // alcanza para actuar, y el código crudo del acuse (463)
+                      // es lo que hace falta para diagnosticar. Los dos, sin
+                      // que el segundo tape la conversación.
+                      title={m.ack_codigo ? `Acuse de WhatsApp: ${m.ack_codigo}` : undefined}
+                    >
+                      {' · '}{comoSeLee(m.estado_envio)}
                     </span>
                   ) : null}
                 </div>
