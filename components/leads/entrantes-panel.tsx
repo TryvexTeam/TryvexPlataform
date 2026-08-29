@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Inbox, Loader2, MessageSquarePlus, RefreshCw } from 'lucide-react'
+import { Inbox, MessageSquarePlus, RefreshCw, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -91,6 +91,15 @@ export function EntrantesPanel() {
     return () => clearInterval(id)
   }, [abierto, consultar])
 
+  /** Abre la ficha de un candidato del empate, para corregir el dato ahí. */
+  const abrirFicha = useCallback(
+    (tipo: 'lead' | 'cliente', id: string) => {
+      router.push(tipo === 'cliente' ? `/clientes?cliente=${id}` : `/leads?lead=${id}`)
+      setAbierto(false)
+    },
+    [router]
+  )
+
   const crearLead = useCallback(
     (telefono: string, nombre: string | null) => {
       const params = new URLSearchParams({ nuevo: '1', telefono })
@@ -126,8 +135,9 @@ export function EntrantesPanel() {
           <DialogHeader>
             <DialogTitle>Escribieron y no están en la base</DialogTitle>
             <DialogDescription>
-              El agente no les responde porque nadie del equipo los contactó primero. Creá la ficha
-              si es un cliente potencial.
+              Escribieron al WhatsApp del equipo y sus mensajes no tienen a qué ficha ir. Los
+              nuevos necesitan que se les cree una; los marcados en ámbar tienen el número
+              repetido en dos fichas y hay que corregir una.
             </DialogDescription>
           </DialogHeader>
 
@@ -140,7 +150,7 @@ export function EntrantesPanel() {
 
           <ul className="flex flex-col gap-2 max-h-96 overflow-y-auto">
             {entrantes.map((e) => (
-              <Entrante key={e.conversacion} entrante={e} onCrear={crearLead} />
+              <Entrante key={e.conversacion} entrante={e} onCrear={crearLead} onAbrir={abrirFicha} />
             ))}
           </ul>
         </DialogContent>
@@ -152,15 +162,22 @@ export function EntrantesPanel() {
 interface EntranteProps {
   entrante: EntranteSinIdentificar
   onCrear: (telefono: string, nombre: string | null) => void
+  onAbrir: (tipo: 'lead' | 'cliente', id: string) => void
 }
 
-function Entrante({ entrante, onCrear }: EntranteProps) {
+function Entrante({ entrante, onCrear, onAbrir }: EntranteProps) {
   const ultimoDeEllos = [...entrante.muestra].reverse().find((m) => m.deEllos)
+  const empatado = entrante.motivo === 'ambiguo'
 
   return (
     <li
       className="flex flex-col gap-2 rounded-lg p-3"
-      style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-1)' }}
+      style={{
+        // El empate se pinta distinto: mirar la lista y ver de un vistazo
+        // cuáles necesitan una decisión, y no crear una ficha por error.
+        border: `1px solid ${empatado ? 'var(--tx-warning)' : 'var(--tx-border)'}`,
+        background: 'var(--tx-surface-1)',
+      }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -172,15 +189,52 @@ function Entrante({ entrante, onCrear }: EntranteProps) {
             {formatearMomento(entrante.ultimoMensaje)}
           </p>
         </div>
-        <Button
-          size="sm"
-          className="shrink-0 gap-1.5"
-          onClick={() => onCrear(entrante.telefono, entrante.nombre)}
-        >
-          <MessageSquarePlus size={13} />
-          Crear lead
-        </Button>
+        {!empatado && (
+          <Button
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={() => onCrear(entrante.telefono, entrante.nombre)}
+          >
+            <MessageSquarePlus size={13} />
+            Crear lead
+          </Button>
+        )}
       </div>
+
+      {/* Empate: el número está en dos fichas. Crear una tercera empeora el
+          problema, así que acá NO se ofrece crear — se ofrece ir a cada una
+          para que una persona decida cuál se queda con el número. */}
+      {empatado && (
+        <div
+          className="flex flex-col gap-1.5 rounded p-2"
+          style={{ background: 'var(--tx-surface-2)' }}
+        >
+          <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--tx-warning)]">
+            <Users size={12} />
+            Este número está en {entrante.candidatos?.length ?? 2} fichas
+          </p>
+          <p className="text-[11px] text-[var(--tx-ink-muted)]">
+            Sus mensajes no se asignan hasta que una quede con el número. Abrí las fichas y
+            corregí la que no corresponda.
+          </p>
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {entrante.candidatos?.map((c) => (
+              <button
+                key={`${c.tipo}-${c.id}`}
+                type="button"
+                onClick={() => onAbrir(c.tipo, c.id)}
+                className="rounded px-2 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
+                style={{ background: 'var(--tx-surface-1)', border: '1px solid var(--tx-border)' }}
+              >
+                {c.nombre?.trim() || 'Sin nombre'}
+                <span className="ml-1 text-[var(--tx-ink-muted)]">
+                  {c.tipo === 'cliente' ? '· cliente' : '· lead'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {ultimoDeEllos && (
         <p
