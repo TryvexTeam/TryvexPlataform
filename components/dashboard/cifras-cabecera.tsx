@@ -35,7 +35,15 @@ export function CifrasCabecera({ cifras }: CifrasCabeceraProps) {
   const sinMovimiento = useReducedMotion()
 
   return (
-    <div className="no-scrollbar -mx-4 flex items-end overflow-x-auto px-4 md:mx-0 md:px-0">
+    // El desvanecido del borde derecho (`mask-image`, solo en celular) es la
+    // única pista de que la fila sigue para el lado — sin él, la última cifra
+    // se ve "cortada" contra el borde de la pantalla y parece un error, no una
+    // invitación a deslizar. Los otros carruseles del panel (leads, tareas del
+    // equipo) tienen puntitos de paginación; esta fila de texto no tiene dónde
+    // ponerlos, así que la señal va en el propio borde.
+    <div
+      className="no-scrollbar -mx-4 flex items-end overflow-x-auto px-4 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent_100%)] md:mx-0 md:px-0 md:[mask-image:none]"
+    >
       {cifras.map((cifra, i) => {
         const contenido = (
           <>
