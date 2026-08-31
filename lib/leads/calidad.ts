@@ -24,7 +24,11 @@ export function telefonoLlamable(telefono: string | null | undefined): boolean {
   const dig = telefono.replace(/\D/g, '')
   const sig = dig.startsWith('56') ? dig.slice(2) : dig
   if (sig.length === 9 && sig.startsWith('9')) return true // móvil
-  if (sig.length === 8 || sig.length === 9) return true // fijo con código
+  if (sig.length === 9) return true // fijo con código de área (2XXXXXXXX)
+  // 8 dígitos NO es llamable: es un fijo al que le falta el código de área.
+  // Marcarlo verde mandaba a alguien a llamar un número que no existe — y del
+  // otro lado, `lib/vex/telefono` le inventaba un "9" y lo volvía un móvil
+  // ajeno. Los dos lados del mismo número incompleto, mintiendo distinto.
   return false
 }
 
