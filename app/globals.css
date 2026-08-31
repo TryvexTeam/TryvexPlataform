@@ -195,6 +195,29 @@
   border-radius: 32px;
 }
 
+/*
+  `.glass` es un velo blanco de 3.5% que se apoya ENTERAMENTE en el desenfoque:
+  sin `backdrop-filter` no hay superficie, solo un vidrio limpio. Eso funciona
+  en el monitor, pero se rompe en dos casos reales:
+
+  1. En el celular el contenido va al centro de la pantalla, justo encima del
+     fondo, y no a los lados como en escritorio. Cristian abrió una ficha desde
+     el teléfono y estaba leyendo el texto sobre el dibujo del wallpaper.
+  2. Donde el navegador NO pinta `backdrop-filter` —WebView de Android, GPUs
+     sin soporte, ahorro de batería— el velo se queda solo y no tapa nada.
+
+  No se toca el aspecto de escritorio: se le pone piso solo donde falla.
+*/
+@media (max-width: 900px) {
+  .glass { background: rgba(20, 18, 26, 0.74); }
+  .glass-strong { background: rgba(20, 18, 26, 0.92); }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: rgba(20, 18, 26, 0.82); }
+  .glass-strong { background: rgba(20, 18, 26, 0.95); }
+}
+
 /* ── Grain overlay ── */
 .grain {
   position: absolute; inset: 0;
