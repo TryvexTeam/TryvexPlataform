@@ -160,6 +160,12 @@ export async function POST(req: Request) {
       enviado_por: autorNombre,
       integrante_id: perfil.id,
       aprobado_por: perfil.id,
+      // Sin esto el acuse no tenía por dónde agarrar esta fila: `wa-estado`
+      // actualiza `outreach_messages` por `wa_message_id` y el insert nunca lo
+      // ponía, así que el update matcheaba CERO filas siempre. La referencia
+      // del agente viajaba por la red y se descartaba en la misma línea que
+      // escribía el estado.
+      wa_message_id: referenciaVex !== undefined ? String(referenciaVex) : null,
     })
     .select('id')
     .single()
@@ -199,7 +205,15 @@ export async function POST(req: Request) {
       const cambios: { ultimo_contacto: string; estado?: string } = {
         ultimo_contacto: new Date().toISOString(),
       }
-      if (debeAvanzarAContactado(lead.estado, 'whatsapp')) cambios.estado = 'contactado'
+      // El estado SOLO avanza cuando el transporte ya confirmó la entrega. Con
+      // el agente, acá todavía no se sabe nada: `referenciaVex` es el id con el
+      // que el agente lo metió en SU cola, y el 463 ocurre después de eso. El
+      // 29-ago quedaron 11 fichas en «contactado» sin que llegara un solo
+      // mensaje. Ahora ese salto lo da `/api/agentes/wa-estado` con el acuse
+      // en la mano — ver la migración 100.
+      if (referenciaVex === undefined && debeAvanzarAContactado(lead.estado, 'whatsapp')) {
+        cambios.estado = 'contactado'
+      }
       await admin.from('fact_leads').update(cambios).eq('id', lead_id)
     }
   } catch (e) {
