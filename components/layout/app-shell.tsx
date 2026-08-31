@@ -6,7 +6,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme()
   return (
     <div
-      className="flex h-screen overflow-hidden relative"
+      // `alto-pantalla-app` y no `h-screen`: en Safari de iPhone `100vh` mide el
+      // viewport grande, así que con la barra del navegador a la vista el marco
+      // queda más alto que la pantalla y el contenido de abajo se corta. Ver la
+      // clase en globals.css — mismo criterio que los modales y el visor.
+      className="flex alto-pantalla-app overflow-hidden relative"
       style={{
         backgroundColor: theme.bgBase,
         isolation: 'isolate',
