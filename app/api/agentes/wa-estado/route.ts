@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
 import { excedeLimite } from '@/lib/agentes/rate-limit'
 import { leerAcuse } from '@/lib/wa/acuse'
+import { clavesDeAcuse } from '@/lib/wa/emparejar'
+import { debeAvanzarAContactado } from '@/lib/types/lead'
 
 /**
  * El agente avisa qué dijo WhatsApp sobre un mensaje que mandamos.
@@ -72,14 +74,25 @@ export async function POST(req: Request) {
   const admin = createAdminClient() as SB
   const ahora = new Date().toISOString()
 
+  // `referencia`: el id con el que el AGENTE metió el mensaje en su propia cola.
+  // Es lo único que el CRM tiene guardado en el momento del envío — el id de
+  // WhatsApp no existe todavía cuando `/api/wa/send` escribe la fila. Sin este
+  // segundo criterio, el `.eq('wa_message_id', ...)` de abajo matcheaba CERO
+  // filas en el 100% de los envíos hechos por el agente.
+  const claves = clavesDeAcuse(waMessageId, cuerpo?.referencia)
+
   const { data: actualizados, error } = await admin
     .from('mensajes_wa')
     .update({
       estado_envio: lectura.estado,
       ack_codigo: lectura.codigo,
       ack_at: ahora,
+      // Se sube el id REAL de WhatsApp: si el emparejamiento entró por la
+      // referencia del agente, los acuses siguientes (entregado, leído) ya
+      // caen directo por `wa_message_id`.
+      wa_message_id: waMessageId,
     })
-    .eq('wa_message_id', waMessageId)
+    .in('wa_message_id', claves)
     .select('id, lead_id, cliente_id')
 
   if (error) {
@@ -110,14 +123,30 @@ export async function POST(req: Request) {
     if (lectura.estado === 'entregado' || lectura.estado === 'leido') {
       await admin
         .from('outreach_messages')
-        .update({ enviado_at: ahora })
-        .eq('wa_message_id', waMessageId)
+        .update({ enviado_at: ahora, wa_message_id: waMessageId })
+        .in('wa_message_id', claves)
         .is('enviado_at', null)
+
+      // Recién acá la ficha puede avanzar: contactar es que el mensaje LLEGUE,
+      // no que nosotros lo hayamos entregado a un intermediario. `/api/wa/send`
+      // dejó de dar este salto a propósito — con el agente, allá todavía no se
+      // sabe nada y el 463 ocurre después.
+      const { data: lead } = await admin
+        .from('fact_leads')
+        .select('estado')
+        .eq('id', leadId)
+        .single()
+      if (lead && debeAvanzarAContactado(lead.estado, 'whatsapp')) {
+        await admin
+          .from('fact_leads')
+          .update({ estado: 'contactado', ultimo_contacto: ahora })
+          .eq('id', leadId)
+      }
     } else if (lectura.estado === 'fallido') {
       await admin
         .from('outreach_messages')
         .update({ estado: 'fallido' })
-        .eq('wa_message_id', waMessageId)
+        .in('wa_message_id', claves)
     }
   }
 
