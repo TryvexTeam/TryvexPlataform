@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { MessageCircle, Send, ExternalLink, Bot } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { normalizarTelefono } from '@/lib/vex/telefono'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
@@ -191,14 +192,16 @@ function buildTemplate(lead: Lead): string {
   )
 }
 
-/** Limpia el teléfono a formato wa.me (solo dígitos, con código país Chile si falta). */
+/**
+ * Limpia el teléfono a formato wa.me. Delega en `lib/vex/telefono`, que es el
+ * mismo criterio que usa el camino de envío: antes había cuatro reglas
+ * distintas conviviendo en el repo y no coincidían entre sí, así que la ficha
+ * podía mostrar un número y el botón mandar a otro. Este devolvía `digitos`
+ * crudo ante cualquier cosa que no fueran 9 dígitos empezando en 9 — o sea que
+ * abría wa.me con un número incompleto.
+ */
 function normalizarNumero(tel: string | null): string | null {
-  if (!tel) return null
-  const digitos = tel.replace(/\D/g, '')
-  if (!digitos) return null
-  // Chile: celular local de 9 dígitos → anteponer 56.
-  if (digitos.length === 9 && digitos.startsWith('9')) return `56${digitos}`
-  return digitos
+  return normalizarTelefono(tel)
 }
 
 /** Iniciales para el circulito de perfil (1-2 letras). */
