@@ -3,7 +3,12 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
 import { excedeLimite } from '@/lib/agentes/rate-limit'
 import { leerAcuse } from '@/lib/wa/acuse'
-import { clavesDeAcuse } from '@/lib/wa/emparejar'
+import {
+  clavesDeAcuse,
+  elegirFilaDelAcuse,
+  esClaveReusable,
+  VENTANA_REFERENCIA_HORAS,
+} from '@/lib/wa/emparejar'
 import { debeAvanzarAContactado } from '@/lib/types/lead'
 
 /**
@@ -81,19 +86,79 @@ export async function POST(req: Request) {
   // filas en el 100% de los envíos hechos por el agente.
   const claves = clavesDeAcuse(waMessageId, cuerpo?.referencia)
 
-  const { data: actualizados, error } = await admin
+  // PRIMERO se mira, después se escribe.
+  //
+  // Antes esto era un `.update().in(...)` directo, y ahí estaba el problema: la
+  // `referencia` del agente es el contador de SU cola —en la base: 26, 27, 28,
+  // 32, 64— y una cola en memoria vuelve a empezar en 1 al reiniciar. Dos
+  // mensajes de leads distintos pueden compartirla. El update las pisaba a las
+  // dos, o elegía una a cara o cruz, y la ficha equivocada avanzaba a
+  // «contactado». En silencio.
+  //
+  // Si la clave es reusable (un contador corto), la búsqueda se acota a lo
+  // reciente y a lo que todavía no tiene acuse: un acuse que llega hoy no puede
+  // ser de un mensaje de la semana pasada que ya se confirmó.
+  const hayClaveReusable = claves.some(esClaveReusable)
+  let consulta = admin
     .from('mensajes_wa')
-    .update({
-      estado_envio: lectura.estado,
-      ack_codigo: lectura.codigo,
-      ack_at: ahora,
-      // Se sube el id REAL de WhatsApp: si el emparejamiento entró por la
-      // referencia del agente, los acuses siguientes (entregado, leído) ya
-      // caen directo por `wa_message_id`.
-      wa_message_id: waMessageId,
-    })
-    .in('wa_message_id', claves)
     .select('id, lead_id, cliente_id')
+    .in('wa_message_id', claves)
+
+  if (hayClaveReusable) {
+    const desde = new Date(Date.now() - VENTANA_REFERENCIA_HORAS * 3600_000).toISOString()
+    consulta = consulta.is('ack_at', null).gte('created_at', desde)
+  }
+
+  const { data: candidatas, error: errorBuscar } = await consulta
+
+  if (errorBuscar) {
+    console.error('[api/agentes/wa-estado] no se pudo buscar el mensaje:', errorBuscar)
+    return NextResponse.json({ success: false, error: errorBuscar.message }, { status: 500 })
+  }
+
+  const emparejamiento = elegirFilaDelAcuse(candidatas)
+
+  // Empate: NO se adivina. Es la misma regla que se aplicó al emparejar leads
+  // por teléfono el 21-ago. Escribir sobre la fila equivocada avanza una ficha
+  // ajena y estampa el id real de WhatsApp donde no va — y eso ya no se puede
+  // deshacer mirando los datos. Se responde 409 con las candidatas para que
+  // quede rastro y el agente pueda mandar un identificador mejor.
+  if (emparejamiento.tipo === 'ambiguo') {
+    console.warn(
+      `[api/agentes/wa-estado] acuse AMBIGUO, no se escribió nada: claves=${claves.join(',')} ` +
+        `coinciden ${emparejamiento.filas.length} mensajes (${emparejamiento.filas
+          .map((f) => f.id)
+          .join(', ')}). El agente debería mandar un uuid propio por envío.`,
+    )
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'El acuse coincide con más de un mensaje: no se puede saber a cuál corresponde',
+        candidatos: emparejamiento.filas.length,
+        estado: lectura.estado,
+      },
+      { status: 409 },
+    )
+  }
+
+  const { data: actualizados, error } =
+    emparejamiento.tipo === 'unico'
+      ? await admin
+          .from('mensajes_wa')
+          .update({
+            estado_envio: lectura.estado,
+            ack_codigo: lectura.codigo,
+            ack_at: ahora,
+            // Se sube el id REAL de WhatsApp: si el emparejamiento entró por la
+            // referencia del agente, los acuses siguientes (entregado, leído) ya
+            // caen directo por `wa_message_id`.
+            wa_message_id: waMessageId,
+          })
+          // Por id, no por clave: la fila ya está elegida y no hay margen para
+          // que el update alcance a otra.
+          .eq('id', emparejamiento.fila.id)
+          .select('id, lead_id, cliente_id')
+      : { data: [], error: null }
 
   if (error) {
     console.error('[api/agentes/wa-estado] no se pudo guardar el acuse:', error)
@@ -126,6 +191,7 @@ export async function POST(req: Request) {
         .update({ enviado_at: ahora, wa_message_id: waMessageId })
         .in('wa_message_id', claves)
         .is('enviado_at', null)
+        .eq('lead_id', leadId)
 
       // Recién acá la ficha puede avanzar: contactar es que el mensaje LLEGUE,
       // no que nosotros lo hayamos entregado a un intermediario. `/api/wa/send`
