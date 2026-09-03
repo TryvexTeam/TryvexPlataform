@@ -616,7 +616,11 @@
 /* ── Reader Panel ── */
 .reader {
   position: relative;
-  padding: 18px 26px 0;
+  /* El 0 de abajo dejaba la barra de acciones —Ganado, Perdido, Llamé,
+     Registrar Contacto, WhatsApp, Pitch— pegada al filo del panel, sin nada
+     de aire. Cristian: «los botones abajo apegados... no es profesional».
+     El mismo respiro que ya tenía arriba. */
+  padding: 18px 26px 18px;
   display: flex;
   flex-direction: column;
   min-width: 0;

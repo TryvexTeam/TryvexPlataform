@@ -74,13 +74,19 @@ export function LeadsWorkspace({
 
   return (
     <div
-      className={`leads-workspace relative h-full transition-all duration-300 ${
+      className={`leads-workspace relative h-full gap-0 md:gap-3 md:p-3 transition-all duration-300 ${
         selectedLead ? 'has-lead' : ''
       } ${isTaskPanelOpen && selectedLead ? 'md:pr-[362px]' : 'pr-[0px]'}`}
+      // `md:gap-3 md:p-3`: en escritorio las tres columnas iban pegadas entre sí
+      // y contra el filo de la ventana — el contenedor llegaba hasta el borde de
+      // abajo sin margen. En móvil se queda en cero a propósito: ahí las columnas
+      // se apilan y cada panel ocupa la pantalla completa, así que el padding
+      // solo robaría espacio.
+      //
+      // El gap y el alto salen del `style` inline y pasan a clases porque un
+      // valor inline no se puede cambiar por tamaño de pantalla: gana siempre.
       style={{
         display: 'flex',
-        gap: '0',
-        height: '100%',
         overflow: 'hidden',
       }}
     >
