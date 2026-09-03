@@ -32,5 +32,11 @@ export default async function VexPage() {
     historial = data ?? []
   }
 
-  return <VexChat historialInicial={historial} />
+  // El chat de Vex iba pegado a los cuatro bordes de la ventana: es la única
+  // pantalla que se dibujaba sin margen exterior. Mismo respiro que el resto.
+  return (
+    <div className="h-full p-3 sm:p-6">
+      <VexChat historialInicial={historial} />
+    </div>
+  )
 }

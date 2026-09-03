@@ -213,6 +213,42 @@ export async function POST(req: Request) {
         .from('outreach_messages')
         .update({ estado: 'fallido' })
         .in('wa_message_id', claves)
+
+      // Deshacer el avance optimista de `/api/wa/send`.
+      //
+      // Desde el 3-sep la ficha pasa a «contactado» al enviar, sin esperar
+      // acuse — porque el acuse no llegaba nunca y los leads se quedaban en
+      // «sin contactar» para siempre. El precio de esa decisión es que un
+      // mensaje descartado deja la ficha avanzada de mentira. Esto lo cobra:
+      // si WhatsApp confirma que NO entregó, el lead vuelve atrás.
+      //
+      // Solo se revierte desde «contactado». Si alguien ya lo movió a
+      // «interesado» o más allá, hubo contacto real por otra vía y no somos
+      // nadie para pisar ese trabajo.
+      //
+      // Y solo si no queda ningún otro saliente entregado: si de tres mensajes
+      // uno se descartó pero otro llegó, el lead SÍ fue contactado.
+      const { data: entregados } = await admin
+        .from('mensajes_wa')
+        .select('id')
+        .eq('lead_id', leadId)
+        .in('estado_envio', ['entregado', 'leido'])
+        .limit(1)
+
+      if (!entregados?.length) {
+        const { error: errorRevertir } = await admin
+          .from('fact_leads')
+          .update({ estado: 'sin_contactar' })
+          .eq('id', leadId)
+          .eq('estado', 'contactado')
+
+        if (errorRevertir) {
+          console.error(
+            `[api/agentes/wa-estado] no se pudo revertir el lead ${leadId} tras acuse fallido (${lectura.codigo}):`,
+            errorRevertir,
+          )
+        }
+      }
     }
   }
 

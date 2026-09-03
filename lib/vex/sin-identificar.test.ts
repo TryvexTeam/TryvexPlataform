@@ -52,7 +52,7 @@ beforeEach(() => {
 describe('entrantesSinIdentificar', () => {
   it('marca el empate como ambiguo, no como gente nueva', async () => {
     const { entrantesSinIdentificar } = await import('./sin-identificar')
-    const r = await entrantesSinIdentificar({})
+    const { entrantes: r } = await entrantesSinIdentificar({})
 
     const empate = r.find((e) => e.telefono === '56922222222')
     expect(empate?.motivo).toBe('ambiguo')
@@ -60,7 +60,7 @@ describe('entrantesSinIdentificar', () => {
 
   it('trae las fichas que empatan, para poder elegir', async () => {
     const { entrantesSinIdentificar } = await import('./sin-identificar')
-    const r = await entrantesSinIdentificar({})
+    const { entrantes: r } = await entrantesSinIdentificar({})
 
     const empate = r.find((e) => e.telefono === '56922222222')
     expect(empate?.candidatos).toHaveLength(2)
@@ -69,7 +69,7 @@ describe('entrantesSinIdentificar', () => {
 
   it('al desconocido lo deja como desconocido, sin candidatos', async () => {
     const { entrantesSinIdentificar } = await import('./sin-identificar')
-    const r = await entrantesSinIdentificar({})
+    const { entrantes: r } = await entrantesSinIdentificar({})
 
     const nuevo = r.find((e) => e.telefono === '56911111111')
     expect(nuevo?.motivo).toBe('desconocido')
@@ -78,7 +78,7 @@ describe('entrantesSinIdentificar', () => {
 
   it('quien ya tiene ficha no aparece', async () => {
     const { entrantesSinIdentificar } = await import('./sin-identificar')
-    const r = await entrantesSinIdentificar({})
+    const { entrantes: r } = await entrantesSinIdentificar({})
 
     expect(r.map((e) => e.telefono)).not.toContain('56933333333')
   })
@@ -89,7 +89,7 @@ describe('entrantesSinIdentificar', () => {
     h.resolverDestinatario.mockRejectedValue(new Error('base caída'))
 
     const { entrantesSinIdentificar } = await import('./sin-identificar')
-    const r = await entrantesSinIdentificar({})
+    const { entrantes: r } = await entrantesSinIdentificar({})
 
     expect(r).toHaveLength(3)
     expect(r.every((e) => e.motivo === 'desconocido')).toBe(true)
@@ -102,8 +102,49 @@ describe('entrantesSinIdentificar', () => {
     ])
 
     const { entrantesSinIdentificar } = await import('./sin-identificar')
-    const r = await entrantesSinIdentificar({})
+    const { entrantes: r } = await entrantesSinIdentificar({})
 
     expect(r.map((e) => e.telefono)).not.toContain('56944444444')
+  })
+})
+
+describe('el tope de hilos no esconde gente en silencio', () => {
+  it('informa cuántas conversaciones activas quedaron sin revisar', async () => {
+    // 45 hilos activos contra un tope de 40: cinco personas quedan fuera.
+    // Antes se recortaba sin decir nada y la bandeja mostraba un número que
+    // parecía el total.
+    const muchas = Array.from({ length: 45 }, (_, i) => ({
+      id: 100 + i,
+      phone: `5695000${String(i).padStart(4, '0')}`,
+      name: `Hilo ${i}`,
+      last_message_at: 1_700_000_000 - i,
+      jid: null,
+    }))
+    h.obtenerConversaciones.mockResolvedValue(muchas)
+    h.resolverDestinatario.mockResolvedValue({ estado: 'desconocido' })
+
+    const { entrantesSinIdentificar } = await import('./sin-identificar')
+    const r = await entrantesSinIdentificar({})
+
+    expect(r.entrantes).toHaveLength(40)
+    expect(r.sinRevisar).toBe(5)
+  })
+
+  it('sin recorte, sinRevisar es 0', async () => {
+    const { entrantesSinIdentificar } = await import('./sin-identificar')
+    const r = await entrantesSinIdentificar({})
+
+    expect(r.sinRevisar).toBe(0)
+  })
+
+  it('los ambiguos van primero: ignorarlos ensucia dos fichas', async () => {
+    const { entrantesSinIdentificar } = await import('./sin-identificar')
+    const { entrantes } = await entrantesSinIdentificar({})
+
+    const primerDesconocido = entrantes.findIndex((e) => e.motivo === 'desconocido')
+    const ultimoAmbiguo = entrantes.map((e) => e.motivo).lastIndexOf('ambiguo')
+    if (primerDesconocido !== -1 && ultimoAmbiguo !== -1) {
+      expect(ultimoAmbiguo).toBeLessThan(primerDesconocido)
+    }
   })
 })
