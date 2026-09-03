@@ -55,19 +55,38 @@ export interface EntranteSinIdentificar {
 }
 
 /**
+ * El resultado, con la cuenta de lo que quedó fuera.
+ *
+ * Se devuelve `sinRevisar` porque el tope de hilos recortaba la lista EN
+ * SILENCIO: con más de 40 conversaciones activas, las más viejas simplemente no
+ * se miraban y nadie podía saberlo desde la pantalla. Una bandeja que dice «3
+ * sin identificar» cuando en realidad hay 23 es peor que no tener bandeja: da
+ * por terminado un trabajo que no lo está.
+ */
+export interface ResultadoSinIdentificar {
+  entrantes: EntranteSinIdentificar[]
+  /** Conversaciones activas que el tope dejó sin revisar. 0 si se revisaron todas. */
+  sinRevisar: number
+}
+
+/**
  * Las conversaciones del agente que no corresponden a ningún lead ni cliente.
  *
  * Se consulta el destinatario de cada una en paralelo: son consultas cortas y
  * hacerlas en serie multiplicaría la espera por la cantidad de hilos.
  */
-export async function entrantesSinIdentificar(admin: SB): Promise<EntranteSinIdentificar[]> {
+export async function entrantesSinIdentificar(admin: SB): Promise<ResultadoSinIdentificar> {
   const conversaciones = await obtenerConversaciones()
 
   // Solo las que tienen actividad: un hilo sin mensajes no es nadie esperando.
-  const candidatas = conversaciones
+  const activas = conversaciones
     .filter((c) => c.last_message_at !== null)
     .sort((a, b) => (b.last_message_at ?? 0) - (a.last_message_at ?? 0))
-    .slice(0, MAX_HILOS)
+
+  // Se revisan las más recientes primero: si hay que dejar gente fuera, que sea
+  // la que escribió hace más tiempo, no la que está esperando ahora.
+  const candidatas = activas.slice(0, MAX_HILOS)
+  const sinRevisar = Math.max(0, activas.length - candidatas.length)
 
   const revisadas = await Promise.all(
     candidatas.map(async (c) => ({
@@ -83,7 +102,7 @@ export async function entrantesSinIdentificar(admin: SB): Promise<EntranteSinIde
 
   const sinFicha = revisadas.filter((r) => r.resultado.estado !== 'encontrado')
 
-  return Promise.all(
+  const entrantes = await Promise.all(
     sinFicha.map((r) =>
       conMuestra(
         r.conversacion,
@@ -92,6 +111,17 @@ export async function entrantesSinIdentificar(admin: SB): Promise<EntranteSinIde
       )
     )
   )
+
+  // Los ambiguos primero: son los que pueden hacer daño si se ignoran. Crear
+  // una ficha nueva para alguien desconocido es reversible; dejar dos fichas
+  // con el mismo número hace que los mensajes caigan a cara o cruz en una u
+  // otra, y eso ya ensucia el historial de dos negocios distintos.
+  entrantes.sort((a, b) => {
+    if (a.motivo === b.motivo) return (b.ultimoMensaje ?? 0) - (a.ultimoMensaje ?? 0)
+    return a.motivo === 'ambiguo' ? -1 : 1
+  })
+
+  return { entrantes, sinRevisar }
 }
 
 /**

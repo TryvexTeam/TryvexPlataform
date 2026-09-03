@@ -37,6 +37,10 @@ export function EntrantesPanel() {
   const router = useRouter()
   const [abierto, setAbierto] = useState(false)
   const [entrantes, setEntrantes] = useState<EntranteSinIdentificar[]>([])
+  // Cuántas conversaciones activas quedaron sin revisar por el tope del
+  // servidor. Se muestra: una bandeja que dice "3" cuando hay 23 esperando da
+  // por terminado un trabajo que no lo está.
+  const [sinRevisar, setSinRevisar] = useState(0)
   const [cargando, setCargando] = useState(false)
   const [yaMiro, setYaMiro] = useState(false)
 
@@ -48,11 +52,22 @@ export function EntrantesPanel() {
    * desde un efecto encadena un render sobre otro, y el linter lo marca con
    * razón — así el efecto de montaje solo escribe estado después del `await`.
    */
-  const consultar = useCallback(async (): Promise<EntranteSinIdentificar[] | null> => {
+  const consultar = useCallback(async (): Promise<ResultadoConsulta | null> => {
     try {
       const res = await fetch('/api/leads/entrantes', { cache: 'no-store' })
       const cuerpo = await res.json().catch(() => ({}))
-      return res.ok && Array.isArray(cuerpo.data) ? cuerpo.data : null
+      if (!res.ok) return null
+      // El endpoint pasó de devolver un arreglo a devolver { entrantes,
+      // sinRevisar }. Se aceptan las dos formas para que una pestaña abierta
+      // durante el despliegue no se quede en blanco.
+      if (Array.isArray(cuerpo.data)) return { entrantes: cuerpo.data, sinRevisar: 0 }
+      if (Array.isArray(cuerpo.data?.entrantes)) {
+        return {
+          entrantes: cuerpo.data.entrantes,
+          sinRevisar: Number(cuerpo.data.sinRevisar) || 0,
+        }
+      }
+      return null
     } catch {
       // Es una consulta de fondo: si el agente no responde, la lista se queda
       // con lo último bueno en vez de vaciarse de golpe.
@@ -64,7 +79,10 @@ export function EntrantesPanel() {
   const refrescar = useCallback(async () => {
     setCargando(true)
     const datos = await consultar()
-    if (datos) setEntrantes(datos)
+    if (datos) {
+      setEntrantes(datos.entrantes)
+      setSinRevisar(datos.sinRevisar)
+    }
     setCargando(false)
   }, [consultar])
 
@@ -75,7 +93,10 @@ export function EntrantesPanel() {
     let vigente = true
     void consultar().then((datos) => {
       if (!vigente) return
-      if (datos) setEntrantes(datos)
+      if (datos) {
+        setEntrantes(datos.entrantes)
+        setSinRevisar(datos.sinRevisar)
+      }
       setYaMiro(true)
     })
     return () => {
@@ -86,7 +107,11 @@ export function EntrantesPanel() {
   useEffect(() => {
     if (!abierto) return
     const id = setInterval(() => {
-      void consultar().then((datos) => datos && setEntrantes(datos))
+      void consultar().then((datos) => {
+        if (!datos) return
+        setEntrantes(datos.entrantes)
+        setSinRevisar(datos.sinRevisar)
+      })
     }, REFRESCO_MS)
     return () => clearInterval(id)
   }, [abierto, consultar])
@@ -148,6 +173,19 @@ export function EntrantesPanel() {
             </Button>
           </div>
 
+          {sinRevisar > 0 && (
+            <p
+              className="rounded-lg px-3 py-2 text-xs"
+              style={{
+                background: 'color-mix(in srgb, var(--tx-warning) 12%, transparent)',
+                color: 'var(--tx-warning)',
+              }}
+            >
+              Hay {sinRevisar} conversación{sinRevisar === 1 ? '' : 'es'} más que no alcanzamos a
+              revisar. Se muestran las más recientes primero.
+            </p>
+          )}
+
           <ul className="flex flex-col gap-2 max-h-96 overflow-y-auto">
             {entrantes.map((e) => (
               <Entrante key={e.conversacion} entrante={e} onCrear={crearLead} onAbrir={abrirFicha} />
@@ -157,6 +195,12 @@ export function EntrantesPanel() {
       </Dialog>
     </>
   )
+}
+
+/** Lo que devuelve la consulta: la lista y cuántos quedaron sin mirar. */
+interface ResultadoConsulta {
+  entrantes: EntranteSinIdentificar[]
+  sinRevisar: number
 }
 
 interface EntranteProps {

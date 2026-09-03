@@ -26,7 +26,7 @@ export async function GET() {
   // Sin agente no hay nada que listar, y eso no es un error: significa que
   // todavía no está conectado.
   if (!agenteConfigurado()) {
-    return NextResponse.json({ success: true, data: [] })
+    return NextResponse.json({ success: true, data: { entrantes: [], sinRevisar: 0 } })
   }
 
   const admin = createAdminClient() as SB
