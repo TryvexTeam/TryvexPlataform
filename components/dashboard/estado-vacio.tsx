@@ -13,7 +13,19 @@ interface EstadoVacioProps {
 export function EstadoVacio({ titulo, descripcion, ctaLabel, ctaHref }: EstadoVacioProps) {
   return (
     <div
-      className="flex flex-col items-center justify-center gap-2 rounded-[28px] border border-dashed border-white/[0.10] px-4 py-10 text-center"
+      className="glass flex flex-col items-center justify-center gap-2 rounded-[28px] border border-dashed border-white/[0.10] px-4 py-10 text-center"
+      style={{
+        // Superficie propia, y NO solo `.glass`. El vidrio del sistema es un velo
+        // blanco de 3.5% que se apoya entero en `backdrop-filter`, y medido en el
+        // navegador de Cristian ese filtro devuelve `none`: sin él, la caja queda
+        // transparente. Con un wallpaper de imagen detrás —el suyo tiene un
+        // relámpago y ramas— el texto del estado vacío se leía encima del dibujo.
+        //
+        // El token va sólido a propósito: es lo único que garantiza contraste
+        // esté o no el desenfoque, y sigue el tema si mañana cambia. El borde
+        // punteado se conserva: es lo que distingue «vacío» de «con contenido».
+        background: 'var(--tx-surface-1)',
+      }}
     >
       <InboxIcon aria-hidden className="size-6" style={{ color: 'var(--tx-ink-muted)' }} />
       <p className="text-sm font-semibold" style={{ color: 'var(--tx-ink-primary)' }}>{titulo}</p>
