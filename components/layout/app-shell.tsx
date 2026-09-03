@@ -6,11 +6,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme()
   return (
     <div
-      // `alto-pantalla-app` y no `h-screen`: en Safari de iPhone `100vh` mide el
-      // viewport grande, así que con la barra del navegador a la vista el marco
-      // queda más alto que la pantalla y el contenido de abajo se corta. Ver la
-      // clase en globals.css — mismo criterio que los modales y el visor.
-      className="flex alto-pantalla-app overflow-hidden relative"
+      // `h-screen h-[100svh]` y NO una clase propia de globals.css: el 31-ago
+      // esto usaba `.alto-pantalla-app`, y esa regla NO llegó al CSS publicado
+      // aunque el componente sí se desplegó. El marco quedó sin altura, creció
+      // con el contenido (32.000px medidos en producción) y la app entera pasó a
+      // scrollear: el menú y la cabecera de la ficha se iban fuera de la vista y
+      // los botones del lead no se alcanzaban a ver.
+      //
+      // Estas dos utilidades las genera Tailwind leyendo ESTE archivo, así que
+      // viajan con el componente: no pueden volver a separarse. `h-screen`
+      // (100vh) es el respaldo para iOS < 15.4 y `h-[100svh]` lo pisa donde
+      // exista — en Safari de iPhone `100vh` mide el viewport grande y con la
+      // barra a la vista el contenido de abajo queda cortado.
+      className="flex h-screen h-[100svh] overflow-hidden relative"
       style={{
         backgroundColor: theme.bgBase,
         isolation: 'isolate',

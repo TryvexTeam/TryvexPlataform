@@ -1275,26 +1275,6 @@
   }
 }
 
-/* Alto del marco de la app (AppShell).
-
-   Usaba `h-screen` de Tailwind, o sea `100vh`. En Safari de iPhone `vh` mide el
-   viewport GRANDE —el de las barras retraídas— y el layout declara
-   `viewportFit: 'cover'`, así que mientras la barra de Safari está a la vista
-   el marco mide MÁS que la pantalla: el contenido de abajo queda cortado tras
-   la barra del navegador. Es el mismo golpe que ya se resolvió en
-   `.modal-pantalla-movil` y `.overlay-pantalla-movil`, pero en el marco que
-   envuelve TODA la app, que se había quedado fuera.
-
-   `svh` y no `dvh`, por la misma razón que allá: `dvh` vuelve a medir el
-   viewport grande. Se pierden unos píxeles cuando la barra se retrae; se gana
-   que nunca se corte.
-
-   La primera línea es el respaldo para navegadores sin `svh` (iOS < 15.4). */
-.alto-pantalla-app {
-  height: 100vh;
-  height: 100svh;
-}
-
 /* El fondo oscuro de un visor a pantalla completa (el de adjuntos del chat).
 
    Es el mismo golpe que .modal-pantalla-movil, en otra pantalla:
