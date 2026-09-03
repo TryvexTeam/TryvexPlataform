@@ -64,7 +64,11 @@ export function ClientesWorkspace({ clientes, proyectos, ventas }: ClientesWorks
   const panelOpen = !!selectedCliente
 
   return (
-    <div className="flex flex-col h-full min-h-0 px-6 pt-6 pb-0">
+    <div
+      // `pb-6` y no `pb-0`: el cero dejaba la lista de clientes tocando el filo
+      // de la ventana, el mismo defecto que tenía el panel del lead.
+      className="flex flex-col h-full min-h-0 px-6 pt-6 pb-6"
+    >
       {/* Page header */}
       <motion.div
         initial={{ opacity: 0, y: -6 }}
