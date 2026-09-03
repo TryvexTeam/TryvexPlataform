@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { MessageCircle, Send, ExternalLink, Bot } from 'lucide-react'
@@ -34,21 +34,83 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
   const template = buildTemplate(lead)
   const waNumero = normalizarNumero(lead.telefono)
 
+  // Cada cuánto se vuelve a mirar si llegó algo nuevo.
+  const CADA_MS = 10_000
+
+  // `montado` evita escribir estado sobre un componente que ya se fue: el
+  // sondeo puede resolver después de cambiar de lead.
+  const montado = useRef(true)
   useEffect(() => {
-    let activo = true
-    fetch(`/api/leads/${lead.id}/mensajes`)
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => {
-        if (activo) setMensajes(d.data ?? [])
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (activo) setCargando(false)
-      })
+    montado.current = true
     return () => {
-      activo = false
+      montado.current = false
+    }
+  }, [])
+
+  const cargarMensajes = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/leads/${lead.id}/mensajes`)
+      const d = r.ok ? await r.json() : { data: [] }
+      if (montado.current) setMensajes(d.data ?? [])
+    } catch {
+      // Un sondeo que falla no molesta a nadie: se reintenta al siguiente
+      // ciclo. Mostrar un error por cada corte de red haría el chat inusable.
+    } finally {
+      if (montado.current) setCargando(false)
     }
   }, [lead.id])
+
+  // El hilo se mantiene solo.
+  //
+  // Antes esto era un fetch único al montar: el mensaje entrante SÍ llegaba y
+  // quedaba bien guardado en la base, pero la pantalla no se enteraba hasta
+  // recargar. Con el chat abierto delante, un cliente que contestaba se veía
+  // exactamente igual que un cliente que no contestó nunca.
+  //
+  // Se sondea en vez de usar Realtime porque no requiere tocar la
+  // configuración de la tabla ni mantener una suscripción viva: para un hilo
+  // que alguien mira unos minutos, diez segundos de retraso no se notan.
+  //
+  // Y se para cuando la pestaña no está visible. No es solo ahorro: el
+  // navegador congela los temporizadores de las pestañas en segundo plano, así
+  // que un intervalo que "sigue corriendo" ahí es una ilusión. Mejor pararlo a
+  // propósito y pedir de una al volver, que es cuando la persona mira.
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null
+    // La primera carga se difiere un tick a propósito: `cargarMensajes` escribe
+    // estado, y hacerlo en el cuerpo del efecto dispara la regla
+    // `react-hooks/set-state-in-effect`. Diferirlo la respeta sin cambiar nada
+    // de lo que ve la persona.
+    const primera = setTimeout(() => void cargarMensajes(), 0)
+
+    const arrancar = () => {
+      if (timer === null) timer = setInterval(() => void cargarMensajes(), CADA_MS)
+    }
+    const parar = () => {
+      if (timer !== null) {
+        clearInterval(timer)
+        timer = null
+      }
+    }
+
+    const alCambiarVisibilidad = () => {
+      if (document.visibilityState === 'visible') {
+        void cargarMensajes()
+        arrancar()
+      } else {
+        parar()
+      }
+    }
+
+    if (document.visibilityState === 'visible') arrancar()
+    document.addEventListener('visibilitychange', alCambiarVisibilidad)
+
+    return () => {
+      clearTimeout(primera)
+      parar()
+      document.removeEventListener('visibilitychange', alCambiarVisibilidad)
+    }
+  }, [cargarMensajes])
 
   function abrirWhatsapp() {
     if (!waNumero) {
@@ -79,6 +141,11 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
       })
       if (!res.ok) throw new Error(String(res.status))
       toast.success('Mensaje enviado desde el CRM')
+      // El saliente ya está en `mensajes_wa`: se pide el hilo de nuevo para que
+      // aparezca al tiro. Sin esto había que esperar al siguiente sondeo —o
+      // recargar— para ver el mensaje recién mandado, y daba la impresión de
+      // que no había salido.
+      await cargarMensajes()
     } catch {
       // El backend del Botón 2 (Spike) puede no estar desplegado todavía.
       toast.error('El envío desde el CRM aún no está disponible')
