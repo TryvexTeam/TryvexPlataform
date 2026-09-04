@@ -210,7 +210,9 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
         </div>
       </div>
 
-      <LeadForm open={editOpen} onOpenChange={setEditOpen} lead={lead} onSubmit={handleEdit} />
+      {/* Mismo motivo que en lead-panel: `LeadForm` fija sus valores al
+          montarse, así que el id tiene que remontarlo. */}
+      <LeadForm key={lead.id} open={editOpen} onOpenChange={setEditOpen} lead={lead} onSubmit={handleEdit} />
     </div>
   )
 }
