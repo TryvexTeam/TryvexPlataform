@@ -680,7 +680,14 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
 
         {/* Mismo formulario que usa la ficha completa y la creación: un lead
             editado desde aquí y desde allí tiene que validar igual. */}
+        {/* `key` con el id: este panel NO se remonta al cambiar de lead (la
+            transición de arriba existe justamente porque sigue montado), y
+            `LeadForm` lee sus valores iniciales una sola vez con `useState`.
+            Sin esta línea, "Editar" mostraba los datos del primer lead que
+            se abrió en la sesión, y al guardar los escribía encima del lead
+            actual. */}
         <LeadForm
+          key={lead.id}
           open={editOpen}
           onOpenChange={setEditOpen}
           lead={lead}
