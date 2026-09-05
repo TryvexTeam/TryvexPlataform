@@ -1,9 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Send, Loader2, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Lead } from '@/lib/types/lead'
+import { abreDiaNuevo } from '@/lib/utils/fecha-santiago'
+import { SeparadorDia } from '@/components/shared/separador-dia'
 
 /**
  * El chat de WhatsApp del lead, DENTRO del CRM.
@@ -304,11 +306,14 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
             Todavía no hay mensajes. El primero que mandes aparece acá.
           </p>
         )}
-        {mensajes.map((m) => {
+        {mensajes.map((m, i) => {
           const mio = m.direccion === 'out'
           const quien = mio ? (m.es_bot ? 'Vex' : m.enviado_por || 'Equipo') : (lead.nombre_negocio ?? 'Lead')
+          const diaNuevo = abreDiaNuevo(m.created_at, mensajes[i - 1]?.created_at)
           return (
-            <div key={m.id} className={`flex ${mio ? 'justify-end' : 'justify-start'}`}>
+            <Fragment key={m.id}>
+            {diaNuevo && <SeparadorDia fecha={m.created_at} />}
+            <div className={`flex ${mio ? 'justify-end' : 'justify-start'}`}>
               <div
                 className={`max-w-[78%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words ${
                   mio
@@ -337,6 +342,7 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
                 </div>
               </div>
             </div>
+            </Fragment>
           )
         })}
         <div ref={finRef} />

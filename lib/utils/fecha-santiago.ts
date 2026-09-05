@@ -101,3 +101,45 @@ export function sumarDias(fecha: string, dias: number): string {
   const [anios, meses, diasBase] = fecha.split('-').map(Number)
   return new Date(Date.UTC(anios, meses - 1, diasBase + dias)).toISOString().slice(0, 10)
 }
+
+/**
+ * Etiqueta del separador de día en un hilo de chat: 'Hoy', 'Ayer', o la fecha
+ * escrita ('vie 29 ago', y con año si no es el año en curso).
+ *
+ * Todo se decide sobre el calendario de Santiago, igual que el resto del
+ * archivo: un mensaje de las 21:30 de un martes es UTC del miércoles, y
+ * agrupar por el día UTC partiría la conversación por la mitad.
+ */
+const DIA_ESCRITO = new Intl.DateTimeFormat('es-CL', {
+  timeZone: 'America/Santiago',
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+})
+
+const DIA_ESCRITO_CON_ANIO = new Intl.DateTimeFormat('es-CL', {
+  timeZone: 'America/Santiago',
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
+
+export function etiquetaDiaChat(instante: Date | string, ahora: Date = new Date()): string {
+  const fecha = typeof instante === 'string' ? new Date(instante) : instante
+  const dia = diaSantiago(fecha)
+  const hoy = diaSantiago(ahora)
+  if (dia === hoy) return 'Hoy'
+  if (dia === sumarDias(hoy, -1)) return 'Ayer'
+
+  const formato = dia.slice(0, 4) === hoy.slice(0, 4) ? DIA_ESCRITO : DIA_ESCRITO_CON_ANIO
+  // 'vie, 29 ago' en es-CL: la coma sobra en una etiqueta de dos palabras, y
+  // los puntos de la abreviatura ('vie.') sobran igual.
+  return formato.format(fecha).replace(/,/g, '').replace(/\./g, '')
+}
+
+/** ¿`mensaje` abre un día distinto al de `previo`? true si no hay previo. */
+export function abreDiaNuevo(mensaje: Date | string, previo?: Date | string | null): boolean {
+  if (!previo) return true
+  return diaSantiago(mensaje) !== diaSantiago(previo)
+}
