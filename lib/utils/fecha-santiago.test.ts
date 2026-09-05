@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseFechaLocal, fechaHoraSantiago } from './fecha-santiago'
+import { abreDiaNuevo, etiquetaDiaChat, fechaHoraSantiago, parseFechaLocal } from './fecha-santiago'
 
 describe('parseFechaLocal', () => {
   it('conserva el día, mes y año exactos del string', () => {
@@ -35,6 +35,54 @@ describe('parseFechaLocal', () => {
 
     expect(resultado.getMonth()).toBe(1)
     expect(resultado.getDate()).toBe(29)
+  })
+})
+
+describe('etiquetaDiaChat', () => {
+  // 2026-09-05 15:00 de Santiago.
+  const ahora = new Date('2026-09-05T18:00:00Z')
+
+  it('dice "Hoy" para un mensaje del mismo día de Santiago', () => {
+    expect(etiquetaDiaChat('2026-09-05T04:30:00Z', ahora)).toBe('Hoy')
+  })
+
+  it('dice "Hoy" a las 21:30 de Santiago, aunque en UTC ya sea mañana', () => {
+    // 2026-09-05 21:30 de Santiago = 2026-09-06 00:30 UTC. Agrupar por el día
+    // UTC partiría la conversación de la noche en dos.
+    expect(etiquetaDiaChat('2026-09-06T00:30:00Z', ahora)).toBe('Hoy')
+  })
+
+  it('dice "Ayer" para el día anterior', () => {
+    expect(etiquetaDiaChat('2026-09-04T14:00:00Z', ahora)).toBe('Ayer')
+  })
+
+  it('escribe la fecha sin año cuando es el mismo año', () => {
+    const etiqueta = etiquetaDiaChat('2026-08-29T14:00:00Z', ahora)
+
+    expect(etiqueta).toContain('29')
+    expect(etiqueta).toContain('ago')
+    expect(etiqueta).not.toContain('2026')
+    expect(etiqueta).not.toContain(',')
+  })
+
+  it('incluye el año cuando el mensaje es de otro año', () => {
+    expect(etiquetaDiaChat('2025-12-24T14:00:00Z', ahora)).toContain('2025')
+  })
+})
+
+describe('abreDiaNuevo', () => {
+  it('es true cuando no hay mensaje previo', () => {
+    expect(abreDiaNuevo('2026-09-05T12:00:00Z')).toBe(true)
+    expect(abreDiaNuevo('2026-09-05T12:00:00Z', null)).toBe(true)
+  })
+
+  it('es false entre dos mensajes del mismo día de Santiago', () => {
+    expect(abreDiaNuevo('2026-09-05T18:00:00Z', '2026-09-05T13:00:00Z')).toBe(false)
+  })
+
+  it('es true al cruzar la medianoche de Santiago', () => {
+    // 22:00 de Santiago del día 4 (UTC-4) vs. 01:00 de Santiago del día 5.
+    expect(abreDiaNuevo('2026-09-05T05:00:00Z', '2026-09-05T02:00:00Z')).toBe(true)
   })
 })
 

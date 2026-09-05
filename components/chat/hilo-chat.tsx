@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeftIcon, Loader2Icon, PaperclipIcon, PhoneIcon, PinIcon, SendIcon, VideoIcon, XIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { textoPlano } from '@/lib/markdown/mini'
 import { copiarTexto } from '@/lib/utils/copiar-texto'
+import { abreDiaNuevo } from '@/lib/utils/fecha-santiago'
 import { toast } from '@/lib/toast'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
 import { avatarConversacion, pesoLegible, tituloConversacion } from '@/lib/types/chat'
@@ -24,6 +25,7 @@ import { ReaccionesMensaje } from './reacciones-mensaje'
 import { GestosMensaje } from './gestos-mensaje'
 import { CitaMensaje } from './cita-mensaje'
 import { PanelHilo } from './panel-hilo'
+import { SeparadorDia } from '@/components/shared/separador-dia'
 import { useLlamadas } from '@/components/llamadas/proveedor-llamadas'
 import type { AgenteChat } from './chat-workspace'
 
@@ -684,8 +686,14 @@ export function HiloChat({
               ? { nombre: agente.nombre, avatar_url: agente.avatar_url, color: agente.color }
               : persona
             const previo = mensajes[i - 1]
+            // Un cambio de día corta la cadena: la burbuja que abre el día
+            // vuelve a mostrar avatar y nombre aunque hable el mismo autor.
+            const diaNuevo = abreDiaNuevo(m.created_at, previo?.created_at)
             const encadenado =
-              i > 0 && previo.autor_id === m.autor_id && previo.agente_id === m.agente_id
+              i > 0 &&
+              !diaNuevo &&
+              previo.autor_id === m.autor_id &&
+              previo.agente_id === m.agente_id
 
             const esNuevo = animarIds.has(m.id)
             const claseEntrada = esNuevo
@@ -695,8 +703,9 @@ export function HiloChat({
               : ''
 
             return (
+              <Fragment key={m.id}>
+              {diaNuevo && <SeparadorDia fecha={m.created_at} />}
               <GestosMensaje
-                key={m.id}
                 puedeBorrar={mio || soyAdmin}
                 onCopiar={copiarMensaje(m)}
                 fijado={Boolean(m.fijado_at)}
@@ -825,6 +834,7 @@ export function HiloChat({
                 </div>
               </div>
               </GestosMensaje>
+              </Fragment>
             )
           })
         )}

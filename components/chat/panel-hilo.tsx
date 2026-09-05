@@ -6,6 +6,8 @@ import { toast } from '@/lib/toast'
 import { createClient } from '@/lib/supabase/client'
 import { Markdown } from '@/components/shared/markdown'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
+import { abreDiaNuevo } from '@/lib/utils/fecha-santiago'
+import { SeparadorDia } from '@/components/shared/separador-dia'
 import { AvatarChat } from './avatar-chat'
 import { AdjuntosMensaje } from './adjuntos-mensaje'
 
@@ -177,8 +179,11 @@ export function PanelHilo({ conversacion, padre, miembros, onCerrar, onRespondid
             Todavía nadie respondió. Escribe la primera.
           </p>
         ) : (
-          respuestas.map((r) => (
+          respuestas.map((r, i) => (
             <div key={r.id}>
+              {abreDiaNuevo(r.created_at, i === 0 ? padre.created_at : respuestas[i - 1].created_at) && (
+                <SeparadorDia fecha={r.created_at} />
+              )}
               <Encabezado autor={autorDe(r)} fecha={r.created_at} />
               {r.adjuntos && r.adjuntos.length > 0 && <AdjuntosMensaje adjuntos={r.adjuntos} />}
               {r.eliminado_at ? (
