@@ -10,8 +10,14 @@ export function normalizarTelefono(telefono: string | null | undefined): string 
   if (d.length < 8) return null;
   if (d.startsWith("56")) return d;
   if (d.length === 9) return "56" + d; // número chileno de 9 dígitos (móvil 9.. o fijo 2..)
-  if (d.length === 8) return "569" + d; // sin prefijo de 9 dígitos; asumir móvil
-  return d; // ya trae código país u otro formato; se usa tal cual
+  // 8 dígitos: ANTES se devolvía "569" + d, o sea que se inventaba un móvil.
+  // En Chile 8 dígitos es casi siempre un fijo sin código de área, así que ese
+  // "9" convertía un fijo en el celular de otra persona — y esta función está
+  // en el camino de ENVÍO (app/api/wa/send y lib/vex/whatsapp): decide a quién
+  // le llega el mensaje. `lib/telefono.ts` ya lo decía: "completar un número
+  // incompleto sería adivinar a quién llama el botón".
+  if (d.length === 8) return null;
+  return d; // 10+ dígitos: ya trae código de país; se usa tal cual
 }
 
 /**

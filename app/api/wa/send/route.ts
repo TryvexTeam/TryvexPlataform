@@ -160,6 +160,12 @@ export async function POST(req: Request) {
       enviado_por: autorNombre,
       integrante_id: perfil.id,
       aprobado_por: perfil.id,
+      // Sin esto el acuse no tenía por dónde agarrar esta fila: `wa-estado`
+      // actualiza `outreach_messages` por `wa_message_id` y el insert nunca lo
+      // ponía, así que el update matcheaba CERO filas siempre. La referencia
+      // del agente viajaba por la red y se descartaba en la misma línea que
+      // escribía el estado.
+      wa_message_id: referenciaVex !== undefined ? String(referenciaVex) : null,
     })
     .select('id')
     .single()
@@ -199,7 +205,31 @@ export async function POST(req: Request) {
       const cambios: { ultimo_contacto: string; estado?: string } = {
         ultimo_contacto: new Date().toISOString(),
       }
-      if (debeAvanzarAContactado(lead.estado, 'whatsapp')) cambios.estado = 'contactado'
+      // Escribirle a un lead lo deja en «contactado». Esto volvió acá el
+      // 3-sep por pedido de Cristian, y conviene dejar escrito por qué, porque
+      // en agosto se hizo justo lo contrario.
+      //
+      // El 29-ago se sacó este salto de aquí: con el agente como transporte,
+      // `referenciaVex` es solo el id con el que el agente metió el mensaje en
+      // SU cola, y el error 463 de WhatsApp ocurre después. Marcar contactado
+      // en ese momento dejó 11 fichas avanzadas sin que llegara un solo
+      // mensaje. La decisión entonces fue esperar el acuse en
+      // `/api/agentes/wa-estado`.
+      //
+      // Esa espera no funcionó: al 3-sep hay CERO acuses recibidos en toda la
+      // historia de la tabla (60 mensajes, 0 con `ack_at`; 40 filas de
+      // outreach, 0 con `enviado_at`). El agente nunca llamó a ese endpoint.
+      // Así que la ficha no avanzaba nunca y el equipo perdía de vista a quién
+      // ya le habían escrito — que es peor, en el día a día, que avanzarla de
+      // más.
+      //
+      // Se elige el error barato sobre el caro: si el mensaje se descarta, el
+      // acuse —cuando exista— lo devuelve a `sin_contactar` (ver abajo en
+      // wa-estado). Si en cambio no avanzamos nunca, el equipo le escribe dos
+      // veces al mismo lead y eso sí quema el número.
+      if (debeAvanzarAContactado(lead.estado, 'whatsapp')) {
+        cambios.estado = 'contactado'
+      }
       await admin.from('fact_leads').update(cambios).eq('id', lead_id)
     }
   } catch (e) {

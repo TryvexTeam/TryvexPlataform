@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
 import { excedeLimite } from '@/lib/agentes/rate-limit'
 import { resolverDestinatario } from '@/lib/agentes/destinatario'
+import { esDuplicadoSaliente, VENTANA_DUPLICADO_MS } from '@/lib/wa/duplicado'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -108,6 +109,45 @@ export async function POST(req: Request) {
   // todo lo que registrara un agente — incluido lo que decía el lead.
   const esEntrante = direccion === 'in'
 
+  // ── Nada de esto se guarda dos veces ──────────────────────────────────────
+  //
+  // El agente reporta el mismo saliente más de una vez (al mandarlo y otra vez
+  // con el eco del socket), y por eso en el hilo del CRM aparecían burbujas
+  // repetidas que en WhatsApp Web salen una sola vez. El índice único sobre
+  // `wa_message_id` no alcanza: es parcial y la referencia del agente es un
+  // contador que se reinicia, así que llega `null` o repetida.
+  const columna = leadId ? 'lead_id' : 'cliente_id'
+  const destinatarioId = leadId ?? clienteId
+
+  // 1. Por referencia, cuando el agente la manda: es el criterio exacto.
+  if (cuerpo.wa_message_id) {
+    const { data: yaEsta } = await admin
+      .from('mensajes_wa')
+      .select('id')
+      .eq('wa_message_id', cuerpo.wa_message_id)
+      .eq(columna, destinatarioId)
+      .maybeSingle()
+
+    if (yaEsta) {
+      return NextResponse.json({ success: true, data: yaEsta, duplicado: true })
+    }
+  }
+
+  // 2. Por contenido y ventana corta, solo para lo que sale de Tryvex. Un lead
+  //    que escribe «ok» dos veces mandó dos mensajes y los dos se guardan.
+  if (!esEntrante) {
+    const desde = new Date(Date.now() - VENTANA_DUPLICADO_MS).toISOString()
+    const { data: recientes } = await admin
+      .from('mensajes_wa')
+      .select('id, texto, direccion, created_at')
+      .eq(columna, destinatarioId)
+      .gte('created_at', desde)
+
+    if (esDuplicadoSaliente({ texto: cuerpo.texto }, recientes ?? [])) {
+      return NextResponse.json({ success: true, duplicado: true })
+    }
+  }
+
   const { data, error } = await admin
     .from('mensajes_wa')
     .insert({
@@ -127,6 +167,13 @@ export async function POST(req: Request) {
     .single()
 
   if (error) {
+    // 23505 = choque con `uq_mensajes_wa_waid`. Que el agente reintente un
+    // mensaje ya guardado no es un fallo del servidor: el mensaje está en el
+    // hilo, que es lo que el agente quería. Un 500 acá lo hace reintentar en
+    // vano y ensucia el log de errores de verdad.
+    if ((error as { code?: string }).code === '23505') {
+      return NextResponse.json({ success: true, duplicado: true })
+    }
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 

@@ -1,9 +1,10 @@
 import { format, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { CalendarDays, AlertCircle, Trash2 } from 'lucide-react'
+import { CalendarDays, AlertCircle, Trash2, ListChecks } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 import { parseFechaLocal } from '@/lib/utils/fecha-santiago'
+import { porcentajeProgreso, type ProgresoSubtareas } from '@/lib/utils/progreso-subtareas'
 
 const prioridadConfig = {
   alta:  { label: 'Alta',  style: { background: 'oklch(63% 0.21 22 / 12%)', color: 'oklch(72% 0.17 22)',  border: '1px solid oklch(63% 0.21 22 / 28%)' } },
@@ -25,9 +26,15 @@ interface TareaCardProps {
   onClick?: () => void
   /** En la papelera: la tarjeta se ve apagada y muestra hace cuanto cayo ahi. */
   enPapelera?: boolean
+  /** Avance de los pasos. `undefined` = la tarea no tiene pasos y no se muestra
+   *  nada: una tarjeta que dice "0/0" solo ocupa espacio. */
+  progreso?: ProgresoSubtareas
+  /** Abre el modal de pasos sin salir del tablero. Si no viene, el bloque de
+   *  avance se pinta igual pero no es apretable. */
+  onAbrirPasos?: () => void
 }
 
-export function TareaCard({ tarea, onClick, enPapelera }: TareaCardProps) {
+export function TareaCard({ tarea, onClick, enPapelera, progreso, onAbrirPasos }: TareaCardProps) {
   const isVencida =
     !enPapelera &&
     tarea.fecha_limite &&
@@ -93,6 +100,54 @@ export function TareaCard({ tarea, onClick, enPapelera }: TareaCardProps) {
           <Trash2 size={10} />
           En la papelera · hace {formatDistanceToNow(new Date(tarea.eliminado_at), { locale: es })}
         </div>
+      )}
+
+      {/* Avance de los pasos.
+
+          Antes una tarea con 11 de 12 pasos hechos se veía igual que una sin
+          empezar: el avance solo existía dentro de la ficha. Se pinta solo si
+          la tarea tiene pasos, y es un botón para poder marcarlos sin entrar.
+
+          `stopPropagation`: la tarjeta entera es un botón que navega a la
+          tarea; sin esto, tocar los pasos abriría el modal Y navegaría. */}
+      {progreso && progreso.total > 0 && (
+        <button
+          type="button"
+          disabled={!onAbrirPasos}
+          onClick={(e) => {
+            e.stopPropagation()
+            onAbrirPasos?.()
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label={`Ver los ${progreso.total} pasos de ${tarea.titulo}`}
+          // min-h-11: 44px reales de alto para el pulgar. Los márgenes negativos
+          // devuelven el aire que ese alto agrega, para que la tarjeta no crezca
+          // de golpe solo por ser tocable.
+          className="-mt-1 mb-1.5 flex min-h-11 w-full min-w-0 flex-col justify-center gap-1 rounded-lg px-1 -mx-1 text-left transition-colors enabled:hover:bg-white/[0.04] disabled:cursor-default"
+        >
+          <span
+            className="flex items-center gap-1 text-[10px] font-medium"
+            style={{ color: 'var(--tx-ink-muted)' }}
+          >
+            <ListChecks size={10} />
+            {progreso.hechas}/{progreso.total} pasos
+          </span>
+          {/* Fondo sólido con opacidad, nunca backdrop-filter: en su navegador
+              `backdrop-filter` puede devolver `none` y la barra desaparecería. */}
+          <span className="block h-1 w-full overflow-hidden rounded-full bg-white/[0.08]">
+            <span
+              className="block h-full rounded-full transition-all"
+              style={{
+                background:
+                  progreso.hechas === progreso.total
+                    ? 'oklch(72% 0.17 145)'
+                    : 'oklch(74% 0.17 55)',
+                width: `${porcentajeProgreso(progreso)}%`,
+              }}
+            />
+          </span>
+        </button>
       )}
 
       {/* Footer */}

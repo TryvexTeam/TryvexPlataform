@@ -13,6 +13,13 @@ export default async function TareasPage() {
   // el cliente, asi arrastrar de vuelta no depende de un segundo fetch.
   const [tareas, papelera] = await Promise.all([repo.list(), repo.listPapelera()])
 
+  // Una sola consulta agregada para TODAS las tarjetas: el avance de los pasos
+  // se pinta en la tarjeta, y pedirlo tarjeta por tarjeta sería un viaje a la
+  // base por tarea (N+1). Ver `progresoSubtareas`.
+  const progresoSubtareas = await repo.progresoSubtareas(
+    [...tareas, ...papelera].map((t) => t.id),
+  )
+
   const { data: integrante } = await supabase
     .from('dim_integrantes')
     .select('id, nombre')
@@ -25,6 +32,7 @@ export default async function TareasPage() {
         initialTareas={[...tareas, ...papelera]}
         currentUserId={user.id}
         currentIntegranteId={integrante?.id ?? null}
+        progresoSubtareas={progresoSubtareas}
       />
     </div>
   )

@@ -189,15 +189,24 @@ export function ChatWorkspace({
   }
 
   return (
-    <div
-      className="flex h-full min-h-0 rounded-xl overflow-hidden"
-      style={{ border: '1px solid var(--border)' }}
-    >
+    /*
+      Dos tarjetas separadas, no una caja partida por una línea.
+
+      Antes esto era UN contenedor con borde y las dos columnas pegadas,
+      divididas por un `borderRight`. En Leads las columnas van sueltas y con
+      aire entre ellas, y a Cristian y al equipo les gustó cómo se lee: «se ve
+      más ordenado así». Este es el mismo criterio, con el mismo hueco de 12 px.
+
+      El `gap` va solo en escritorio: en el teléfono se muestra una columna o la
+      otra, nunca las dos, así que separarlas no separa nada — solo robaría
+      ancho.
+    */
+    <div className="flex h-full min-h-0 md:gap-3">
       {/* Bandeja. En un teléfono no caben las dos columnas: se muestra esta o el
           hilo, nunca ambas. */}
       <aside
-        className={`${activaId ? 'hidden md:flex' : 'flex'} w-full md:w-[300px] shrink-0 flex-col min-h-0`}
-        style={{ borderRight: '1px solid var(--border)' }}
+        className={`${activaId ? 'hidden md:flex' : 'flex'} w-full md:w-[300px] shrink-0 flex-col min-h-0 rounded-xl overflow-hidden`}
+        style={{ border: '1px solid var(--border)' }}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
           <h2 className="text-[15px] font-semibold text-[var(--tx-ink-primary)]">Mensajes</h2>
@@ -315,7 +324,10 @@ export function ChatWorkspace({
       </aside>
 
       {/* Hilo */}
-      <section className={`${activaId ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 min-h-0`}>
+      <section
+        className={`${activaId ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 min-h-0 rounded-xl overflow-hidden`}
+        style={{ border: '1px solid var(--border)' }}
+      >
         {activa ? (
           <HiloChat
             key={activa.id}

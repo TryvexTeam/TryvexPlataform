@@ -1,15 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { MessageCircle, Send, ExternalLink, Bot } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { iniciarSondeoVisible, visibilidadDelNavegador } from '@/lib/ui/sondeo-visible'
+import { normalizarTelefono } from '@/lib/vex/telefono'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/lib/types/lead'
 import type { MensajeWa } from '@/lib/types/mensaje-wa'
+
+/** Cada cuánto se vuelve a mirar si llegó algo nuevo, con el panel a la vista. */
+const CADA_MS = 10_000
 
 interface LeadWhatsappPanelProps {
   lead: Lead
@@ -33,21 +38,53 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
   const template = buildTemplate(lead)
   const waNumero = normalizarNumero(lead.telefono)
 
+  // `montado` evita escribir estado sobre un componente que ya se fue: el
+  // sondeo puede resolver después de cambiar de lead.
+  const montado = useRef(true)
   useEffect(() => {
-    let activo = true
-    fetch(`/api/leads/${lead.id}/mensajes`)
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => {
-        if (activo) setMensajes(d.data ?? [])
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (activo) setCargando(false)
-      })
+    montado.current = true
     return () => {
-      activo = false
+      montado.current = false
+    }
+  }, [])
+
+  const cargarMensajes = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/leads/${lead.id}/mensajes`)
+      const d = r.ok ? await r.json() : { data: [] }
+      if (montado.current) setMensajes(d.data ?? [])
+    } catch {
+      // Un sondeo que falla no molesta a nadie: se reintenta al siguiente
+      // ciclo. Mostrar un error por cada corte de red haría el chat inusable.
+    } finally {
+      if (montado.current) setCargando(false)
     }
   }, [lead.id])
+
+  // El hilo se mantiene solo.
+  //
+  // Antes esto era un fetch único al montar: el mensaje entrante SÍ llegaba y
+  // quedaba bien guardado en la base, pero la pantalla no se enteraba hasta
+  // recargar. Con el chat abierto delante, un cliente que contestaba se veía
+  // exactamente igual que un cliente que no contestó nunca.
+  //
+  // Se sondea en vez de usar Realtime porque `mensajes_wa` no está en la
+  // publicación de Supabase: el canal respondería SUBSCRIBED y no llegaría un
+  // solo evento. Para un hilo que alguien mira unos minutos, diez segundos de
+  // retraso no se notan.
+  //
+  // El arranque/parada por visibilidad vive en `iniciarSondeoVisible`, que es
+  // el mismo que usa el modal del chat. Estaba escrito dos veces a mano y solo
+  // una de las dos paraba.
+  useEffect(
+    () =>
+      iniciarSondeoVisible({
+        cadaMs: CADA_MS,
+        tarea: () => void cargarMensajes(),
+        visibilidad: visibilidadDelNavegador(),
+      }),
+    [cargarMensajes],
+  )
 
   function abrirWhatsapp() {
     if (!waNumero) {
@@ -78,6 +115,11 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
       })
       if (!res.ok) throw new Error(String(res.status))
       toast.success('Mensaje enviado desde el CRM')
+      // El saliente ya está en `mensajes_wa`: se pide el hilo de nuevo para que
+      // aparezca al tiro. Sin esto había que esperar al siguiente sondeo —o
+      // recargar— para ver el mensaje recién mandado, y daba la impresión de
+      // que no había salido.
+      await cargarMensajes()
     } catch {
       // El backend del Botón 2 (Spike) puede no estar desplegado todavía.
       toast.error('El envío desde el CRM aún no está disponible')
@@ -191,14 +233,16 @@ function buildTemplate(lead: Lead): string {
   )
 }
 
-/** Limpia el teléfono a formato wa.me (solo dígitos, con código país Chile si falta). */
+/**
+ * Limpia el teléfono a formato wa.me. Delega en `lib/vex/telefono`, que es el
+ * mismo criterio que usa el camino de envío: antes había cuatro reglas
+ * distintas conviviendo en el repo y no coincidían entre sí, así que la ficha
+ * podía mostrar un número y el botón mandar a otro. Este devolvía `digitos`
+ * crudo ante cualquier cosa que no fueran 9 dígitos empezando en 9 — o sea que
+ * abría wa.me con un número incompleto.
+ */
 function normalizarNumero(tel: string | null): string | null {
-  if (!tel) return null
-  const digitos = tel.replace(/\D/g, '')
-  if (!digitos) return null
-  // Chile: celular local de 9 dígitos → anteponer 56.
-  if (digitos.length === 9 && digitos.startsWith('9')) return `56${digitos}`
-  return digitos
+  return normalizarTelefono(tel)
 }
 
 /** Iniciales para el circulito de perfil (1-2 letras). */

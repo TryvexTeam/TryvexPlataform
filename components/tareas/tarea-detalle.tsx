@@ -15,7 +15,7 @@ import { TareaForm } from './tarea-form'
 import type { TareaConResponsables, Subtarea, TareaInsert } from '@/lib/types/tarea'
 import { etiquetaEstado } from '@/lib/types/tarea'
 import { cn } from '@/lib/utils'
-import { parseFechaLocal } from '@/lib/utils/fecha-santiago'
+import { parseFechaLocal, fechaHoraSantiago } from '@/lib/utils/fecha-santiago'
 
 const prioridadColor = { alta: 'destructive', media: 'secondary', baja: 'outline' } as const
 
@@ -151,7 +151,13 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
           style={{ background: 'oklch(63% 0.21 22 / 8%)', color: 'oklch(72% 0.17 22)', border: '1px solid oklch(63% 0.21 22 / 25%)' }}
         >
           <Trash2 size={14} />
-          Esta tarea esta en la papelera desde el {format(new Date(tarea.eliminado_at), "d 'de' MMMM, HH:mm", { locale: es })}.
+          {/* En hora de Santiago, no en la de quien lo dibuje: `eliminado_at`
+              es UTC, el servidor de Vercel corre en UTC y el navegador de
+              Cristian en America/Santiago. Con `format` salía con 3 o 4 horas
+              de diferencia —a veces otro día— y, peor, el HTML del servidor no
+              coincidía con el del cliente: React descartaba la hidratación de
+              este árbol y lo volvía a renderizar entero. */}
+          Esta tarea esta en la papelera desde el {fechaHoraSantiago(tarea.eliminado_at)}.
         </div>
       )}
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Inbox, Loader2, MessageSquarePlus, RefreshCw } from 'lucide-react'
+import { Inbox, MessageSquarePlus, RefreshCw, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -37,6 +37,10 @@ export function EntrantesPanel() {
   const router = useRouter()
   const [abierto, setAbierto] = useState(false)
   const [entrantes, setEntrantes] = useState<EntranteSinIdentificar[]>([])
+  // Cuántas conversaciones activas quedaron sin revisar por el tope del
+  // servidor. Se muestra: una bandeja que dice "3" cuando hay 23 esperando da
+  // por terminado un trabajo que no lo está.
+  const [sinRevisar, setSinRevisar] = useState(0)
   const [cargando, setCargando] = useState(false)
   const [yaMiro, setYaMiro] = useState(false)
 
@@ -48,11 +52,22 @@ export function EntrantesPanel() {
    * desde un efecto encadena un render sobre otro, y el linter lo marca con
    * razón — así el efecto de montaje solo escribe estado después del `await`.
    */
-  const consultar = useCallback(async (): Promise<EntranteSinIdentificar[] | null> => {
+  const consultar = useCallback(async (): Promise<ResultadoConsulta | null> => {
     try {
       const res = await fetch('/api/leads/entrantes', { cache: 'no-store' })
       const cuerpo = await res.json().catch(() => ({}))
-      return res.ok && Array.isArray(cuerpo.data) ? cuerpo.data : null
+      if (!res.ok) return null
+      // El endpoint pasó de devolver un arreglo a devolver { entrantes,
+      // sinRevisar }. Se aceptan las dos formas para que una pestaña abierta
+      // durante el despliegue no se quede en blanco.
+      if (Array.isArray(cuerpo.data)) return { entrantes: cuerpo.data, sinRevisar: 0 }
+      if (Array.isArray(cuerpo.data?.entrantes)) {
+        return {
+          entrantes: cuerpo.data.entrantes,
+          sinRevisar: Number(cuerpo.data.sinRevisar) || 0,
+        }
+      }
+      return null
     } catch {
       // Es una consulta de fondo: si el agente no responde, la lista se queda
       // con lo último bueno en vez de vaciarse de golpe.
@@ -64,7 +79,10 @@ export function EntrantesPanel() {
   const refrescar = useCallback(async () => {
     setCargando(true)
     const datos = await consultar()
-    if (datos) setEntrantes(datos)
+    if (datos) {
+      setEntrantes(datos.entrantes)
+      setSinRevisar(datos.sinRevisar)
+    }
     setCargando(false)
   }, [consultar])
 
@@ -75,7 +93,10 @@ export function EntrantesPanel() {
     let vigente = true
     void consultar().then((datos) => {
       if (!vigente) return
-      if (datos) setEntrantes(datos)
+      if (datos) {
+        setEntrantes(datos.entrantes)
+        setSinRevisar(datos.sinRevisar)
+      }
       setYaMiro(true)
     })
     return () => {
@@ -86,10 +107,23 @@ export function EntrantesPanel() {
   useEffect(() => {
     if (!abierto) return
     const id = setInterval(() => {
-      void consultar().then((datos) => datos && setEntrantes(datos))
+      void consultar().then((datos) => {
+        if (!datos) return
+        setEntrantes(datos.entrantes)
+        setSinRevisar(datos.sinRevisar)
+      })
     }, REFRESCO_MS)
     return () => clearInterval(id)
   }, [abierto, consultar])
+
+  /** Abre la ficha de un candidato del empate, para corregir el dato ahí. */
+  const abrirFicha = useCallback(
+    (tipo: 'lead' | 'cliente', id: string) => {
+      router.push(tipo === 'cliente' ? `/clientes?cliente=${id}` : `/leads?lead=${id}`)
+      setAbierto(false)
+    },
+    [router]
+  )
 
   const crearLead = useCallback(
     (telefono: string, nombre: string | null) => {
@@ -126,8 +160,9 @@ export function EntrantesPanel() {
           <DialogHeader>
             <DialogTitle>Escribieron y no están en la base</DialogTitle>
             <DialogDescription>
-              El agente no les responde porque nadie del equipo los contactó primero. Creá la ficha
-              si es un cliente potencial.
+              Escribieron al WhatsApp del equipo y sus mensajes no tienen a qué ficha ir. Los
+              nuevos necesitan que se les cree una; los marcados en ámbar tienen el número
+              repetido en dos fichas y hay que corregir una.
             </DialogDescription>
           </DialogHeader>
 
@@ -138,9 +173,22 @@ export function EntrantesPanel() {
             </Button>
           </div>
 
+          {sinRevisar > 0 && (
+            <p
+              className="rounded-lg px-3 py-2 text-xs"
+              style={{
+                background: 'color-mix(in srgb, var(--tx-warning) 12%, transparent)',
+                color: 'var(--tx-warning)',
+              }}
+            >
+              Hay {sinRevisar} conversación{sinRevisar === 1 ? '' : 'es'} más que no alcanzamos a
+              revisar. Se muestran las más recientes primero.
+            </p>
+          )}
+
           <ul className="flex flex-col gap-2 max-h-96 overflow-y-auto">
             {entrantes.map((e) => (
-              <Entrante key={e.conversacion} entrante={e} onCrear={crearLead} />
+              <Entrante key={e.conversacion} entrante={e} onCrear={crearLead} onAbrir={abrirFicha} />
             ))}
           </ul>
         </DialogContent>
@@ -149,18 +197,31 @@ export function EntrantesPanel() {
   )
 }
 
+/** Lo que devuelve la consulta: la lista y cuántos quedaron sin mirar. */
+interface ResultadoConsulta {
+  entrantes: EntranteSinIdentificar[]
+  sinRevisar: number
+}
+
 interface EntranteProps {
   entrante: EntranteSinIdentificar
   onCrear: (telefono: string, nombre: string | null) => void
+  onAbrir: (tipo: 'lead' | 'cliente', id: string) => void
 }
 
-function Entrante({ entrante, onCrear }: EntranteProps) {
+function Entrante({ entrante, onCrear, onAbrir }: EntranteProps) {
   const ultimoDeEllos = [...entrante.muestra].reverse().find((m) => m.deEllos)
+  const empatado = entrante.motivo === 'ambiguo'
 
   return (
     <li
       className="flex flex-col gap-2 rounded-lg p-3"
-      style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-1)' }}
+      style={{
+        // El empate se pinta distinto: mirar la lista y ver de un vistazo
+        // cuáles necesitan una decisión, y no crear una ficha por error.
+        border: `1px solid ${empatado ? 'var(--tx-warning)' : 'var(--tx-border)'}`,
+        background: 'var(--tx-surface-1)',
+      }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -172,15 +233,52 @@ function Entrante({ entrante, onCrear }: EntranteProps) {
             {formatearMomento(entrante.ultimoMensaje)}
           </p>
         </div>
-        <Button
-          size="sm"
-          className="shrink-0 gap-1.5"
-          onClick={() => onCrear(entrante.telefono, entrante.nombre)}
-        >
-          <MessageSquarePlus size={13} />
-          Crear lead
-        </Button>
+        {!empatado && (
+          <Button
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={() => onCrear(entrante.telefono, entrante.nombre)}
+          >
+            <MessageSquarePlus size={13} />
+            Crear lead
+          </Button>
+        )}
       </div>
+
+      {/* Empate: el número está en dos fichas. Crear una tercera empeora el
+          problema, así que acá NO se ofrece crear — se ofrece ir a cada una
+          para que una persona decida cuál se queda con el número. */}
+      {empatado && (
+        <div
+          className="flex flex-col gap-1.5 rounded p-2"
+          style={{ background: 'var(--tx-surface-2)' }}
+        >
+          <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--tx-warning)]">
+            <Users size={12} />
+            Este número está en {entrante.candidatos?.length ?? 2} fichas
+          </p>
+          <p className="text-[11px] text-[var(--tx-ink-muted)]">
+            Sus mensajes no se asignan hasta que una quede con el número. Abrí las fichas y
+            corregí la que no corresponda.
+          </p>
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {entrante.candidatos?.map((c) => (
+              <button
+                key={`${c.tipo}-${c.id}`}
+                type="button"
+                onClick={() => onAbrir(c.tipo, c.id)}
+                className="rounded px-2 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
+                style={{ background: 'var(--tx-surface-1)', border: '1px solid var(--tx-border)' }}
+              >
+                {c.nombre?.trim() || 'Sin nombre'}
+                <span className="ml-1 text-[var(--tx-ink-muted)]">
+                  {c.tipo === 'cliente' ? '· cliente' : '· lead'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {ultimoDeEllos && (
         <p

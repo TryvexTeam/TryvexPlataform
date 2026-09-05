@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Send, Loader2, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { iniciarSondeoVisible, visibilidadDelNavegador } from '@/lib/ui/sondeo-visible'
 import type { Lead } from '@/lib/types/lead'
 import { abreDiaNuevo } from '@/lib/utils/fecha-santiago'
 import { SeparadorDia } from '@/components/shared/separador-dia'
@@ -227,14 +228,23 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
 
   // Se refresca solo mientras el chat está abierto, y se corta al cerrarlo:
   // un sondeo que sigue vivo detrás de una pantalla cerrada es gasto puro.
-  useEffect(() => {
-    // `cargar` es async: en este tick solo arranca el fetch, y el setState
-    // pasa recien cuando responde. La regla no puede ver a traves del await.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    cargar()
-    const t = setInterval(cargar, REFRESCO_MS)
-    return () => clearInterval(t)
-  }, [cargar])
+  //
+  // Y ahora también se corta cuando la pestaña deja de verse. Antes este era el
+  // único de los tres sondeos del CRM que no lo hacía: con el chat abierto y el
+  // navegador minimizado seguía pidiendo el hilo cada 5 segundos toda la tarde,
+  // sin nadie mirando. Además el navegador congela los temporizadores en
+  // segundo plano, así que ese intervalo no cumplía ni el horario: llegaba
+  // tarde y en ráfaga. Ahora al volver se pide de una — que es el momento en
+  // que la persona quiere ver si le contestaron.
+  useEffect(
+    () =>
+      iniciarSondeoVisible({
+        cadaMs: REFRESCO_MS,
+        tarea: () => void cargar(),
+        visibilidad: visibilidadDelNavegador(),
+      }),
+    [cargar],
+  )
 
   useEffect(() => {
     finRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
