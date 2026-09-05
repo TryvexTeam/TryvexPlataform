@@ -68,7 +68,35 @@ export const TareaInsertSchema = z.object({
   responsables_ids: z.array(z.string().uuid()).optional(),
 })
 
-export const TareaUpdateSchema = TareaInsertSchema.partial()
+/**
+ * Actualizar una tarea NO es crearla de nuevo.
+ *
+ * `.partial()` hace opcional cada campo, pero **no quita los `.default()`**: si
+ * el cuerpo del PATCH no trae `tipo`, Zod igual devuelve `'general'`, y esa
+ * pasada a la base pisa lo que hubiera. Un PATCH que solo cambia la fecha
+ * límite terminaba reseteando tipo, estado, prioridad y esfuerzo a los valores
+ * de fábrica, en silencio y con 200.
+ *
+ * Pasó de verdad el 5-sep: al repartir cuatro tareas del tablero, las cuatro
+ * volvieron a «General / Media / M» y hubo que restaurarlas a mano. Nadie se
+ * habría enterado salvo por mirar el tablero después.
+ *
+ * `.omit()` antes de `.partial()` saca los defaults del medio: los campos
+ * siguen aceptándose, pero solo se escriben cuando vienen de verdad.
+ */
+export const TareaUpdateSchema = TareaInsertSchema.omit({
+  tipo: true,
+  estado: true,
+  prioridad: true,
+  esfuerzo: true,
+})
+  .partial()
+  .extend({
+    tipo: TareaInsertSchema.shape.tipo.removeDefault().optional(),
+    estado: TareaInsertSchema.shape.estado.removeDefault().optional(),
+    prioridad: TareaInsertSchema.shape.prioridad.removeDefault().optional(),
+    esfuerzo: TareaInsertSchema.shape.esfuerzo.removeDefault().optional(),
+  })
 
 export const SubtareaInsertSchema = z.object({
   tarea_id: z.string().uuid(),
