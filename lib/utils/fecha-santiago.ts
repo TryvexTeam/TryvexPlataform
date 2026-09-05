@@ -101,3 +101,39 @@ export function sumarDias(fecha: string, dias: number): string {
   const [anios, meses, diasBase] = fecha.split('-').map(Number)
   return new Date(Date.UTC(anios, meses - 1, diasBase + dias)).toISOString().slice(0, 10)
 }
+
+/**
+ * Fecha y hora de un instante UTC, escritas en la hora de Santiago.
+ *
+ * Existe porque `format(new Date(x))` de date-fns usa la zona de QUIEN lo
+ * ejecuta, y en este proyecto eso son dos zonas distintas: el servidor de
+ * Vercel corre en UTC y el navegador de Cristian en America/Santiago. El mismo
+ * instante salía con 3 o 4 horas de diferencia según quién lo dibujara — y a
+ * veces con OTRO día.
+ *
+ * No es solo una hora mal puesta: cuando el HTML del servidor dice una hora y
+ * el cliente dibuja otra, React descarta la hidratación de ese árbol y lo
+ * vuelve a renderizar entero en el navegador. Ese es el mecanismo detrás de la
+ * copia huérfana que aparecía en el DOM de la ficha de tarea.
+ */
+const FECHA_HORA_SANTIAGO = new Intl.DateTimeFormat('es-CL', {
+  timeZone: 'America/Santiago',
+  day: 'numeric',
+  month: 'long',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+export function fechaHoraSantiago(instante: Date | string): string {
+  const fecha = typeof instante === 'string' ? new Date(instante) : instante
+  if (Number.isNaN(fecha.getTime())) return ''
+
+  // Se arma por partes y no con el string entero porque el formato de es-CL
+  // mete comas y un "de" en posiciones que cambian entre versiones de Node.
+  const p = Object.fromEntries(
+    FECHA_HORA_SANTIAGO.formatToParts(fecha).map((x) => [x.type, x.value]),
+  )
+  return `${p.day} de ${p.month}, ${p.hour}:${p.minute}`
+}
+
