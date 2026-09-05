@@ -9,10 +9,12 @@ import { toast } from '@/lib/toast'
 import { KanbanBoard } from '@/components/shared/kanban-board'
 import { TareaCard } from './tarea-card'
 import { TareaForm } from './tarea-form'
+import { PasosModal } from './pasos-modal'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmarDialog } from '@/components/clientes/confirmar-dialog'
 import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
+import type { MapaProgreso, ProgresoSubtareas } from '@/lib/utils/progreso-subtareas'
 import {
   ESTADOS_TAREA,
   etiquetaEstado,
@@ -59,6 +61,12 @@ interface TareasKanbanProps {
   proyectoId?: string
   /** Oculta el título y el contador: dentro de un proyecto ya hay cabecera. */
   compacto?: boolean
+  /**
+   * Avance de los pasos por tarea, calculado en el servidor con UNA consulta
+   * agregada (`TareasRepository.progresoSubtareas`). Llega ya masticado para
+   * que ninguna tarjeta tenga que pedir lo suyo por separado.
+   */
+  progresoSubtareas?: MapaProgreso
 }
 
 export function TareasKanban({
@@ -67,6 +75,7 @@ export function TareasKanban({
   currentIntegranteId,
   proyectoId,
   compacto = false,
+  progresoSubtareas = {},
 }: TareasKanbanProps) {
   const router = useRouter()
   const [tareas, setTareas] = useState<TareaConResponsables[]>(initialTareas)
@@ -75,6 +84,21 @@ export function TareasKanban({
   const [papeleraOpen, setPapeleraOpen] = useState(false)
   const [papeleraDropCount, setPapeleraDropCount] = useState(0)
   const [eliminarDefinitivoId, setEliminarDefinitivoId] = useState<string | null>(null)
+  const [pasosDe, setPasosDe] = useState<{ id: string; titulo: string } | null>(null)
+
+  // Copia local del avance: al marcar un paso en el modal, la tarjeta de atrás
+  // tiene que reflejarlo en el momento. El servidor manda cuando revalida (ver
+  // el sync de `initialTareas` más abajo, mismo patrón).
+  const [progreso, setProgreso] = useState<MapaProgreso>(progresoSubtareas)
+  const [progresoPrevio, setProgresoPrevio] = useState(progresoSubtareas)
+  if (progresoSubtareas !== progresoPrevio) {
+    setProgresoPrevio(progresoSubtareas)
+    setProgreso(progresoSubtareas)
+  }
+
+  function handleProgreso(tareaId: string, avance: ProgresoSubtareas) {
+    setProgreso((prev) => ({ ...prev, [tareaId]: avance }))
+  }
 
   // Realtime + red de seguridad al volver a la pestaña. Antes solo escuchaba
   // `tareas`, que no estaba publicada: el canal decía SUBSCRIBED y no llegaba nada.
@@ -271,7 +295,12 @@ export function TareasKanban({
       <KanbanBoard
         columns={columns}
         renderCard={(tarea) => (
-          <TareaCard tarea={tarea} onClick={() => router.push(`/tareas/${tarea.id}`)} />
+          <TareaCard
+            tarea={tarea}
+            onClick={() => router.push(`/tareas/${tarea.id}`)}
+            progreso={progreso[tarea.id]}
+            onAbrirPasos={() => setPasosDe({ id: tarea.id, titulo: tarea.titulo })}
+          />
         )}
         onDragEnd={handleDragEnd}
         trashZone={{
@@ -280,6 +309,14 @@ export function TareasKanban({
           dropCount: papeleraDropCount,
           onOpen: () => setPapeleraOpen(true),
         }}
+      />
+
+      {/* Los pasos de una tarea sin salir del tablero: se abre desde la barrita
+          de avance de la tarjeta y al marcar actualiza esa misma tarjeta. */}
+      <PasosModal
+        tarea={pasosDe}
+        onOpenChange={(o) => !o && setPasosDe(null)}
+        onProgreso={handleProgreso}
       />
 
       <TareaForm
