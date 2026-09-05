@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from '@/lib/toast'
+import { useDatosVivos } from '@/lib/hooks/use-datos-vivos'
 import { LeadsInbox } from './leads-inbox'
 import { LeadPanel } from './lead-panel'
 import { LeadTaskPanel } from './lead-task-panel'
@@ -27,6 +28,35 @@ export function LeadsWorkspace({
 }: LeadsWorkspaceProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  // /leads no se enteraba de nada hasta que alguien recargaba.
+  //
+  // Esta pantalla se arma en el servidor: la lista, el estado de cada lead y
+  // las interacciones del panel llegan como props y se quedaban congeladas en
+  // el instante de la carga. Lo único vivo era el globito de no leídos. Por eso
+  // "el cliente contestó" se veía igual que "el cliente no contestó": el
+  // entrante entraba bien a `mensajes_wa`, pero el hilo del panel, el
+  // `ultimo_contacto` y el estado del lead seguían mostrando lo de antes.
+  //
+  // `/leads` en vista pipeline ya hacía esto (`leads-pipeline.tsx`); el
+  // workspace principal, que es el que se usa todo el día, nunca se conectó.
+  //
+  // ⚠️ Honestidad sobre el mecanismo: de estas tres tablas NINGUNA está en la
+  // publicación `supabase_realtime` (buscar `ALTER PUBLICATION` en
+  // supabase/migrations). El canal se suscribe igual y no llega un solo evento
+  // — el tiempo real de Supabase falla callado. Lo que de verdad refresca acá
+  // es la red de seguridad de `useDatosVivos`: el repaso periódico y el volver
+  // a la pestaña. Se dejan las tablas declaradas para que el día que se
+  // publiquen, esto pase a ser instantáneo sin tocar código.
+  //
+  // Se deja el repaso por defecto (45 s) y no uno más corto: este refresco
+  // vuelve a armar la página entera en el servidor —hoy 562 leads más sus
+  // asignados— y la señal rápida ya existe por otro lado, mucho más barata: el
+  // globito de no leídos consulta cada 20 s (`useWaNoLeidos`) y el hilo abierto
+  // cada 5. Este es el que pone al día lo demás: estado, último contacto,
+  // interacciones y el orden de la lista.
+  useDatosVivos(['fact_leads', 'interacciones_lead', 'mensajes_wa'])
+
   const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false)
   // Abierto o no lo dice la URL, no un estado propio. Antes era `useState`, que
   // lee su valor inicial una sola vez: llegar con ?nuevo=1 desde otra parte de
