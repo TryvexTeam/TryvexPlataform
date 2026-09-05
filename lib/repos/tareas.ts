@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import type { TareaInsert, TareaUpdate, TareaConResponsables, Subtarea, EstadoTarea } from '@/lib/types/tarea'
+import { agruparProgresoSubtareas, type MapaProgreso } from '@/lib/utils/progreso-subtareas'
 
 /** La tarea padre de una subtarea no existe o está en la papelera. */
 export class TareaPadreInvalidaError extends Error {
@@ -338,6 +339,31 @@ export class TareasRepository {
 
     if (error) throw new Error(error.message)
     return (data ?? []) as Subtarea[]
+  }
+
+  /**
+   * Avance de los pasos de VARIAS tareas en una sola consulta.
+   *
+   * Es para el tablero: cada tarjeta quiere mostrar "3/8", y pedirlo con un
+   * `listSubtareas` por tarjeta serían decenas de viajes a la base por cada
+   * carga del kanban (el N+1 de siempre). Acá se pide una sola vez `tarea_id` +
+   * `completada` —nada de descripciones, que el tablero no las pinta— y se
+   * agrupa en memoria.
+   *
+   * Sin `tareaIds` trae el avance de todas las tareas. Con la lista, PostgREST
+   * arma un `IN (...)`; se corta el `in` vacío antes de salir porque un `IN ()`
+   * es una consulta que no puede devolver nada y no vale gastarla.
+   */
+  async progresoSubtareas(tareaIds?: string[]): Promise<MapaProgreso> {
+    if (tareaIds && tareaIds.length === 0) return {}
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (this.supabase as any).from('subtareas').select('tarea_id, completada')
+    if (tareaIds) query = query.in('tarea_id', tareaIds)
+
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+    return agruparProgresoSubtareas((data ?? []) as { tarea_id: string; completada: boolean }[])
   }
 
   async createSubtarea(data: { tarea_id: string; descripcion: string; orden?: number }): Promise<Subtarea> {
