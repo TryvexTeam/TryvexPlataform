@@ -5,12 +5,16 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { MessageCircle, Send, ExternalLink, Bot } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { iniciarSondeoVisible, visibilidadDelNavegador } from '@/lib/ui/sondeo-visible'
 import { normalizarTelefono } from '@/lib/vex/telefono'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/lib/types/lead'
 import type { MensajeWa } from '@/lib/types/mensaje-wa'
+
+/** Cada cuánto se vuelve a mirar si llegó algo nuevo, con el panel a la vista. */
+const CADA_MS = 10_000
 
 interface LeadWhatsappPanelProps {
   lead: Lead
@@ -33,9 +37,6 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
 
   const template = buildTemplate(lead)
   const waNumero = normalizarNumero(lead.telefono)
-
-  // Cada cuánto se vuelve a mirar si llegó algo nuevo.
-  const CADA_MS = 10_000
 
   // `montado` evita escribir estado sobre un componente que ya se fue: el
   // sondeo puede resolver después de cambiar de lead.
@@ -67,50 +68,23 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
   // recargar. Con el chat abierto delante, un cliente que contestaba se veía
   // exactamente igual que un cliente que no contestó nunca.
   //
-  // Se sondea en vez de usar Realtime porque no requiere tocar la
-  // configuración de la tabla ni mantener una suscripción viva: para un hilo
-  // que alguien mira unos minutos, diez segundos de retraso no se notan.
+  // Se sondea en vez de usar Realtime porque `mensajes_wa` no está en la
+  // publicación de Supabase: el canal respondería SUBSCRIBED y no llegaría un
+  // solo evento. Para un hilo que alguien mira unos minutos, diez segundos de
+  // retraso no se notan.
   //
-  // Y se para cuando la pestaña no está visible. No es solo ahorro: el
-  // navegador congela los temporizadores de las pestañas en segundo plano, así
-  // que un intervalo que "sigue corriendo" ahí es una ilusión. Mejor pararlo a
-  // propósito y pedir de una al volver, que es cuando la persona mira.
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null
-    // La primera carga se difiere un tick a propósito: `cargarMensajes` escribe
-    // estado, y hacerlo en el cuerpo del efecto dispara la regla
-    // `react-hooks/set-state-in-effect`. Diferirlo la respeta sin cambiar nada
-    // de lo que ve la persona.
-    const primera = setTimeout(() => void cargarMensajes(), 0)
-
-    const arrancar = () => {
-      if (timer === null) timer = setInterval(() => void cargarMensajes(), CADA_MS)
-    }
-    const parar = () => {
-      if (timer !== null) {
-        clearInterval(timer)
-        timer = null
-      }
-    }
-
-    const alCambiarVisibilidad = () => {
-      if (document.visibilityState === 'visible') {
-        void cargarMensajes()
-        arrancar()
-      } else {
-        parar()
-      }
-    }
-
-    if (document.visibilityState === 'visible') arrancar()
-    document.addEventListener('visibilitychange', alCambiarVisibilidad)
-
-    return () => {
-      clearTimeout(primera)
-      parar()
-      document.removeEventListener('visibilitychange', alCambiarVisibilidad)
-    }
-  }, [cargarMensajes])
+  // El arranque/parada por visibilidad vive en `iniciarSondeoVisible`, que es
+  // el mismo que usa el modal del chat. Estaba escrito dos veces a mano y solo
+  // una de las dos paraba.
+  useEffect(
+    () =>
+      iniciarSondeoVisible({
+        cadaMs: CADA_MS,
+        tarea: () => void cargarMensajes(),
+        visibilidad: visibilidadDelNavegador(),
+      }),
+    [cargarMensajes],
+  )
 
   function abrirWhatsapp() {
     if (!waNumero) {
