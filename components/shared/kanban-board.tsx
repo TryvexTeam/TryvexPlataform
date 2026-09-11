@@ -91,6 +91,15 @@ export interface KanbanColumn<T> {
   title: string
   items: T[]
   color?: string
+  /**
+   * Parte el contenido de la columna en secciones plegables (en tareas: un
+   * grupo por mes de vencimiento). `items` sigue siendo la lista completa y en
+   * el mismo orden: es lo que ve dnd-kit, y si no coincidiera, arrastrar
+   * dejaria las tarjetas en cualquier parte.
+   *
+   * Sin esto la columna se pinta como siempre, de corrido.
+   */
+  grupos?: { id: string; titulo: string; items: T[] }[]
 }
 
 interface KanbanBoardProps<T extends { id: string }> {
@@ -117,21 +126,9 @@ interface KanbanBoardProps<T extends { id: string }> {
    */
   orientation?: 'horizontal' | 'vertical' | 'responsive'
   /**
-   * Deja plegar columnas apretando su cabecera.
-   *
-   * Con el tablero lleno, las columnas largas empujan todo hacia abajo y las de
-   * más allá se pierden de vista. Plegar una la deja en su cabecera con el
-   * contador, sin tener que mover ni archivar nada.
-   *
-   * Una columna plegada SIGUE aceptando que le sueltes una tarjeta: si dejara
-   * de hacerlo, plegar rompería el arrastre, que es para lo que existe el
-   * tablero. Mientras algo pasa por encima se abre sola para que veas dónde cae.
-   */
-  colapsables?: boolean
-  /**
-   * Con qué nombre se recuerdan las columnas plegadas en este navegador. Sin
-   * esto, plegar se olvida al recargar y hay que rehacerlo cada vez. Va por
-   * tablero: el de un proyecto no tiene por qué heredar lo del tablero general.
+   * Con qué nombre se recuerda, en este navegador, qué secciones están
+   * plegadas. Sin esto el plegado funciona igual pero se olvida al recargar.
+   * Va por tablero: el de un proyecto no hereda lo del tablero general.
    */
   memoriaColapso?: string
 }
@@ -305,18 +302,16 @@ function SortableCard<T extends { id: string }>({
 function DroppableColumn<T extends { id: string }>({
   col,
   renderCard,
-  colapsada = false,
+  plegado,
+  alternar,
 }: {
   col: KanbanColumn<T>
   renderCard: (item: T, isDragging?: boolean) => React.ReactNode
-  colapsada?: boolean
+  /** Ids de grupo plegados dentro de ESTA columna. */
+  plegado?: (grupoId: string) => boolean
+  alternar?: (grupoId: string) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id })
-
-  // Plegada se esconden las tarjetas, pero la zona de drop sigue montada: por
-  // eso `isOver` la vuelve a abrir mientras arrastras algo encima. Así plegar
-  // nunca te quita la posibilidad de mover una tarea ahí.
-  const oculta = colapsada && !isOver
 
   return (
     <SortableContext
@@ -328,10 +323,7 @@ function DroppableColumn<T extends { id: string }>({
         ref={setNodeRef}
         animate={isOver ? { scale: 1.005 } : { scale: 1 }}
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className={cn(
-          'flex flex-col gap-2 rounded-xl p-2 transition-all duration-150',
-          oculta ? 'min-h-[36px]' : 'min-h-[120px]',
-        )}
+        className="flex flex-col gap-2 min-h-[120px] rounded-xl p-2 transition-all duration-150"
         style={{
           // El acento del CRM, no un morado suelto: `oklch(... 292)` venía de
           // una paleta anterior y en el tablero se leía como si perteneciera a
@@ -348,26 +340,47 @@ function DroppableColumn<T extends { id: string }>({
           animate="show"
           className="flex flex-col gap-2"
         >
-          {!oculta &&
-            col.items.map((item) => (
-              <SortableCard key={item.id} item={item} renderCard={renderCard} />
-            ))}
+          {col.grupos
+            ? col.grupos.map((grupo) => {
+                // Mientras arrastras algo sobre la columna se abren todos los
+                // grupos: si no, no verías dónde va a caer la tarjeta.
+                const cerrado = !isOver && (plegado?.(grupo.id) ?? false)
+                return (
+                  <div key={grupo.id} className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => alternar?.(grupo.id)}
+                      aria-expanded={!cerrado}
+                      className="flex w-full items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors hover:bg-white/[0.04]"
+                    >
+                      <ChevronDown
+                        size={12}
+                        className={cn(
+                          'shrink-0 text-[var(--tx-ink-muted)] transition-transform duration-150',
+                          cerrado && '-rotate-90',
+                        )}
+                      />
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-ink-secondary)] truncate">
+                        {grupo.titulo}
+                      </span>
+                      <span className="ml-auto shrink-0 rounded-full bg-[var(--tx-surface-2)] px-1.5 text-[10px] font-medium tabular-nums text-[var(--tx-ink-muted)]">
+                        {grupo.items.length}
+                      </span>
+                    </button>
+                    {!cerrado &&
+                      grupo.items.map((item) => (
+                        <SortableCard key={item.id} item={item} renderCard={renderCard} />
+                      ))}
+                  </div>
+                )
+              })
+            : col.items.map((item) => (
+                <SortableCard key={item.id} item={item} renderCard={renderCard} />
+              ))}
         </motion.div>
 
         <AnimatePresence>
-          {oculta && col.items.length > 0 && (
-            <motion.p
-              key="plegada"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-xs text-[var(--tx-ink-muted)] text-center py-2"
-            >
-              {col.items.length} {col.items.length === 1 ? 'tarea plegada' : 'tareas plegadas'}
-            </motion.p>
-          )}
-
-          {!oculta && col.items.length === 0 && (
+          {col.items.length === 0 && (
             <motion.p
               key="empty"
               initial={{ opacity: 0 }}
@@ -390,7 +403,7 @@ function DroppableColumn<T extends { id: string }>({
            *
            * Va al final de la lista porque es donde se añade la tarjeta.
            */}
-          {isOver && !oculta && col.items.length > 0 && (
+          {isOver && col.items.length > 0 && (
             <motion.div
               key="destino"
               initial={{ opacity: 0, height: 0 }}
@@ -419,7 +432,6 @@ export function KanbanBoard<T extends { id: string }>({
   scrollContainerRef,
   trashZone,
   orientation = 'responsive',
-  colapsables = false,
   memoriaColapso,
 }: KanbanBoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -434,10 +446,13 @@ export function KanbanBoard<T extends { id: string }>({
   )
   const colapsadas = memoriaColapso ? guardadas : sesion
 
-  function alternarColapso(id: string) {
-    const siguiente = colapsadas.includes(id)
-      ? colapsadas.filter((c) => c !== id)
-      : [...colapsadas, id]
+  function alternarColapso(colId: string, grupoId: string) {
+    // La clave lleva las dos partes: "Septiembre" de Por hacer y "Septiembre"
+    // de Hecho son secciones distintas y se pliegan por separado.
+    const clave = `${colId}/${grupoId}`
+    const siguiente = colapsadas.includes(clave)
+      ? colapsadas.filter((c) => c !== clave)
+      : [...colapsadas, clave]
     if (memoriaColapso) guardarColapsadas(memoriaColapso, siguiente)
     else setSesion(siguiente)
   }
@@ -578,58 +593,31 @@ export function KanbanBoard<T extends { id: string }>({
                 : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink lg:min-w-[200px]'
             }
           >
-            {/* Cabecera de la columna. Con `colapsables` es un botón que la
-                pliega; sin eso se comporta como siempre y ni siquiera cambia
-                el cursor, para no sugerir que se puede apretar algo que no. */}
-            {(() => {
-              const plegada = colapsadas.includes(col.id)
-              const Cabecera = colapsables ? 'button' : 'div'
-              return (
-                <>
-                  <Cabecera
-                    {...(colapsables
-                      ? {
-                          type: 'button' as const,
-                          onClick: () => alternarColapso(col.id),
-                          'aria-expanded': !plegada,
-                          title: plegada ? `Desplegar ${col.title}` : `Plegar ${col.title}`,
-                        }
-                      : {})}
-                    className={cn(
-                      'flex w-full items-center justify-between mb-2.5 px-1 text-left',
-                      colapsables &&
-                        'rounded-lg py-0.5 hover:bg-[var(--tx-surface-2)] transition-colors',
-                    )}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {colapsables && (
-                        <ChevronDown
-                          size={13}
-                          className={cn(
-                            'shrink-0 text-[var(--tx-ink-muted)] transition-transform duration-150',
-                            plegada && '-rotate-90',
-                          )}
-                        />
-                      )}
-                      {col.color && (
-                        <span
-                          className="h-2 w-2 rounded-full shrink-0"
-                          style={{ background: col.color }}
-                        />
-                      )}
-                      <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] tracking-tight truncate">
-                        {col.title}
-                      </span>
-                    </div>
-                    <span className="text-[11px] font-medium text-[var(--tx-ink-muted)] bg-[var(--tx-surface-2)] rounded-full px-2 py-0.5 tabular-nums shrink-0">
-                      {col.items.length}
-                    </span>
-                  </Cabecera>
+            {/* Cabecera de la columna: una etiqueta, no un control. Lo que se
+                pliega son las secciones de adentro (los meses). */}
+            <div className="flex items-center justify-between mb-2.5 px-1">
+              <div className="flex items-center gap-2 min-w-0">
+                {col.color && (
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ background: col.color }}
+                  />
+                )}
+                <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] tracking-tight truncate">
+                  {col.title}
+                </span>
+              </div>
+              <span className="text-[11px] font-medium text-[var(--tx-ink-muted)] bg-[var(--tx-surface-2)] rounded-full px-2 py-0.5 tabular-nums shrink-0">
+                {col.items.length}
+              </span>
+            </div>
 
-                  <DroppableColumn col={col} renderCard={renderCard} colapsada={plegada} />
-                </>
-              )
-            })()}
+            <DroppableColumn
+              col={col}
+              renderCard={renderCard}
+              plegado={(grupoId) => colapsadas.includes(`${col.id}/${grupoId}`)}
+              alternar={(grupoId) => alternarColapso(col.id, grupoId)}
+            />
           </div>
         ))}
       </div>
