@@ -18,10 +18,73 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/**
+ * Qué columnas están plegadas, guardado en este navegador.
+ *
+ * Es un store de verdad (no un `useState` + effect) porque el valor vive fuera
+ * de React: lo escribe el usuario al plegar y lo lee `localStorage`. Leerlo en
+ * un effect obligaba a un segundo render y se veía el parpadeo de las columnas
+ * abriéndose y plegándose de golpe; además el lint lo prohíbe con razón
+ * (`react-hooks/set-state-in-effect`).
+ *
+ * `useSyncExternalStore` permite dar una respuesta distinta en el servidor
+ * (nada plegado, que es lo único que el servidor puede saber) sin que React
+ * tire abajo el árbol por no coincidir con el navegador.
+ */
+const VACIO: string[] = []
+const oyentes = new Set<() => void>()
+// El snapshot tiene que ser el MISMO objeto mientras no cambie nada: si se
+// devolviera un array nuevo en cada lectura, React entendería "cambió" y
+// entraría en un bucle de renders.
+const cache = new Map<string, { crudo: string | null; valor: string[] }>()
+
+function claveDe(memoria: string) {
+  return `kanban-colapso:${memoria}`
+}
+
+function leerColapsadas(memoria: string): string[] {
+  let crudo: string | null = null
+  try {
+    crudo = window.localStorage.getItem(claveDe(memoria))
+  } catch {
+    // Modo privado o site data bloqueada: no recordar el plegado es molesto;
+    // que reviente el tablero, no.
+    return VACIO
+  }
+  const previo = cache.get(memoria)
+  if (previo && previo.crudo === crudo) return previo.valor
+  let valor = VACIO
+  try {
+    const parseado: unknown = crudo ? JSON.parse(crudo) : null
+    if (Array.isArray(parseado)) valor = parseado.filter((x): x is string => typeof x === 'string')
+  } catch {
+    // Un JSON viejo con otra forma no debería dejar el tablero inservible.
+  }
+  cache.set(memoria, { crudo, valor })
+  return valor
+}
+
+function guardarColapsadas(memoria: string, valor: string[]) {
+  try {
+    window.localStorage.setItem(claveDe(memoria), JSON.stringify(valor))
+  } catch {
+    // Igual que al leer: preferible olvidar el plegado a romper el tablero.
+  }
+  cache.set(memoria, { crudo: JSON.stringify(valor), valor })
+  oyentes.forEach((f) => f())
+}
+
+function suscribir(f: () => void) {
+  oyentes.add(f)
+  return () => {
+    oyentes.delete(f)
+  }
+}
 
 export interface KanbanColumn<T> {
   id: string
@@ -361,39 +424,22 @@ export function KanbanBoard<T extends { id: string }>({
 }: KanbanBoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sobrePapelera, setSobrePapelera] = useState(false)
-  const [colapsadas, setColapsadas] = useState<string[]>([])
-
-  // Lo plegado se lee DESPUÉS del primer pintado, no durante el render.
-  // localStorage no existe en el servidor: leerlo como estado inicial haría que
-  // el HTML del servidor y el del navegador no coincidan, y React descarta el
-  // árbol entero cuando eso pasa. Un parpadeo de columnas abiertas es más
-  // barato que eso.
-  useEffect(() => {
-    if (!memoriaColapso) return
-    try {
-      const guardado = window.localStorage.getItem(`kanban-colapso:${memoriaColapso}`)
-      if (guardado) setColapsadas(JSON.parse(guardado) as string[])
-    } catch {
-      // Modo privado, cuota llena o un JSON viejo con otra forma: que no
-      // recuerde el plegado es molesto; que reviente el tablero, no.
-    }
-  }, [memoriaColapso])
+  // Sin `memoriaColapso` el plegado no se recuerda entre recargas, pero sigue
+  // funcionando dentro de la sesión (`sesion`, abajo).
+  const [sesion, setSesion] = useState<string[]>(VACIO)
+  const guardadas = useSyncExternalStore(
+    suscribir,
+    () => (memoriaColapso ? leerColapsadas(memoriaColapso) : VACIO),
+    () => VACIO,
+  )
+  const colapsadas = memoriaColapso ? guardadas : sesion
 
   function alternarColapso(id: string) {
-    setColapsadas((prev) => {
-      const siguiente = prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
-      if (memoriaColapso) {
-        try {
-          window.localStorage.setItem(
-            `kanban-colapso:${memoriaColapso}`,
-            JSON.stringify(siguiente),
-          )
-        } catch {
-          // Igual que arriba: no recordar es aceptable, romper no.
-        }
-      }
-      return siguiente
-    })
+    const siguiente = colapsadas.includes(id)
+      ? colapsadas.filter((c) => c !== id)
+      : [...colapsadas, id]
+    if (memoriaColapso) guardarColapsadas(memoriaColapso, siguiente)
+    else setSesion(siguiente)
   }
 
   // Sensores separados a proposito: con un solo PointerSensor, en el celular
