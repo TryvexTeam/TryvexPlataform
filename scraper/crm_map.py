@@ -80,6 +80,26 @@ def instagram_de(redes: str) -> Optional[str]:
     return m.group(0).split("?")[0] if m else None
 
 
+_NICHO_CANON = {
+    # Variantes que el scraper metía como rubros distintos y en realidad son el
+    # mismo. Se normalizan ANTES de guardar para no volver a duplicar el filtro.
+    # (28-ago: la cartera tenía "talleres"(8) aparte de "talleres mecánicos"(41)
+    # y "electricidad"(4) aparte de "electricistas"(5); se unieron a mano y acá
+    # se previene que reentren.) NO se toca "tienda"/"tiendas de ropa" ni
+    # "soluciones": no son equivalencias 1:1 seguras.
+    "talleres": "talleres mecánicos",
+    "electricidad": "electricistas",
+}
+
+
+def normalizar_nicho(n):
+    """El nicho, con las variantes conocidas unidas a su forma canónica."""
+    if not n:
+        return None
+    n = str(n).strip()
+    return _NICHO_CANON.get(n.lower(), n) or None
+
+
 def a_crm(lead: dict) -> dict:
     """Traduce el dict `lead` del scraper al payload de fact_leads del CRM."""
     nombre = (lead.get("nombre") or "").strip()
@@ -115,7 +135,10 @@ def a_crm(lead: dict) -> dict:
         "info_texto": (lead.get("info_texto") or None),
         "redes_sociales": redes_json,
         "tiene_web": bool(lead.get("tiene_web")),
-        "nicho": lead.get("nicho") or None,
+        # Sin esta linea el scraper lee bien la URL del sitio y la pierde
+        # al armar la fila, en silencio. Ver comentario del 17-ago en scraper.py.
+        "url_web": (lead.get("url_web") or None),
+        "nicho": normalizar_nicho(lead.get("nicho")),
         "localidad": localidad,
         "score": score_1_10(lead.get("score")),
         # Columnas propias (migracion 047). Antes estos datos solo iban a

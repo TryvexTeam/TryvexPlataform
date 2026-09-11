@@ -11,12 +11,13 @@ import logging
 import random
 import re
 import os
-import unicodedata
 from datetime import datetime, timezone
 from typing import List, Optional
 
-import httpx
 from dotenv import load_dotenv
+import unicodedata
+
+import httpx
 from playwright.async_api import async_playwright, Page, BrowserContext
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 from supabase import create_client, Client
@@ -39,6 +40,15 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+# Si el negocio ya tiene sitio web: descartarlo (True, como siempre) o
+# guardarlo igual (False). Se cambia desde el .env sin tocar codigo.
+DESCARTAR_CON_WEB = os.getenv("SCRAPER_DESCARTAR_CON_WEB", "true").strip().lower() \
+    not in ("false", "0", "no")
+
+# Contador de modulo: stats_global es un parametro de scrape_categoria y no
+# llega hasta extraer_negocio, asi que el descarte por web se cuenta aca.
+DESCARTES = {"con_web": 0}
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -197,36 +207,13 @@ async def insertar_o_actualizar(supabase: Client, lead: dict) -> str:
     """
     payload = a_crm(lead)  # esquema del CRM
 
-    # Se busca PRIMERO por el identificador de Google, que es lo unico que
-    # identifica al local de verdad. El emparejamiento por (nombre, nicho) crea
-    # una ficha por cada rubro en que aparezca el mismo negocio: "Salon Regias"
-    # llego a estar dos veces, como peluqueria y como centro de estetica, y al
-    # dueño le habrian llegado dos mensajes de Tryvex.
-    #
-    # Borrar los duplicados a mano no alcanza: el 18-ago se borraron 9 y la
-    # corrida siguiente los recreo, porque el emparejamiento seguia mirando el
-    # nombre. El arreglo tiene que estar aca.
-    existing = None
-    place_id = payload.get("google_place_id")
-    if place_id:
-        existing = await _in_thread(
-            lambda: supabase.table("fact_leads")
-            .select("id, estado")
-            .eq("google_place_id", place_id)
-            .execute()
-        )
-
-    # Sin identificador (o si ese negocio todavia no lo tiene guardado), se cae
-    # al emparejamiento viejo: las fichas anteriores a la migracion 049 lo
-    # tienen en NULL y hay que poder seguir actualizandolas.
-    if not (existing and existing.data):
-        existing = await _in_thread(
-            lambda: supabase.table("fact_leads")
-            .select("id, estado")
-            .eq("nombre_negocio", payload["nombre_negocio"])
-            .eq("nicho", payload["nicho"])
-            .execute()
-        )
+    existing = await _in_thread(
+        lambda: supabase.table("fact_leads")
+        .select("id, estado")
+        .eq("nombre_negocio", payload["nombre_negocio"])
+        .eq("nicho", payload["nicho"])
+        .execute()
+    )
 
     if existing.data:
         record_id = existing.data[0]["id"]
@@ -310,6 +297,31 @@ async def obtener_hrefs_resultados(page: Page) -> list[tuple[str, str]]:
 
 
 # ── Extracción de datos por negocio ───────────────────────────────────────────
+def es_telefono_chileno(num: Optional[str]) -> bool:
+    """Si esto no parece un telefono chileno, no lo es.
+
+    Existe por los 75 leads que llegaron con el CODIGO POSTAL en el campo
+    telefono: "Av. Italia 1350, 7501451 Providencia" dejaba telefono=7501451.
+    El culpable es el tercer intento de extraer_telefono, que barre los
+    aria-label de los botones con un regex generico -- y el boton de copiar
+    direccion trae la direccion entera, codigo postal incluido.
+
+    Un codigo postal chileno son 7 digitos. Un telefono, 8 o mas:
+      movil     9 XXXX XXXX          -> 9 digitos
+      fijo      2 XXXX XXXX (Stgo)   -> 9 digitos
+      con pais  56 9 XXXX XXXX       -> 11 digitos
+    Por eso el corte esta en 8: deja pasar cualquier telefono real y frena
+    el codigo postal, que es lo unico de 7 que aparecia aca.
+    """
+    d = re.sub(r"\D", "", num or "")
+    if len(d) < 8:
+        return False
+    # 7 digitos con un prefijo pegado tampoco: 56 + codigo postal.
+    if d.startswith("56") and len(d) == 9:
+        return False
+    return True
+
+
 async def extraer_telefono(page: Page) -> Optional[str]:
     try:
         el = await page.query_selector('[data-item-id^="phone:tel:"]')
@@ -569,6 +581,7 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
         return None
 
     tiene_web = False
+    url_web: Optional[str] = None
     redes_desde_web: Optional[str] = None
     try:
         web_el = await page.query_selector('a[data-item-id="authority"]')
@@ -579,21 +592,34 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
                     redes_desde_web = href
                 else:
                     tiene_web = True
+                    url_web = href
     except Exception:
         pass
 
+    # El filtro historico era "si tiene web, no es lead" — tenia sentido cuando
+    # lo unico que se vendia eran paginas. Hoy tambien se vende automatizacion,
+    # SaaS e IA aplicada, y para eso tener web es BUENA senal. Se deja
+    # configurable y se registra, porque antes se descartaba en silencio y
+    # nadie sabia cuantos de los ~580 descartes diarios eran por esto.
     if tiene_web:
-        return None
+        DESCARTES["con_web"] += 1
+        log.info(f"  descartado (ya tiene web): {nombre} -> {url_web}")
+        if DESCARTAR_CON_WEB:
+            return None
 
-    # Segunda verificacion, gratis: el boton oficial de Maps solo aparece si
-    # el dueño cargo la URL ahi. Antes de asumir "no tiene web" se prueba el
-    # dominio obvio a partir del nombre (ver `buscar_web_por_nombre`). Esto es
-    # lo que evita el caso real reportado: llamar a un negocio que SI tiene
-    # sitio, diciendole que no tiene.
-    web_por_nombre = await buscar_web_por_nombre(nombre)
-    if web_por_nombre:
-        log.info(f"  descartado (web encontrada por nombre, no en Maps): {nombre} -> {web_por_nombre}")
-        return None
+    # Maps solo muestra el sitio si el dueño cargó la URL en su ficha. Antes de
+    # asumir "no tiene web" se prueba el dominio obvio a partir del nombre
+    # (PR #211). Esto evita el caso reportado: escribirle a un negocio que SÍ
+    # tiene sitio, diciéndole que no tiene.
+    if not tiene_web:
+        web_por_nombre = await buscar_web_por_nombre(nombre)
+        if web_por_nombre:
+            tiene_web = True
+            url_web = web_por_nombre
+            DESCARTES["con_web"] += 1
+            log.info(f"  descartado (web encontrada por nombre, no en Maps): {nombre} -> {web_por_nombre}")
+            if DESCARTAR_CON_WEB:
+                return None
 
     # Un negocio que cerro definitivamente no es un lead: escribirle es la peor
     # carta de presentacion posible. Se descarta antes de gastar tiempo en el.
@@ -602,6 +628,10 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
         return None
 
     telefono = await extraer_telefono(page)
+    # Un codigo postal no es un telefono. Ver es_telefono_chileno.
+    if telefono and not es_telefono_chileno(telefono):
+        log.info(f"telefono descartado por no parecerlo: {telefono!r}")
+        telefono = None
     info_texto = await extraer_info_texto(page)
     rating = await extraer_rating(page)
     num_resenas = await extraer_num_resenas(page)
@@ -624,7 +654,8 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
         "telefono": telefono,
         "info_texto": info_texto,
         "redes": redes,
-        "tiene_web": False,
+        "tiene_web": tiene_web,
+        "url_web": url_web,
         "rating": rating,
         "num_resenas": num_resenas,
         "direccion": direccion,
@@ -737,7 +768,8 @@ async def scrape_categoria(
                 "telefono": datos["telefono"],
                 "info_texto": datos["info_texto"],
                 "redes": datos["redes"],
-                "tiene_web": False,
+                "tiene_web": datos.get("tiene_web", False),
+                "url_web": datos.get("url_web"),
                 "nicho": categoria,
                 "score": score,
                 "estado": "nuevo",
@@ -945,6 +977,7 @@ async def main() -> None:
     log.info(f"  Nuevos leads:    {resumen['nuevos_leads']}")
     log.info(f"  Actualizados:    {resumen['actualizados']}")
     log.info(f"  Descartados:     {resumen['descartados']}")
+    log.info(f"    ...de esos, ya tenian web: {DESCARTES['con_web']}")
     log.info(f"  Ya conocidos (salteados, no re-procesados): {resumen['saltados']}")
     log.info(f"  Duracion:        {duracion_min} min")
     log.info("=" * 60)
