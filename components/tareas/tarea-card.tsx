@@ -4,6 +4,7 @@ import { CalendarDays, AlertCircle, Trash2, ListChecks } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 import { parseFechaLocal } from '@/lib/utils/fecha-santiago'
+import { tareaAtrasada } from '@/lib/utils/tarea-atrasada'
 import type { ProgresoSubtareas } from '@/lib/utils/progreso-subtareas'
 
 const prioridadConfig = {
@@ -35,11 +36,10 @@ interface TareaCardProps {
 }
 
 export function TareaCard({ tarea, onClick, enPapelera, progreso, onAbrirPasos }: TareaCardProps) {
-  const isVencida =
-    !enPapelera &&
-    tarea.fecha_limite &&
-    tarea.estado !== 'listo' &&
-    parseFechaLocal(tarea.fecha_limite) < new Date()
+  // Una sola definición de "atrasada" para todo el CRM (`lib/utils/tarea-atrasada`):
+  // esta regla también la usan los contadores de cada mes. Dos copias
+  // terminarían diciendo cosas distintas de la misma tarea.
+  const isVencida = !enPapelera && tareaAtrasada(tarea)
 
   return (
     <div

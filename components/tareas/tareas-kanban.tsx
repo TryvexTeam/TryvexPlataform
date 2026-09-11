@@ -8,6 +8,7 @@ import { Plus, Filter, RotateCcw, Trash2, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { KanbanBoard } from '@/components/shared/kanban-board'
 import { agruparPorMes } from '@/lib/utils/agrupar-por-mes'
+import { tareaAtrasada } from '@/lib/utils/tarea-atrasada'
 import { TareaCard } from './tarea-card'
 import { TareaForm } from './tarea-form'
 import { PasosModal } from './pasos-modal'
@@ -191,7 +192,10 @@ export function TareasKanban({
   // lista completa y en el mismo orden que los grupos: es lo que ve dnd-kit, y
   // si no coincidiera, arrastrar dejaria las tarjetas en cualquier parte.
   const columns = COLUMNS.map((col) => {
-    const grupos = agruparPorMes(tareasFiltradas.filter((t) => t.estado === col.id))
+    const grupos = agruparPorMes(
+      tareasFiltradas.filter((t) => t.estado === col.id),
+      tareaAtrasada,
+    )
     return { ...col, grupos, items: grupos.flatMap((g) => g.items) }
   })
 
@@ -409,6 +413,7 @@ export function TareasKanban({
           />
         )}
         onDragEnd={handleDragEnd}
+        anchoColumna="fijo"
         memoriaColapso={proyectoId ? `tareas:${proyectoId}` : 'tareas'}
         trashZone={{
           id: PAPELERA_ID,
