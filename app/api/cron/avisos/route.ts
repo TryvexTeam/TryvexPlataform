@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { NotificacionesRepository } from '@/lib/repos/notificaciones'
 import { nombreCliente } from '@/lib/types/cliente'
 import { diaSantiago } from '@/lib/utils/fecha-santiago'
+import { HORAS_MAXIMAS, jornadasParaCerrar } from '@/lib/jornada/cierre-automatico'
 import {
   enviarAvisosDeAtraso,
   envioWhatsappEncendido,
@@ -145,10 +146,49 @@ export async function GET(req: Request) {
   // eso es lo que se revisa antes de encenderlo.
   const whatsapp = await enviarAvisosDeAtraso([...porPersona.values()])
 
+  /* ─── Jornadas que quedaron abiertas ──────────────────────────────────
+   *
+   * Irse sin marcar salida no deja un hueco: deja una jornada contando toda la
+   * noche, y al día siguiente alguien aparece con 30 horas. Ahí el marcador del
+   * equipo deja de significar nada, que es justo el dato con el que se quiere
+   * gobernar el trabajo.
+   *
+   * La salida se pone en entrada + 12 h, NO a la hora en que corre el cron: si
+   * entró a las 9 y el cron corre de madrugada, marcarle esa hora le inventaría
+   * horas que no trabajó. Con el tope el número es defendible y la persona
+   * puede corregirlo a mano.
+   */
+  const { data: abiertas } = await sb
+    .from('jornadas')
+    .select('id, integrante_id, entrada_at')
+    .is('salida_at', null)
+
+  const paraCerrar = jornadasParaCerrar((abiertas ?? []) as {
+    id: string; integrante_id: string; entrada_at: string
+  }[])
+
+  for (const c of paraCerrar) {
+    const { error } = await sb
+      .from('jornadas')
+      .update({ salida_at: c.salida_at })
+      .eq('id', c.id)
+      .is('salida_at', null) // si la cerró la persona mientras tanto, manda la suya
+    if (error) continue
+
+    await repo.notificar({
+      destinatarios: [c.integrante_id],
+      tipo: 'jornada_cerrada',
+      titulo: `Te cerramos la jornada a las ${HORAS_MAXIMAS} h — revísala si no era así`,
+      link: '/jornada',
+    })
+    enviadas++
+  }
+
   return NextResponse.json({
     success: true,
     data: {
       avisos: enviadas,
+      jornadas_cerradas: paraCerrar.length,
       atrasos: {
         personas: porPersona.size,
         tareas: (atrasadas ?? []).length,

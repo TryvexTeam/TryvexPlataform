@@ -3,13 +3,15 @@
 import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useHasMounted } from '@/lib/hooks/use-has-mounted'
-import { LogOut, Settings } from 'lucide-react'
+import { Clock, LogOut, Settings } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ThemePanel } from '@/components/dashboard/theme-panel'
 import { NotificacionesBell } from './notificaciones-bell'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,9 +70,16 @@ interface TopbarProps {
   nombre: string
   email: string
   avatarUrl: string | null
+  /** Para avisar al salir si quedó la jornada corriendo. */
+  jornadaAbierta?: boolean
 }
 
-export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
+export function Topbar({ nombre, email, avatarUrl, jornadaAbierta = false }: TopbarProps) {
+  // Irse con la jornada abierta deja una jornada de 30 horas al día siguiente,
+  // y ahí las horas del equipo dejan de servir para nada. El navegador no deja
+  // poner un texto propio al cerrar la pestaña —solo un cartel genérico del
+  // sistema—, pero al cerrar sesión SÍ podemos decirlo con nuestras palabras.
+  const [confirmarSalida, setConfirmarSalida] = useState(false)
   const router = useRouter()
   // Lazy initializer: lee localStorage antes del primer render en vez de
   // arrancar en 'online' y corregir en un efecto.
@@ -100,7 +109,8 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
     .join('')
     .toUpperCase()
 
-  async function handleSignOut() {
+  /** El cierre de verdad, ya con la decisión tomada. */
+  async function salirDeVerdad() {
     const supabase = createClient()
     const { error } = await supabase.auth.signOut()
     if (error) {
@@ -109,6 +119,29 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
     }
     router.push('/login')
     router.refresh()
+  }
+
+  async function handleSignOut() {
+    if (jornadaAbierta) {
+      setConfirmarSalida(true)
+      return
+    }
+    await salirDeVerdad()
+  }
+
+  /** Cierra la jornada y recién ahí cierra sesión. */
+  async function cerrarJornadaYSalir() {
+    try {
+      await fetch('/api/jornadas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'salida' }),
+      })
+    } catch {
+      // Si falla no se bloquea la salida: quedarse atrapado dentro del CRM por
+      // un error de red sería peor que una jornada mal cerrada.
+    }
+    await salirDeVerdad()
   }
 
   return (
@@ -227,6 +260,33 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Al salir con la jornada corriendo. No es un bloqueo: la tercera opción
+          deja irse igual, porque encerrar a alguien dentro del CRM sería peor
+          que una jornada mal cerrada. */}
+      <Dialog open={confirmarSalida} onOpenChange={setConfirmarSalida}>
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm p-5">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Clock size={16} style={{ color: 'oklch(80% 0.14 55)' }} />
+              Tu jornada sigue abierta
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--tx-ink-muted)]">
+            Si te vas así, queda corriendo hasta mañana y tus horas de hoy salen
+            mal contadas.
+          </p>
+          <div className="mt-4 flex flex-col gap-2">
+            <Button onClick={cerrarJornadaYSalir}>Cerrar jornada y salir</Button>
+            <Button variant="outline" onClick={salirDeVerdad}>
+              Salir sin cerrarla
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirmarSalida(false)}>
+              Volver
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 }
