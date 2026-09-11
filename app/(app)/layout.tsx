@@ -10,6 +10,8 @@ import { DynamicGlows } from '@/components/layout/dynamic-glows'
 import { AppShell } from '@/components/layout/app-shell'
 import { PermisosRepository, puede } from '@/lib/repos/permisos'
 import { ProveedorLlamadas } from '@/components/llamadas/proveedor-llamadas'
+import { FrenoJornada } from '@/components/jornada/freno-jornada'
+import { JornadasRepository } from '@/lib/repos/jornadas'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -46,6 +48,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ])
 
   const integrante = permisos
+
+  // ¿Tiene jornada abierta? Decide si las secciones de trabajo piden marcar
+  // entrada. Va después de los permisos porque necesita el id del integrante,
+  // y se traga su propio error: sin este dato la app sigue, solo que sin freno
+  // — preferible a una pantalla en blanco por un fallo de una consulta.
+  const jornadaAbierta = permisos?.id
+    ? Boolean(await new JornadasRepository(supabase).getAbierta(permisos.id).catch(() => null))
+    : true
+
   const nombre = permisos?.nombre ?? user.email ?? 'Usuario'
   const email = permisos?.email ?? user.email ?? ''
   const avatarUrl = permisos?.avatar_url ?? null
@@ -79,9 +90,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
           {/* Main content */}
           <div className="flex flex-col flex-1 min-w-0 relative z-10">
-            <Topbar nombre={nombre} email={email} avatarUrl={avatarUrl} />
+            <Topbar nombre={nombre} email={email} avatarUrl={avatarUrl} jornadaAbierta={jornadaAbierta} />
             <main className="flex-1 overflow-y-auto overflow-x-hidden pb-nav-movil md:pb-0 h-full">
-              <PageTransition>{children}</PageTransition>
+              <PageTransition>
+                <FrenoJornada jornadaAbierta={jornadaAbierta}>{children}</FrenoJornada>
+              </PageTransition>
             </main>
           </div>
       </AppShell>

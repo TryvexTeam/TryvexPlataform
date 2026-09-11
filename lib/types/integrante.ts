@@ -47,6 +47,7 @@ export const NotificacionesSchema = z.object({
   cita_invitado: z.boolean().default(true),
   llamada_entrante: z.boolean().default(true),
   tareas_atrasadas: z.boolean().default(true),
+  jornada_cerrada: z.boolean().default(true),
 })
 
 /**
@@ -164,6 +165,7 @@ export const NOTIFICACIONES_LABELS: { key: keyof Notificaciones; label: string; 
   { key: 'cita_invitado', label: 'Citas', descripcion: 'Cuando te invitan a una cita o evento' },
   { key: 'llamada_entrante', label: 'Llamadas', descripcion: 'Cuando alguien del equipo te llama por la app' },
   { key: 'tareas_atrasadas', label: 'Tareas atrasadas', descripcion: 'Una vez al día, si tienes tareas pasadas de fecha' },
+  { key: 'jornada_cerrada', label: 'Jornada cerrada sola', descripcion: 'Si olvidaste marcar salida y la cerramos por ti' },
 ]
 
 export const DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as const
