@@ -34,6 +34,22 @@ export type Jornada = {
   updated_at: string
 }
 
+/**
+ * Alguien que tiene la jornada abierta AHORA, para la portada.
+ *
+ * Lleva `pausas` porque el reloj de la portada las descuenta igual que el de
+ * la página de jornada: dos relojes contando distinto la misma jornada es peor
+ * que no tener el segundo.
+ */
+export type JornadaAbiertaDeEquipo = {
+  id: string
+  integrante_id: string
+  nombre: string
+  avatar_url: string | null
+  entrada_at: string
+  pausas: Pausa[]
+}
+
 /** Fila de la vista jornadas_resumen: horas ya calculadas y descontadas las pausas. */
 export type JornadaResumen = {
   id: string
@@ -49,7 +65,21 @@ export type JornadaResumen = {
 }
 
 /** Segundos trabajados hasta ahora, descontando pausas cerradas y la pausa en curso. */
-export function segundosTrabajados(jornada: Jornada, ahora = new Date()): number {
+/**
+ * Lo mínimo para calcular tiempo: no hace falta una `Jornada` entera.
+ *
+ * Así el reloj de la portada (que trae solo entrada, pausas y el nombre) usa
+ * exactamente la misma cuenta que el de la página de jornada, sin castear ni
+ * duplicar la fórmula. Dos relojes que cuentan distinto la misma jornada es
+ * peor que no tener el segundo.
+ */
+export type TramoDeTrabajo = {
+  entrada_at: string
+  salida_at?: string | null
+  pausas?: Pausa[] | null
+}
+
+export function segundosTrabajados(jornada: TramoDeTrabajo, ahora = new Date()): number {
   const fin = jornada.salida_at ? new Date(jornada.salida_at) : ahora
   const bruto = (fin.getTime() - new Date(jornada.entrada_at).getTime()) / 1000
 
@@ -68,7 +98,7 @@ export function formatearDuracion(segundos: number): string {
   return `${h}h ${String(m).padStart(2, '0')}m`
 }
 
-export function enPausa(jornada: Jornada): boolean {
+export function enPausa(jornada: TramoDeTrabajo): boolean {
   const ultima = jornada.pausas?.[jornada.pausas.length - 1]
   return Boolean(ultima && !ultima.fin)
 }

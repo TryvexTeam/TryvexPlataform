@@ -13,6 +13,7 @@ import { EventosRepository } from '@/lib/repos/eventos'
 import { DashDeck, type LeadTarjeta, type TareaDelDia } from '@/components/dashboard/dash-deck'
 import { SkeletonDeck } from '@/components/dashboard/skeleton-deck'
 import { AgendaHoy } from '@/components/dashboard/agenda-hoy'
+import { PanelAtrasos } from '@/components/dashboard/panel-atrasos'
 import { ProximaCita } from '@/components/dashboard/proxima-cita'
 import { inicioDiaSantiago } from '@/lib/utils/fecha-santiago'
 import type { TramoEmbudo } from '@/components/dashboard/embudo-tira'
@@ -194,6 +195,7 @@ export default async function DashboardPage() {
     tarjetas,
     citaProxima,
     marcadorEquipo,
+    atrasos,
   ] = await Promise.all([
     integranteId
       ? new JornadasRepository(supabase).getAbierta(integranteId).catch(() => null)
@@ -386,6 +388,31 @@ export default async function DashboardPage() {
         return []
       }
     })(),
+    /**
+     * Lo primero de la portada: qué debo yo y quién está trabajando ahora.
+     *
+     * Va en el mismo `Promise.all` que el resto: pedirlo aparte sumaría su
+     * espera a la de todo lo demás en vez de correr en paralelo.
+     *
+     * Si falla, devuelve vacío en vez de tumbar el panel — igual que hacen las
+     * otras secciones. Una portada sin este bloque sigue sirviendo; una portada
+     * en blanco, no.
+     */
+    (async () => {
+      try {
+        const [misAtrasadas, misAtrasadasTotal, atrasadasEquipo, conectados] = await Promise.all([
+          integranteId ? tareas.listVencidasDe(hoy, integranteId).catch(() => []) : [],
+          integranteId ? tareas.contarVencidas(hoy, integranteId).catch(() => 0) : 0,
+          // Del equipo solo el total, y solo con permiso: sin él la RLS lo
+          // negaría igual y el número no se muestra.
+          veEquipo ? tareas.contarVencidas(hoy).catch(() => null) : null,
+          new JornadasRepository(supabase).listAbiertas().catch(() => []),
+        ])
+        return { misAtrasadas, misAtrasadasTotal, atrasadasEquipo, conectados }
+      } catch {
+        return { misAtrasadas: [], misAtrasadasTotal: 0, atrasadasEquipo: null, conectados: [] }
+      }
+    })(),
   ])
 
   const nombre = integrante?.nombre?.split(' ')[0] ?? 'por aquí'
@@ -395,6 +422,24 @@ export default async function DashboardPage() {
           cumple ese papel y repetir "Panel de Mando" encima solo agregaba una
           línea que nadie lee dos veces. La landmark sigue anunciada. */}
       <h1 className="sr-only">Panel de Mando</h1>
+
+      {/* Antes que nada: lo que uno debe y quién está en jornada. Va arriba del
+          deck a propósito — si hay que buscarlo, no cumple su función. */}
+      <div className="mb-4 md:mb-6">
+        <PanelAtrasos
+          misAtrasadas={atrasos.misAtrasadas.map((t) => ({
+            id: t.id,
+            titulo: t.titulo,
+            fecha_limite: t.fecha_limite,
+            prioridad: t.prioridad,
+          }))}
+          misAtrasadasTotal={atrasos.misAtrasadasTotal}
+          atrasadasEquipo={atrasos.atrasadasEquipo}
+          conectados={atrasos.conectados}
+          miIntegranteId={integranteId}
+        />
+      </div>
+
       <Suspense fallback={<SkeletonDeck />}>
         <DashDeck
           nombre={nombre}

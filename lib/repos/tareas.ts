@@ -128,6 +128,35 @@ export class TareasRepository {
    * `integranteId` acota a las mias via `tarea_responsables!inner`,
    * exactamente como `contarVencidas`.
    */
+  /**
+   * Las tareas atrasadas de una persona, con detalle y lo más vencido arriba.
+   *
+   * `contarVencidas` da el número; esto da los títulos. En la portada el número
+   * solo no sirve: "tienes 4 atrasadas" no mueve a nadie, y "Rotar el token del
+   * canal — 7 días" sí, porque ya dice qué hacer.
+   *
+   * `!inner` en la relación: sin eso Supabase devuelve también las tareas sin
+   * ese responsable, con el array vacío.
+   */
+  async listVencidasDe(hoyISO: string, integranteId: string, limite = 6): Promise<TareaConResponsables[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (this.supabase as any)
+      .from('tareas')
+      .select(
+        `*, tarea_responsables!inner ( integrante_id, dim_integrantes ( nombre, avatar_url ) )`,
+      )
+      .is('eliminado_at', null)
+      .neq('estado', 'listo')
+      .not('fecha_limite', 'is', null)
+      .lt('fecha_limite', hoyISO)
+      .eq('tarea_responsables.integrante_id', integranteId)
+      .order('fecha_limite', { ascending: true })
+      .limit(limite)
+
+    if (error) throw new Error(error.message)
+    return ((data ?? []) as SupabaseTarea[]).map(mapTarea)
+  }
+
   async contarActivasPorPrioridad(
     integranteId?: string,
   ): Promise<{ alta: number; media: number; baja: number }> {
