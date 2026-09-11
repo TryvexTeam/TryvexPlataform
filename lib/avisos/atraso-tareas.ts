@@ -68,12 +68,43 @@ export function textoDelAviso(d: DestinatarioAviso, hoy = new Date()): string {
   ].join('\n')
 }
 
+/**
+ * Solo dígitos, para comparar dos teléfonos escritos distinto.
+ * '+56 9 7359 3282' y '56973593282' son el mismo número.
+ */
+function soloDigitos(tel: string): string {
+  return tel.replace(/\D/g, '')
+}
+
+/**
+ * ¿Este número es el del propio WhatsApp desde el que mandamos?
+ *
+ * Pasó de verdad: el 11-sep Cristian pasó el número de Ignacio y resultó ser
+ * **el mismo número de Tryvex** ("lo está usando así ahora hasta que tengamos
+ * otro chip"). Mandarle el aviso sería que el CRM se escriba a sí mismo, y el
+ * agente devolvería ese mensaje como entrante — un lead o un hilo fantasma
+ * creado por nuestro propio recordatorio.
+ *
+ * Se compara contra `WA_NUMERO_PROPIO` si está configurado. Es una red, no un
+ * reemplazo del criterio: lo correcto sigue siendo no cargar ese número como
+ * teléfono personal de nadie.
+ */
+export function esElNumeroDeTryvex(telefono: string): boolean {
+  const propio = process.env.WA_NUMERO_PROPIO
+  if (!propio) return false
+  const a = soloDigitos(telefono)
+  const b = soloDigitos(propio)
+  if (!a || !b) return false
+  // Por la cola: uno puede venir con '+56' y el otro sin código de país.
+  return a.endsWith(b) || b.endsWith(a)
+}
+
 export interface ResultadoAviso {
   integrante_id: string
   nombre: string
   tareas: number
-  /** 'enviado' | 'simulado' (envío apagado) | 'sin-telefono' | 'error' */
-  estado: 'enviado' | 'simulado' | 'sin-telefono' | 'error'
+  /** 'enviado' | 'simulado' (envío apagado) | 'sin-telefono' | 'numero-propio' | 'error' */
+  estado: 'enviado' | 'simulado' | 'sin-telefono' | 'numero-propio' | 'error'
   detalle?: string
   texto: string
 }
@@ -118,6 +149,17 @@ export async function enviarAvisosDeAtraso(
       // cargado, y son justamente dos de los que más atraso acumulan. Se
       // reporta en vez de saltarlo en silencio.
       salida.push({ ...base, estado: 'sin-telefono' })
+      continue
+    }
+
+    if (esElNumeroDeTryvex(d.telefono)) {
+      // El CRM escribiéndose a sí mismo: el agente devolvería el mensaje como
+      // entrante y crearía un hilo fantasma.
+      salida.push({
+        ...base,
+        estado: 'numero-propio',
+        detalle: 'Es el número desde el que mandamos: se omite para no escribirnos solos',
+      })
       continue
     }
 

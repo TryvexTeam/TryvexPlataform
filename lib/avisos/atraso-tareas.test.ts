@@ -4,6 +4,7 @@ import {
   diasVencida,
   enviarAvisosDeAtraso,
   envioWhatsappEncendido,
+  esElNumeroDeTryvex,
   textoDelAviso,
   type DestinatarioAviso,
 } from './atraso-tareas'
@@ -133,5 +134,31 @@ describe('enviarAvisosDeAtraso', () => {
     expect(salida[0].estado).toBe('error')
     expect(salida[0].detalle).toBe('agente caído')
     expect(salida[1].estado).toBe('enviado')
+  })
+})
+
+describe('no escribirnos a nosotros mismos', () => {
+  it('omite el número propio de Tryvex', async () => {
+    // Pasó de verdad el 11-sep: el número de Ignacio ES el de Tryvex. Sin esto,
+    // el agente recibiría de vuelta nuestro propio recordatorio como un
+    // mensaje entrante y abriría un hilo fantasma.
+    process.env.AVISOS_WA = 'on'
+    process.env.WA_NUMERO_PROPIO = '+56973593282'
+    const [r] = await enviarAvisosDeAtraso([persona({ telefono: '+56973593282' })], HOY)
+    expect(r.estado).toBe('numero-propio')
+    delete process.env.WA_NUMERO_PROPIO
+  })
+
+  it('reconoce el mismo número escrito distinto', () => {
+    process.env.WA_NUMERO_PROPIO = '+56 9 7359 3282'
+    expect(esElNumeroDeTryvex('56973593282')).toBe(true)
+    expect(esElNumeroDeTryvex('973593282')).toBe(true)
+    expect(esElNumeroDeTryvex('+56956371360')).toBe(false)
+    delete process.env.WA_NUMERO_PROPIO
+  })
+
+  it('sin WA_NUMERO_PROPIO configurado no bloquea a nadie', () => {
+    delete process.env.WA_NUMERO_PROPIO
+    expect(esElNumeroDeTryvex('+56973593282')).toBe(false)
   })
 })
