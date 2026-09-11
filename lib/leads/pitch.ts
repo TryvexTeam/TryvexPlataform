@@ -133,6 +133,70 @@ const RESUMEN: Record<Familia, string> = {
 }
 
 /**
+ * Los tres estados de "¿tiene sitio web?", los mismos que usa `lib/vex/draft.ts`.
+ *
+ * Antes esto no existía acá: el guion afirmaba "no tienes un sitio web propio"
+ * para todos. Para el 13,5% de la cartera que sí tiene uno, eso es falso en el
+ * primer renglón — y el límite de Cristian fue textual: "no información falsa".
+ *
+ * `no-sabemos` es el caso real y frecuente: el auditor de leads encuentra un
+ * dominio que responde con el nombre del negocio, pero no distingue un sitio
+ * real de uno parqueado. Con `url_web` cargado y `tiene_web` en false, la
+ * respuesta honesta no es sí ni no: es preguntar.
+ */
+export type EstadoWeb = 'si' | 'no' | 'no-sabemos'
+
+export function estadoWebDelLead(lead: Lead): EstadoWeb {
+  if (lead.tiene_web === true) return 'si'
+  // Una URL cargada junto a un "no tiene web" es un dato que se contradice a
+  // sí mismo: no alcanza para afirmar, pero sí para dejar de negar.
+  if (lead.url_web?.trim()) return 'no-sabemos'
+  return lead.tiene_web === false ? 'no' : 'no-sabemos'
+}
+
+/**
+ * Lo que se le ofrece a un negocio que YA tiene sitio. No es una página: es que
+ * esa página deje de ser un folleto y empiece a tomar el trabajo repetitivo.
+ * Sale del catálogo real de tryvex.tech (automatización, IA aplicada).
+ */
+const BENEFICIO_CON_WEB: Record<Familia, string> = {
+  citas: 'conectar tu web con la agenda para que el cliente reserve solo y te llegue confirmado, sin que nadie conteste el mensaje',
+  comida: 'que los pedidos entren desde tu web o WhatsApp con las opciones ya puestas, en vez de ir preguntando uno por uno',
+  optica: 'que la hora del examen se agende sola desde tu web y llegue al sistema, sin anotar a mano',
+  taller: 'que la cotización entre por tu web con los datos del auto ya completos, y te llegue filtrada',
+  tienda: 'conectar tu catálogo con el WhatsApp para que responder tallas, stock y precios deje de ser trabajo manual',
+  generico: 'automatizar la parte repetitiva de atender clientes, para que tu web deje de ser solo una vitrina',
+}
+
+const RESUMEN_CON_WEB: Record<Familia, string> = {
+  citas: 'Ya tienen sitio. La oportunidad es la agenda: que reserven solos y la hora llegue confirmada, sin contestar mensajes.',
+  comida: 'Ya tienen sitio. La oportunidad son los pedidos: que entren con las opciones puestas en vez de coordinarse por WhatsApp.',
+  optica: 'Ya tienen sitio. La oportunidad es la agenda de exámenes: que se reserve sola y entre al sistema.',
+  taller: 'Ya tienen sitio. La oportunidad es la cotización: que entre con los datos completos y filtrada.',
+  tienda: 'Ya tienen sitio. La oportunidad es el catálogo conectado al WhatsApp: tallas, stock y precios sin responder a mano.',
+  generico: 'Ya tienen sitio. La oportunidad es automatizar lo repetitivo de atender clientes.',
+}
+
+/** La pregunta cambia: no es cómo los encuentran, es cuánto tiempo les cuesta atender. */
+const PREGUNTA_CON_WEB: Record<Familia, string> = {
+  citas: '¿Cuando alguien quiere hora, la reserva solo desde la web, o igual terminan escribiéndote por WhatsApp y tú los anotas?',
+  comida: '¿Los pedidos entran solos desde la web, o igual terminan coordinándose por WhatsApp uno por uno?',
+  optica: '¿La hora del examen se agenda sola desde la web, o la anotan ustedes cuando llaman?',
+  taller: '¿Las cotizaciones llegan con los datos del auto ya puestos, o igual hay que preguntar todo por teléfono?',
+  tienda: '¿Cuántas veces al día responden la misma pregunta de talla, stock o precio por WhatsApp?',
+  generico: '¿Qué parte de atender a un cliente nuevo siguen haciendo a mano hoy?',
+}
+
+const RESUMEN_SIN_SABER: Record<Familia, string> = {
+  citas: 'No sabemos si tienen sitio. Confirmarlo en la llamada: si no tienen, página con agenda; si tienen, conectar esa agenda para que reserven solos.',
+  comida: 'No sabemos si tienen sitio. Confirmarlo en la llamada: si no tienen, carta y pedidos online; si tienen, que los pedidos entren solos.',
+  optica: 'No sabemos si tienen sitio. Confirmarlo en la llamada: si no tienen, catálogo y agenda de exámenes; si tienen, automatizar esa agenda.',
+  taller: 'No sabemos si tienen sitio. Confirmarlo en la llamada: si no tienen, cotización online; si tienen, que llegue con los datos completos.',
+  tienda: 'No sabemos si tienen sitio. Confirmarlo en la llamada: si no tienen, catálogo online; si tienen, conectarlo al WhatsApp.',
+  generico: 'No sabemos si tienen sitio. Confirmarlo en la llamada y, según eso, proponer la página o automatizar lo que ya tienen.',
+}
+
+/**
  * El guion a mostrar para un lead: si tiene un pitch editado a mano guardado, ese;
  * si no, el generado automáticamente desde sus datos.
  */
@@ -163,14 +227,32 @@ export function generarGuionAuto(lead: Lead): Guion {
     resenas != null && rating != null
       ? `Además, **${resenas} reseñas con ${rating} estrellas** — te va muy bien… `
       : 'Además, se nota que te va bien… '
+  // La señal se arma segun los tres estados. Afirmar "no tienes sitio web" a un
+  // negocio que si tiene es falso en el primer renglon, y ahi se pierde la
+  // conversacion entera: "no informacion falsa".
+  const estadoWeb = estadoWebDelLead(lead)
+  const cierreSeñal =
+    estadoWeb === 'si'
+      ? 'y **ya tienen su sitio web**, que es más de lo que hace la mayoría. ' +
+        'Justo por eso te llamo: lo que veo no es que falte la página, es lo que ' +
+        'pasa después — por eso preferí preguntarte antes de asumirlo.”'
+      : estadoWeb === 'no-sabemos'
+        ? 'Y acá me falta un dato: **no sé si tienen sitio web propio o no**. ' +
+          'Preferí preguntarte en vez de dar por hecho cualquiera de las dos.”'
+        : 'pero **no tienes un sitio web propio**. No sé si hoy eso te está costando ' +
+          'clientes o no — por eso preferí preguntarte antes de asumirlo.”'
   const señal =
     `“Estuve mirando ${rubro} en ${comuna} y me quedé con el tuyo: ${alago} ${traccion}` +
-    'pero **no tienes un sitio web propio**. No sé si hoy eso te está costando ' +
-    'clientes o no — por eso preferí preguntarte antes de asumirlo.”' +
+    cierreSeñal +
     (tieneIg ? ' (Vi que sí tienes Instagram, así que gente te busca.)' : '')
 
   return {
-    resumen: RESUMEN[f],
+    resumen:
+      estadoWeb === 'si'
+        ? RESUMEN_CON_WEB[f]
+        : estadoWeb === 'no-sabemos'
+          ? RESUMEN_SIN_SABER[f]
+          : RESUMEN[f],
     editado: false,
     turnos: [
       {
@@ -189,7 +271,7 @@ export function generarGuionAuto(lead: Lead): Guion {
       { rol: 'Tú — la señal', texto: señal },
       {
         rol: 'Tú — pregunta',
-        texto: `“${PREGUNTA[f]}”`,
+        texto: `“${estadoWeb === 'si' ? PREGUNTA_CON_WEB[f] : PREGUNTA[f]}”`,
         guia: 'Deja que hable. Lo que responda es la punta del diagnóstico — anótalo.',
       },
       {
@@ -198,7 +280,10 @@ export function generarGuionAuto(lead: Lead): Guion {
         // numero. Aunque conteste "no se, hartos", ya sintio el peso — eso
         // vende mas que cualquier frase armada.
         rol: 'Tú — implicación',
-        texto: '“Y cuando eso pasa —que alguien te busca y no te encuentra, o se cansa de esperar— ¿tienes idea de cuántos se te van así, más o menos, al mes?”',
+        texto:
+          estadoWeb === 'si'
+            ? '“Y todo ese tiempo que se va contestando lo mismo —¿cuántas horas a la semana calculas que son?”'
+            : '“Y cuando eso pasa —que alguien te busca y no te encuentra, o se cansa de esperar— ¿tienes idea de cuántos se te van así, más o menos, al mes?”',
         guia: 'No le des tú el número: déjalo que lo diga él. La respuesta no importa tanto como el hecho de que la piense.',
       },
       {
@@ -208,7 +293,10 @@ export function generarGuionAuto(lead: Lead): Guion {
         // pagina web" (o sea, ~77% no tiene). Si cambia el estudio,
         // actualizar el numero aca.
         rol: 'Tú — el porqué (sin vender)',
-        texto: `“Mira, no te llamo para venderte nada ahora. Lo que hacemos es ${BENEFICIO[f]}. Y esto no te pasa solo a ti: casi 8 de cada 10 pymes en Chile tampoco tienen página web propia. Por eso el que sí la tiene se está llevando a los clientes que te buscan a ti por Google. Te quiero mostrar rapidito qué te estás perdiendo.”`,
+        texto:
+          estadoWeb === 'si'
+            ? `“Mira, no te llamo para venderte nada ahora. Lo que hacemos es ${BENEFICIO_CON_WEB[f]}. Tener la página es el primer paso y ya lo dieron; la mayoría se queda ahí, con una vitrina bonita que igual obliga a contestar todo a mano. Te quiero mostrar rapidito qué se puede sacar de encima.”`
+            : `“Mira, no te llamo para venderte nada ahora. Lo que hacemos es ${BENEFICIO[f]}. Y esto no te pasa solo a ti: casi 8 de cada 10 pymes en Chile tampoco tienen página web propia. Por eso el que sí la tiene se está llevando a los clientes que te buscan a ti por Google. Te quiero mostrar rapidito qué te estás perdiendo.”`,
       },
       {
         rol: 'Tú — cierre',
