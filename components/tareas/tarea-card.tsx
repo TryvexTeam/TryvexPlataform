@@ -4,7 +4,7 @@ import { CalendarDays, AlertCircle, Trash2, ListChecks } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 import { parseFechaLocal } from '@/lib/utils/fecha-santiago'
-import { porcentajeProgreso, type ProgresoSubtareas } from '@/lib/utils/progreso-subtareas'
+import type { ProgresoSubtareas } from '@/lib/utils/progreso-subtareas'
 
 const prioridadConfig = {
   alta:  { label: 'Alta',  style: { background: 'oklch(63% 0.21 22 / 12%)', color: 'oklch(72% 0.17 22)',  border: '1px solid oklch(63% 0.21 22 / 28%)' } },
@@ -56,7 +56,7 @@ export function TareaCard({ tarea, onClick, enPapelera, progreso, onAbrirPasos }
           onClick?.()
         }
       }}
-      className="rounded-xl p-3 cursor-pointer select-none transition-all duration-150"
+      className="rounded-xl px-2.5 py-2 cursor-pointer select-none transition-all duration-150"
       style={{
         background: isVencida ? 'oklch(63% 0.21 22 / 6%)' : 'oklch(10% 0.004 240)',
         border: isVencida ? '1px solid oklch(63% 0.21 22 / 25%)' : '1px solid var(--tx-border)',
@@ -71,88 +71,49 @@ export function TareaCard({ tarea, onClick, enPapelera, progreso, onAbrirPasos }
         if (!isVencida) (e.currentTarget as HTMLElement).style.border = '1px solid var(--tx-border)'
       }}
     >
-      {/* Tipo + esfuerzo */}
-      <div className="flex items-center justify-between mb-2">
+      {/* Fila 1: tipo, título y esfuerzo en la misma línea.
+
+          El título va a UNA línea (antes eran hasta dos): con dos, media
+          columna quedaba dentada y entraban menos tarjetas en pantalla. El
+          título completo sigue estando en el `title` y dentro de la ficha. */}
+      <div className="flex items-center gap-1.5 min-w-0">
         <span
-          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
           style={tipoConfig[tarea.tipo].style}
         >
           {tipoConfig[tarea.tipo].label}
         </span>
+        <p
+          title={tarea.titulo}
+          className="flex-1 min-w-0 truncate text-[13px] font-medium leading-snug"
+          style={{ color: 'var(--tx-ink-primary)' }}
+        >
+          {tarea.titulo}
+        </p>
         <span
-          className="text-[10px] font-mono font-semibold"
+          className="text-[10px] font-mono font-semibold shrink-0"
           style={{ color: 'var(--tx-ink-muted)' }}
         >
           {esfuerzoConfig[tarea.esfuerzo]}
         </span>
       </div>
 
-      {/* Título */}
-      <p
-        className="text-[13px] font-medium leading-snug mb-2.5 line-clamp-2"
-        style={{ color: 'var(--tx-ink-primary)' }}
-      >
-        {tarea.titulo}
-      </p>
-
       {enPapelera && tarea.eliminado_at && (
-        <div className="flex items-center gap-1 text-[10px] mb-2" style={{ color: 'var(--tx-ink-muted)' }}>
+        <div className="flex items-center gap-1 text-[10px] mt-1" style={{ color: 'var(--tx-ink-muted)' }}>
           <Trash2 size={10} />
           En la papelera · hace {formatDistanceToNow(new Date(tarea.eliminado_at), { locale: es })}
         </div>
       )}
 
-      {/* Avance de los pasos.
+      {/* Fila 2: prioridad, fecha, pasos y responsables.
 
-          Antes una tarea con 11 de 12 pasos hechos se veía igual que una sin
-          empezar: el avance solo existía dentro de la ficha. Se pinta solo si
-          la tarea tiene pasos, y es un botón para poder marcarlos sin entrar.
-
-          `stopPropagation`: la tarjeta entera es un botón que navega a la
-          tarea; sin esto, tocar los pasos abriría el modal Y navegaría. */}
-      {progreso && progreso.total > 0 && (
-        <button
-          type="button"
-          disabled={!onAbrirPasos}
-          onClick={(e) => {
-            e.stopPropagation()
-            onAbrirPasos?.()
-          }}
-          onKeyDown={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          aria-label={`Ver los ${progreso.total} pasos de ${tarea.titulo}`}
-          // min-h-11: 44px reales de alto para el pulgar. Los márgenes negativos
-          // devuelven el aire que ese alto agrega, para que la tarjeta no crezca
-          // de golpe solo por ser tocable.
-          className="-mt-1 mb-1.5 flex min-h-11 w-full min-w-0 flex-col justify-center gap-1 rounded-lg px-1 -mx-1 text-left transition-colors enabled:hover:bg-white/[0.04] disabled:cursor-default"
-        >
-          <span
-            className="flex items-center gap-1 text-[10px] font-medium"
-            style={{ color: 'var(--tx-ink-muted)' }}
-          >
-            <ListChecks size={10} />
-            {progreso.hechas}/{progreso.total} pasos
-          </span>
-          {/* Fondo sólido con opacidad, nunca backdrop-filter: en su navegador
-              `backdrop-filter` puede devolver `none` y la barra desaparecería. */}
-          <span className="block h-1 w-full overflow-hidden rounded-full bg-white/[0.08]">
-            <span
-              className="block h-full rounded-full transition-all"
-              style={{
-                background:
-                  progreso.hechas === progreso.total
-                    ? 'oklch(72% 0.17 145)'
-                    : 'oklch(74% 0.17 55)',
-                width: `${porcentajeProgreso(progreso)}%`,
-              }}
-            />
-          </span>
-        </button>
-      )}
-
-      {/* Footer */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
+          `min-h-7` fija el alto de la fila. Sin eso, la tarjeta que tiene pasos
+          medía 73px y la que no, 65: el chip de pasos es tocable (44px reales
+          recortados con márgenes negativos) y estiraba la fila solo en algunas.
+          Con la altura fija, todas las tarjetas miden lo mismo — que es lo que
+          permite calcular de un vistazo cuántas entran en la columna. */}
+      <div className="flex min-h-7 items-center justify-between mt-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <span
             className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
             style={prioridadConfig[tarea.prioridad].style}
@@ -168,6 +129,38 @@ export function TareaCard({ tarea, onClick, enPapelera, progreso, onAbrirPasos }
               {isVencida ? <AlertCircle size={10} /> : <CalendarDays size={10} />}
               {format(parseFechaLocal(tarea.fecha_limite), 'd MMM', { locale: es })}
             </span>
+          )}
+
+          {/* El avance de los pasos: antes era una barra con su propia fila, lo
+              que hacía que unas tarjetas fueran más altas que otras. Ahora es
+              una pastilla en esta misma fila y abre el mismo modal.
+
+              `stopPropagation`: la tarjeta entera navega a la tarea; sin esto,
+              tocar los pasos abriría el modal Y navegaría. */}
+          {progreso && progreso.total > 0 && (
+            <button
+              type="button"
+              disabled={!onAbrirPasos}
+              onClick={(e) => {
+                e.stopPropagation()
+                onAbrirPasos?.()
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              aria-label={`Ver los ${progreso.total} pasos de ${tarea.titulo}`}
+              // Zona tocable de 44px sin que la tarjeta crezca: el alto se gana
+              // con padding vertical que los márgenes negativos devuelven.
+              className="-my-2 flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-1 text-[10px] font-medium transition-colors enabled:hover:bg-white/[0.06] disabled:cursor-default"
+              style={{
+                color:
+                  progreso.hechas === progreso.total
+                    ? 'oklch(72% 0.17 145)'
+                    : 'var(--tx-ink-muted)',
+              }}
+            >
+              <ListChecks size={10} />
+              {progreso.hechas}/{progreso.total}
+            </button>
           )}
         </div>
 
