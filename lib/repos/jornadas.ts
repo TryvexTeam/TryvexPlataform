@@ -1,5 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
-import type { Jornada, JornadaResumen, JornadaUpdate, OrigenJornada, Pausa } from '@/lib/types/jornada'
+import type {
+  Jornada,
+  JornadaAbiertaDeEquipo,
+  JornadaResumen,
+  JornadaUpdate,
+  OrigenJornada,
+  Pausa,
+} from '@/lib/types/jornada'
 import { enPausa } from '@/lib/types/jornada'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/types/database'
@@ -23,6 +30,35 @@ export class JornadasRepository {
       .maybeSingle()
     if (error) throw new Error(error.message)
     return (data as Jornada) ?? null
+  }
+
+  /**
+   * Quiénes tienen la jornada ABIERTA en este momento, con su nombre y desde
+   * cuándo.
+   *
+   * `getAbierta` responde por una persona; esto responde "quién está trabajando
+   * ahora", que es lo que va en la portada. Se trae `pausas` porque el reloj
+   * de la portada descuenta las pausas igual que el de la página de jornada:
+   * dos relojes que cuentan distinto para la misma jornada es peor que no
+   * tener el segundo.
+   */
+  async listAbiertas(): Promise<JornadaAbiertaDeEquipo[]> {
+    const { data, error } = await this.sb
+      .from('jornadas')
+      .select('id, integrante_id, entrada_at, pausas, dim_integrantes ( nombre, avatar_url )')
+      .is('salida_at', null)
+      .order('entrada_at', { ascending: true })
+    if (error) throw new Error(error.message)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return ((data ?? []) as any[]).map((fila) => ({
+      id: fila.id as string,
+      integrante_id: fila.integrante_id as string,
+      nombre: (fila.dim_integrantes?.nombre as string) ?? 'Sin nombre',
+      avatar_url: (fila.dim_integrantes?.avatar_url as string | null) ?? null,
+      entrada_at: fila.entrada_at as string,
+      pausas: (fila.pausas ?? []) as Pausa[],
+    }))
   }
 
   async listPropias(integranteId: string, desde: string, hasta: string): Promise<JornadaResumen[]> {
