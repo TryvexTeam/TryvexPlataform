@@ -1,17 +1,20 @@
 import { z } from 'zod'
 
 /**
- * Los cinco estados del tablero, en orden de avance.
+ * Los cuatro estados del tablero, en orden de avance.
  *
  * Los identificadores no coinciden con lo que se ve en pantalla: `sin_empezar`
  * se muestra como "Por hacer" y `listo` como "Hecho". Se conservaron al ampliar
- * el tablero a cinco columnas (migración 055) porque había 39 referencias
- * repartidas por la app y renombrarlas solo por la etiqueta era regalar riesgo.
- * Lo que se ve es cosa de la interfaz; lo que se guarda no tiene por qué
- * moverse. `ESTADOS_TAREA` es la fuente de las etiquetas.
+ * el tablero (migración 055) porque había 39 referencias repartidas por la app
+ * y renombrarlas solo por la etiqueta era regalar riesgo. Lo que se ve es cosa
+ * de la interfaz; lo que se guarda no tiene por qué moverse. `ESTADOS_TAREA` es
+ * la fuente de las etiquetas.
+ *
+ * `backlog` se eliminó el 11-sep-2026 (migración 101): tenía 2 tareas de 23 y
+ * ninguna con fecha. Una columna que nadie usa no ordena el trabajo, solo suma
+ * una fila más que scrollear. Las que había subieron a `sin_empezar`.
  */
 export const EstadoTareaSchema = z.enum([
-  'backlog',
   'sin_empezar',
   'en_curso',
   'en_revision',
@@ -22,7 +25,6 @@ export type EstadoTarea = z.infer<typeof EstadoTareaSchema>
 
 /** Columnas del tablero, en orden, con la etiqueta que ve el equipo. */
 export const ESTADOS_TAREA: { id: EstadoTarea; label: string }[] = [
-  { id: 'backlog', label: 'Backlog' },
   { id: 'sin_empezar', label: 'Por hacer' },
   { id: 'en_curso', label: 'En curso' },
   { id: 'en_revision', label: 'En revisión' },

@@ -176,6 +176,7 @@ export function ProyectoDetalle({
           currentUserId={currentUserId}
           currentIntegranteId={currentIntegranteId}
           proyectoId={proyecto.id}
+          papeleraCount={tareas.filter((t) => t.eliminado_at).length}
           compacto
         />
       </div>

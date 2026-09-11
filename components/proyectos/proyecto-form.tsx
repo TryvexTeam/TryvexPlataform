@@ -65,7 +65,7 @@ export function ProyectoForm({
   /**
    * Servicios vendidos en este proyecto. Es un conjunto porque una venta real
    * rara vez es un solo servicio: landing más automatización, o MVP más
-   * WhatsApp. Se marcan todos y las tareas de cada uno entran al backlog.
+   * WhatsApp. Se marcan todos y las tareas de cada uno entran a "Por hacer".
    */
   const [servicios, setServicios] = useState<Set<string>>(
     () => new Set(proyecto?.servicios_ids ?? []),
@@ -200,7 +200,7 @@ export function ProyectoForm({
                     <span className="text-[var(--tx-ink-primary)]">
                       {precioCorto(precioPropuesto)}
                     </span>{' '}
-                    de base · {tareasPropuestas} tareas al backlog
+                    de base · {tareasPropuestas} tareas por hacer
                   </p>
                 )}
               </div>

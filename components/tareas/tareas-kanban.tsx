@@ -23,6 +23,8 @@ import {
   type TareaInsert,
 } from '@/lib/types/tarea'
 
+type Prioridad = TareaConResponsables['prioridad']
+
 /**
  * Color de cada columna del tablero.
  *
@@ -33,7 +35,6 @@ import {
  * discrepar.
  */
 const COLOR_COLUMNA: Record<EstadoTarea, string> = {
-  backlog: '#64748b',
   sin_empezar: '#94a3b8',
   en_curso: '#f59e0b',
   en_revision: '#a78bfa',
@@ -45,6 +46,19 @@ const COLUMNS = ESTADOS_TAREA.map((e) => ({
   title: e.label,
   color: COLOR_COLUMNA[e.id],
 }))
+
+/**
+ * Las tres prioridades, para filtrar el tablero.
+ *
+ * Se puede tener varias apretadas a la vez: lo normal es querer ver "alta y
+ * media" y dejar fuera lo de baja, no mirar una sola. Ninguna apretada = se ven
+ * todas, que es como estaba antes de que esto existiera.
+ */
+const PRIORIDADES: { id: Prioridad; label: string; color: string }[] = [
+  { id: 'alta', label: 'Alta', color: '#ef4444' },
+  { id: 'media', label: 'Media', color: '#f59e0b' },
+  { id: 'baja', label: 'Baja', color: '#64748b' },
+]
 
 const PAPELERA_ID = 'papelera'
 
@@ -67,6 +81,11 @@ interface TareasKanbanProps {
    * que ninguna tarjeta tenga que pedir lo suyo por separado.
    */
   progresoSubtareas?: MapaProgreso
+  /**
+   * Cuántas tareas hay en la papelera. Llega como número porque la lista no
+   * viaja con el tablero: se pide al abrir el panel (`abrirPapelera`).
+   */
+  papeleraCount?: number
 }
 
 export function TareasKanban({
@@ -76,12 +95,20 @@ export function TareasKanban({
   proyectoId,
   compacto = false,
   progresoSubtareas = {},
+  papeleraCount = 0,
 }: TareasKanbanProps) {
   const router = useRouter()
   const [tareas, setTareas] = useState<TareaConResponsables[]>(initialTareas)
   const [formOpen, setFormOpen] = useState(false)
   const [soloMias, setSoloMias] = useState(false)
+  const [prioridades, setPrioridades] = useState<Prioridad[]>([])
   const [papeleraOpen, setPapeleraOpen] = useState(false)
+  // La papelera vive aparte de `tareas` desde que dejó de viajar con el
+  // tablero. `enPapeleraCount` es lo que se pinta en el tacho y la cabecera;
+  // `enPapelera` solo se llena al abrir el panel.
+  const [enPapelera, setEnPapelera] = useState<TareaConResponsables[]>([])
+  const [enPapeleraCount, setEnPapeleraCount] = useState(papeleraCount)
+  const [cargandoPapelera, setCargandoPapelera] = useState(false)
   const [papeleraDropCount, setPapeleraDropCount] = useState(0)
   const [eliminarDefinitivoId, setEliminarDefinitivoId] = useState<string | null>(null)
   const [pasosDe, setPasosDe] = useState<{ id: string; titulo: string } | null>(null)
@@ -114,11 +141,50 @@ export function TareasKanban({
   }
 
   const tareasVisibles = tareas.filter((t) => !t.eliminado_at)
-  const enPapelera = tareas.filter((t) => t.eliminado_at)
 
-  const tareasFiltradas = soloMias && currentIntegranteId
-    ? tareasVisibles.filter((t) => t.responsables.some((r) => r.integrante_id === currentIntegranteId))
-    : tareasVisibles
+  // El número del servidor manda cuando revalida, salvo que ya lo hayamos
+  // movido nosotros en esta pantalla (mismo patrón de sync que `initialTareas`).
+  const [papeleraCountPrevio, setPapeleraCountPrevio] = useState(papeleraCount)
+  if (papeleraCount !== papeleraCountPrevio) {
+    setPapeleraCountPrevio(papeleraCount)
+    setEnPapeleraCount(papeleraCount)
+  }
+
+  async function abrirPapelera() {
+    setPapeleraOpen(true)
+    setCargandoPapelera(true)
+    try {
+      const res = await fetch(
+        proyectoId ? `/api/tareas?papelera=1&proyecto=${proyectoId}` : '/api/tareas?papelera=1',
+      )
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error ?? 'error')
+      const filas = json.data as TareaConResponsables[]
+      setEnPapelera(filas)
+      setEnPapeleraCount(filas.length)
+    } catch {
+      toast.error('No se pudo cargar la papelera')
+    } finally {
+      setCargandoPapelera(false)
+    }
+  }
+
+  // Los dos filtros se acumulan: "mis tareas" + "alta" es mi trabajo urgente.
+  // Sin prioridades elegidas no filtra nada, para que el tablero siga
+  // mostrándolo todo mientras nadie toque los botones.
+  const tareasFiltradas = tareasVisibles.filter((t) => {
+    if (soloMias && currentIntegranteId &&
+        !t.responsables.some((r) => r.integrante_id === currentIntegranteId)) return false
+    if (prioridades.length > 0 && !prioridades.includes(t.prioridad)) return false
+    return true
+  })
+
+  const hayFiltro = soloMias || prioridades.length > 0
+  const ocultas = tareasVisibles.length - tareasFiltradas.length
+
+  function alternarPrioridad(p: Prioridad) {
+    setPrioridades((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]))
+  }
 
   const columns = COLUMNS.map((col) => ({
     ...col,
@@ -175,6 +241,10 @@ export function TareasKanban({
       return
     }
     setPapeleraDropCount((n) => n + 1)
+    setEnPapeleraCount((n) => n + 1)
+    // Si el panel está abierto, que la tarea aparezca ahí en el momento en vez
+    // de esperar a la próxima apertura.
+    if (anterior) setEnPapelera((prev) => [{ ...anterior, eliminado_at: marcaOptimista }, ...prev])
     toast.success('Tarea movida a la papelera')
   }
 
@@ -190,10 +260,16 @@ export function TareasKanban({
   }
 
   async function handleRestaurar(id: string, estado?: EstadoTarea) {
-    const anterior = tareas.find((t) => t.id === id)
-    setTareas((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, eliminado_at: null, ...(estado ? { estado } : {}) } : t))
-    )
+    // La tarea está en la papelera, que ya no es parte de `tareas`: restaurarla
+    // es sacarla de una lista y ponerla en la otra, no cambiarle un campo.
+    const anterior = enPapelera.find((t) => t.id === id)
+    if (!anterior) return
+    const restaurada = { ...anterior, eliminado_at: null, ...(estado ? { estado } : {}) }
+
+    setEnPapelera((prev) => prev.filter((t) => t.id !== id))
+    setEnPapeleraCount((n) => Math.max(0, n - 1))
+    setTareas((prev) => (prev.some((t) => t.id === id) ? prev : [restaurada, ...prev]))
+
     const res = await fetch(`/api/tareas/${id}/papelera`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -201,34 +277,33 @@ export function TareasKanban({
     })
     if (!res.ok) {
       toast.error('Error al restaurar la tarea')
-      // Solo revierte si sigue "restaurada" (eliminado_at null): si mientras
-      // tanto otra acción ya la movió de nuevo a la papelera, esa es la que manda.
-      if (anterior) {
-        setTareas((prev) =>
-          prev.map((t) => (t.id === id && t.eliminado_at === null ? anterior : t))
-        )
-      }
+      setTareas((prev) => prev.filter((t) => t.id !== id))
+      setEnPapelera((prev) => (prev.some((t) => t.id === id) ? prev : [anterior, ...prev]))
+      setEnPapeleraCount((n) => n + 1)
       return
     }
     toast.success('Tarea restaurada')
   }
 
   async function handleEliminarDefinitivo(id: string) {
-    const anterior = tareas.find((t) => t.id === id)
-    const indice = tareas.findIndex((t) => t.id === id)
-    setTareas((prev) => prev.filter((t) => t.id !== id))
+    const anterior = enPapelera.find((t) => t.id === id)
+    const indice = enPapelera.findIndex((t) => t.id === id)
+    setEnPapelera((prev) => prev.filter((t) => t.id !== id))
+    setEnPapeleraCount((n) => Math.max(0, n - 1))
+
     const res = await fetch(`/api/tareas/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       toast.error('Error al eliminar la tarea')
       // Solo la reinserta si sigue ausente: si mientras tanto otra acción ya
       // la trajo de vuelta (poco probable con el item borrado, pero por las dudas).
       if (anterior) {
-        setTareas((prev) => {
+        setEnPapelera((prev) => {
           if (prev.some((t) => t.id === id)) return prev
           const copia = [...prev]
-          copia.splice(indice, 0, anterior)
+          copia.splice(indice < 0 ? 0 : indice, 0, anterior)
           return copia
         })
+        setEnPapeleraCount((n) => n + 1)
       }
       return
     }
@@ -258,14 +333,22 @@ export function TareasKanban({
         {compacto ? (
           <p className="text-sm text-[var(--tx-ink-secondary)]">
             {tareasVisibles.length} {tareasVisibles.length === 1 ? 'tarea' : 'tareas'}
-            {enPapelera.length > 0 && ` · ${enPapelera.length} en la papelera`}
+            {enPapeleraCount > 0 && ` · ${enPapeleraCount} en la papelera`}
           </p>
         ) : (
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-[var(--tx-ink-primary)]">Tareas</h1>
             <p className="text-sm text-[var(--tx-ink-muted)] mt-0.5">
               {tareasVisibles.length} tareas en total
-              {enPapelera.length > 0 && ` · ${enPapelera.length} en la papelera`}
+              {enPapeleraCount > 0 && ` · ${enPapeleraCount} en la papelera`}
+              {hayFiltro && ocultas > 0 && (
+                <>
+                  {' · '}
+                  <span className="text-[var(--tx-accent-2)]">
+                    {ocultas} {ocultas === 1 ? 'escondida' : 'escondidas'} por el filtro
+                  </span>
+                </>
+              )}
             </p>
           </div>
         )}
@@ -279,6 +362,25 @@ export function TareasKanban({
             <Filter size={14} className="mr-1.5" />
             Mis tareas
           </Button>
+          {PRIORIDADES.map((p) => {
+            const activa = prioridades.includes(p.id)
+            return (
+              <Button
+                key={p.id}
+                variant={activa ? 'default' : 'outline'}
+                size="sm"
+                title={`Ver solo prioridad ${p.label.toLowerCase()}`}
+                aria-pressed={activa}
+                onClick={() => alternarPrioridad(p.id)}
+              >
+                <span
+                  className="h-2 w-2 rounded-full mr-1.5 shrink-0"
+                  style={{ background: p.color }}
+                />
+                {p.label}
+              </Button>
+            )
+          })}
           <Button size="sm" className="flex-1 sm:flex-none" onClick={() => setFormOpen(true)}>
             <Plus size={14} className="mr-1.5" />
             Nueva tarea
@@ -303,11 +405,13 @@ export function TareasKanban({
           />
         )}
         onDragEnd={handleDragEnd}
+        colapsables
+        memoriaColapso={proyectoId ? `tareas:${proyectoId}` : 'tareas'}
         trashZone={{
           id: PAPELERA_ID,
-          count: enPapelera.length,
+          count: enPapeleraCount,
           dropCount: papeleraDropCount,
-          onOpen: () => setPapeleraOpen(true),
+          onOpen: abrirPapelera,
         }}
       />
 
@@ -334,11 +438,13 @@ export function TareasKanban({
             <DialogTitle className="flex items-center gap-2">
               <Trash2 size={16} />
               Papelera
-              <span className="text-xs font-normal text-[var(--tx-ink-muted)]">({enPapelera.length})</span>
+              <span className="text-xs font-normal text-[var(--tx-ink-muted)]">({enPapeleraCount})</span>
             </DialogTitle>
           </DialogHeader>
 
-          {enPapelera.length === 0 ? (
+          {cargandoPapelera ? (
+            <p className="text-sm text-[var(--tx-ink-muted)] text-center py-8">Cargando…</p>
+          ) : enPapelera.length === 0 ? (
             <p className="text-sm text-[var(--tx-ink-muted)] text-center py-8">
               La papelera está vacía
             </p>

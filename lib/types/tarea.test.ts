@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { TareaInsertSchema, TareaUpdateSchema } from './tarea'
+import {
+  ESTADOS_TAREA,
+  EstadoTareaSchema,
+  etiquetaEstado,
+  TareaInsertSchema,
+  TareaUpdateSchema,
+} from './tarea'
 
 describe('TareaUpdateSchema', () => {
   it('un PATCH que solo trae la fecha NO devuelve tipo, estado, prioridad ni esfuerzo', () => {
@@ -39,5 +45,38 @@ describe('TareaUpdateSchema', () => {
     expect(r.estado).toBe('sin_empezar')
     expect(r.prioridad).toBe('media')
     expect(r.esfuerzo).toBe('medio')
+  })
+})
+
+describe('el tablero ya no tiene Backlog (migración 101)', () => {
+  it('rechaza "backlog" como estado', () => {
+    // Si esto vuelve a pasar, hay código creando tareas en una columna que no
+    // se dibuja: la tarea existe, nadie la ve. Fue justo lo que hacía
+    // `lib/repos/proyectos.ts` hasta este cambio.
+    expect(EstadoTareaSchema.safeParse('backlog').success).toBe(false)
+    expect(TareaInsertSchema.safeParse({ titulo: 'x', estado: 'backlog' }).success).toBe(false)
+    expect(TareaUpdateSchema.safeParse({ estado: 'backlog' }).success).toBe(false)
+  })
+
+  it('quedan cuatro columnas, en orden de avance', () => {
+    expect(ESTADOS_TAREA.map((e) => e.id)).toEqual([
+      'sin_empezar',
+      'en_curso',
+      'en_revision',
+      'listo',
+    ])
+  })
+
+  it('cada columna del tablero tiene su etiqueta visible', () => {
+    // Los ids no son lo que se lee en pantalla; si alguno se queda sin
+    // etiqueta, la columna aparece con el nombre técnico.
+    for (const e of ESTADOS_TAREA) {
+      expect(etiquetaEstado(e.id)).toBe(e.label)
+      expect(e.label).not.toBe(e.id)
+    }
+  })
+
+  it('una tarea nueva sigue naciendo en "Por hacer"', () => {
+    expect(TareaInsertSchema.parse({ titulo: 'x' }).estado).toBe('sin_empezar')
   })
 })
