@@ -99,7 +99,7 @@ export interface KanbanColumn<T> {
    *
    * Sin esto la columna se pinta como siempre, de corrido.
    */
-  grupos?: { id: string; titulo: string; items: T[] }[]
+  grupos?: { id: string; titulo: string; items: T[]; atrasadas?: number }[]
 }
 
 interface KanbanBoardProps<T extends { id: string }> {
@@ -125,6 +125,16 @@ interface KanbanBoardProps<T extends { id: string }> {
    * tamaños, para quien monta dos tableros distintos por breakpoint.
    */
   orientation?: 'horizontal' | 'vertical' | 'responsive'
+  /**
+   * 'elastico' (por defecto): las columnas se reparten el ancho disponible.
+   * 'fijo': todas miden lo mismo y el sobrante queda libre a la derecha.
+   *
+   * En tareas hace falta 'fijo'. Al sacar la columna Backlog, su ancho se lo
+   * repartieron las cuatro restantes y volvieron a llegar hasta la esquina
+   * inferior derecha, tapando el tacho de la papelera. Los tableros de leads,
+   * clientes y proyectos tienen más columnas y sí quieren repartirse el ancho.
+   */
+  anchoColumna?: 'elastico' | 'fijo'
   /**
    * Con qué nombre se recuerda, en este navegador, qué secciones están
    * plegadas. Sin esto el plegado funciona igual pero se olvida al recargar.
@@ -363,7 +373,30 @@ function DroppableColumn<T extends { id: string }>({
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-ink-secondary)] truncate">
                         {grupo.titulo}
                       </span>
-                      <span className="ml-auto shrink-0 rounded-full bg-[var(--tx-surface-2)] px-1.5 text-[10px] font-medium tabular-nums text-[var(--tx-ink-muted)]">
+                      {/* El contador se pone rojo cuando el grupo tiene algo
+                          atrasado. Un mes plegado tiene que poder avisar que
+                          adentro hay algo vencido: si no, plegarlo se vuelve
+                          una forma cómoda de no enterarse. */}
+                      <span
+                        title={
+                          grupo.atrasadas
+                            ? `${grupo.atrasadas} ${grupo.atrasadas === 1 ? 'tarea atrasada' : 'tareas atrasadas'}`
+                            : undefined
+                        }
+                        className="ml-auto shrink-0 rounded-full px-1.5 text-[10px] font-medium tabular-nums"
+                        style={
+                          grupo.atrasadas
+                            ? {
+                                background: 'oklch(63% 0.21 22 / 16%)',
+                                color: 'oklch(72% 0.17 22)',
+                                border: '1px solid oklch(63% 0.21 22 / 32%)',
+                              }
+                            : {
+                                background: 'var(--tx-surface-2)',
+                                color: 'var(--tx-ink-muted)',
+                              }
+                        }
+                      >
                         {grupo.items.length}
                       </span>
                     </button>
@@ -432,6 +465,7 @@ export function KanbanBoard<T extends { id: string }>({
   scrollContainerRef,
   trashZone,
   orientation = 'responsive',
+  anchoColumna = 'elastico',
   memoriaColapso,
 }: KanbanBoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -570,7 +604,11 @@ export function KanbanBoard<T extends { id: string }>({
             key={col.id}
             data-kanban-col={col.id}
             className={
-              orientation === 'vertical'
+              anchoColumna === 'fijo' && orientation !== 'vertical'
+                ? // Ancho fijo: apiladas en el teléfono, y desde `md` todas del
+                  // mismo porte, sin estirarse para llenar la pantalla.
+                  'flex flex-col w-full md:w-[272px] md:shrink-0'
+                : orientation === 'vertical'
                 ? 'flex flex-col w-full'
                 : orientation === 'responsive'
                   // Ancho completo apiladas; desde `md`, el mismo reparto que

@@ -24,6 +24,12 @@ export interface GrupoPorMes<T> {
   id: string
   titulo: string
   items: T[]
+  /**
+   * Cuántas del grupo van atrasadas. Se pinta en rojo en el contador: un mes
+   * plegado tiene que poder gritar que adentro hay algo vencido, si no plegarlo
+   * se vuelve una forma cómoda de no enterarse.
+   */
+  atrasadas: number
 }
 
 /** Lo que necesita saber de una tarea para agruparla. */
@@ -33,7 +39,13 @@ interface ConFechaLimite {
 
 export const SIN_FECHA = 'sin-fecha'
 
-export function agruparPorMes<T extends ConFechaLimite>(items: T[]): GrupoPorMes<T>[] {
+export function agruparPorMes<T extends ConFechaLimite>(
+  items: T[],
+  estaAtrasada?: (item: T) => boolean,
+): GrupoPorMes<T>[] {
+  const contarAtrasadas = (lista: T[]) =>
+    estaAtrasada ? lista.filter(estaAtrasada).length : 0
+
   const sinFecha: T[] = []
   const porMes = new Map<string, T[]>()
 
@@ -55,7 +67,8 @@ export function agruparPorMes<T extends ConFechaLimite>(items: T[]): GrupoPorMes
   const grupos: GrupoPorMes<T>[] = []
 
   if (sinFecha.length > 0) {
-    grupos.push({ id: SIN_FECHA, titulo: 'Sin fecha', items: sinFecha })
+    // Sin fecha no puede estar atrasada: no hay contra qué compararla.
+    grupos.push({ id: SIN_FECHA, titulo: 'Sin fecha', items: sinFecha, atrasadas: 0 })
   }
 
   for (const clave of [...porMes.keys()].sort()) {
@@ -65,11 +78,15 @@ export function agruparPorMes<T extends ConFechaLimite>(items: T[]): GrupoPorMes
     const fecha = parseFechaLocal(`${clave}-01`)
     const mismoAno = fecha.getFullYear() === new Date().getFullYear()
     const titulo = format(fecha, mismoAno ? 'LLLL' : "LLLL yyyy", { locale: es })
+    // Dentro del mes, lo que vence antes va primero.
+    const ordenadas = items.sort((a, b) =>
+      (a.fecha_limite ?? '').localeCompare(b.fecha_limite ?? ''),
+    )
     grupos.push({
       id: clave,
       titulo: titulo.charAt(0).toUpperCase() + titulo.slice(1),
-      // Dentro del mes, lo que vence antes va primero.
-      items: items.sort((a, b) => (a.fecha_limite ?? '').localeCompare(b.fecha_limite ?? '')),
+      items: ordenadas,
+      atrasadas: contarAtrasadas(ordenadas),
     })
   }
 
