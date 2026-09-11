@@ -9,6 +9,20 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
 
   const url = new URL(req.url)
+
+  // La papelera se pide aparte y solo cuando se abre el panel: el tablero
+  // arranca sin ella (ver `contarPapelera`).
+  if (url.searchParams.get('papelera') === '1') {
+    try {
+      const repo = new TareasRepository(supabase)
+      const proyecto = url.searchParams.get('proyecto') ?? undefined
+      return NextResponse.json({ success: true, data: await repo.listPapelera(proyecto) })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al listar la papelera'
+      return NextResponse.json({ success: false, error: message }, { status: 500 })
+    }
+  }
+
   const desde = url.searchParams.get('desde')
   const hasta = url.searchParams.get('hasta')
   if (!desde || !hasta) {

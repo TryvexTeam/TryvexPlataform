@@ -9,16 +9,15 @@ export default async function TareasPage() {
   if (!user) redirect('/login')
 
   const repo = new TareasRepository(supabase)
-  // La papelera se carga junto al resto: el kanban filtra por eliminado_at en
-  // el cliente, asi arrastrar de vuelta no depende de un segundo fetch.
-  const [tareas, papelera] = await Promise.all([repo.list(), repo.listPapelera()])
+  // De la papelera solo viene el número. La lista se pide al abrir el panel:
+  // el 11-sep tenía 48 tareas contra 23 vivas, y se cargaban enteras —con sus
+  // responsables y su avance de pasos— aunque nadie la abriera.
+  const [tareas, papeleraCount] = await Promise.all([repo.list(), repo.contarPapelera()])
 
   // Una sola consulta agregada para TODAS las tarjetas: el avance de los pasos
   // se pinta en la tarjeta, y pedirlo tarjeta por tarjeta sería un viaje a la
   // base por tarea (N+1). Ver `progresoSubtareas`.
-  const progresoSubtareas = await repo.progresoSubtareas(
-    [...tareas, ...papelera].map((t) => t.id),
-  )
+  const progresoSubtareas = await repo.progresoSubtareas(tareas.map((t) => t.id))
 
   const { data: integrante } = await supabase
     .from('dim_integrantes')
@@ -29,7 +28,8 @@ export default async function TareasPage() {
   return (
     <div className="p-4 md:p-6">
       <TareasKanban
-        initialTareas={[...tareas, ...papelera]}
+        initialTareas={tareas}
+        papeleraCount={papeleraCount}
         currentUserId={user.id}
         currentIntegranteId={integrante?.id ?? null}
         progresoSubtareas={progresoSubtareas}

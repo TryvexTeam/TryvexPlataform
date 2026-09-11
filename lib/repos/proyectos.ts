@@ -70,7 +70,7 @@ export class ProyectosRepository {
    *
    * Un proyecto puede llevar varios servicios porque una venta real rara vez
    * es uno solo: landing más automatización, o MVP más WhatsApp. Las tareas de
-   * todos entran al mismo backlog, cada una etiquetada con su servicio en la
+   * todos entran juntos a "Por hacer", cada una etiquetada con su servicio en la
    * descripción para que se sepa de qué bloque viene.
    */
   async crearConPlantilla(
@@ -102,7 +102,8 @@ export class ProyectosRepository {
         esfuerzo: tarea.esfuerzo,
         proyecto_id: proyectoId,
         created_by: createdBy,
-        estado: 'backlog',
+        // Nacen en 'Por hacer': 'backlog' dejó de existir en la migración 101.
+        estado: 'sin_empezar',
       })),
     )
 

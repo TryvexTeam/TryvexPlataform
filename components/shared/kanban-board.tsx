@@ -18,9 +18,73 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
+import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/**
+ * Qué columnas están plegadas, guardado en este navegador.
+ *
+ * Es un store de verdad (no un `useState` + effect) porque el valor vive fuera
+ * de React: lo escribe el usuario al plegar y lo lee `localStorage`. Leerlo en
+ * un effect obligaba a un segundo render y se veía el parpadeo de las columnas
+ * abriéndose y plegándose de golpe; además el lint lo prohíbe con razón
+ * (`react-hooks/set-state-in-effect`).
+ *
+ * `useSyncExternalStore` permite dar una respuesta distinta en el servidor
+ * (nada plegado, que es lo único que el servidor puede saber) sin que React
+ * tire abajo el árbol por no coincidir con el navegador.
+ */
+const VACIO: string[] = []
+const oyentes = new Set<() => void>()
+// El snapshot tiene que ser el MISMO objeto mientras no cambie nada: si se
+// devolviera un array nuevo en cada lectura, React entendería "cambió" y
+// entraría en un bucle de renders.
+const cache = new Map<string, { crudo: string | null; valor: string[] }>()
+
+function claveDe(memoria: string) {
+  return `kanban-colapso:${memoria}`
+}
+
+function leerColapsadas(memoria: string): string[] {
+  let crudo: string | null = null
+  try {
+    crudo = window.localStorage.getItem(claveDe(memoria))
+  } catch {
+    // Modo privado o site data bloqueada: no recordar el plegado es molesto;
+    // que reviente el tablero, no.
+    return VACIO
+  }
+  const previo = cache.get(memoria)
+  if (previo && previo.crudo === crudo) return previo.valor
+  let valor = VACIO
+  try {
+    const parseado: unknown = crudo ? JSON.parse(crudo) : null
+    if (Array.isArray(parseado)) valor = parseado.filter((x): x is string => typeof x === 'string')
+  } catch {
+    // Un JSON viejo con otra forma no debería dejar el tablero inservible.
+  }
+  cache.set(memoria, { crudo, valor })
+  return valor
+}
+
+function guardarColapsadas(memoria: string, valor: string[]) {
+  try {
+    window.localStorage.setItem(claveDe(memoria), JSON.stringify(valor))
+  } catch {
+    // Igual que al leer: preferible olvidar el plegado a romper el tablero.
+  }
+  cache.set(memoria, { crudo: JSON.stringify(valor), valor })
+  oyentes.forEach((f) => f())
+}
+
+function suscribir(f: () => void) {
+  oyentes.add(f)
+  return () => {
+    oyentes.delete(f)
+  }
+}
 
 export interface KanbanColumn<T> {
   id: string
@@ -52,6 +116,24 @@ interface KanbanBoardProps<T extends { id: string }> {
    * tamaños, para quien monta dos tableros distintos por breakpoint.
    */
   orientation?: 'horizontal' | 'vertical' | 'responsive'
+  /**
+   * Deja plegar columnas apretando su cabecera.
+   *
+   * Con el tablero lleno, las columnas largas empujan todo hacia abajo y las de
+   * más allá se pierden de vista. Plegar una la deja en su cabecera con el
+   * contador, sin tener que mover ni archivar nada.
+   *
+   * Una columna plegada SIGUE aceptando que le sueltes una tarjeta: si dejara
+   * de hacerlo, plegar rompería el arrastre, que es para lo que existe el
+   * tablero. Mientras algo pasa por encima se abre sola para que veas dónde cae.
+   */
+  colapsables?: boolean
+  /**
+   * Con qué nombre se recuerdan las columnas plegadas en este navegador. Sin
+   * esto, plegar se olvida al recargar y hay que rehacerlo cada vez. Va por
+   * tablero: el de un proyecto no tiene por qué heredar lo del tablero general.
+   */
+  memoriaColapso?: string
 }
 
 /** Tacho de basura propio (no un icono de lucide): cuerpo + tapa por separado
@@ -223,11 +305,18 @@ function SortableCard<T extends { id: string }>({
 function DroppableColumn<T extends { id: string }>({
   col,
   renderCard,
+  colapsada = false,
 }: {
   col: KanbanColumn<T>
   renderCard: (item: T, isDragging?: boolean) => React.ReactNode
+  colapsada?: boolean
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id })
+
+  // Plegada se esconden las tarjetas, pero la zona de drop sigue montada: por
+  // eso `isOver` la vuelve a abrir mientras arrastras algo encima. Así plegar
+  // nunca te quita la posibilidad de mover una tarea ahí.
+  const oculta = colapsada && !isOver
 
   return (
     <SortableContext
@@ -239,7 +328,10 @@ function DroppableColumn<T extends { id: string }>({
         ref={setNodeRef}
         animate={isOver ? { scale: 1.005 } : { scale: 1 }}
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className="flex flex-col gap-2 min-h-[120px] rounded-xl p-2 transition-all duration-150"
+        className={cn(
+          'flex flex-col gap-2 rounded-xl p-2 transition-all duration-150',
+          oculta ? 'min-h-[36px]' : 'min-h-[120px]',
+        )}
         style={{
           // El acento del CRM, no un morado suelto: `oklch(... 292)` venía de
           // una paleta anterior y en el tablero se leía como si perteneciera a
@@ -256,13 +348,26 @@ function DroppableColumn<T extends { id: string }>({
           animate="show"
           className="flex flex-col gap-2"
         >
-          {col.items.map((item) => (
-            <SortableCard key={item.id} item={item} renderCard={renderCard} />
-          ))}
+          {!oculta &&
+            col.items.map((item) => (
+              <SortableCard key={item.id} item={item} renderCard={renderCard} />
+            ))}
         </motion.div>
 
         <AnimatePresence>
-          {col.items.length === 0 && (
+          {oculta && col.items.length > 0 && (
+            <motion.p
+              key="plegada"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-xs text-[var(--tx-ink-muted)] text-center py-2"
+            >
+              {col.items.length} {col.items.length === 1 ? 'tarea plegada' : 'tareas plegadas'}
+            </motion.p>
+          )}
+
+          {!oculta && col.items.length === 0 && (
             <motion.p
               key="empty"
               initial={{ opacity: 0 }}
@@ -285,7 +390,7 @@ function DroppableColumn<T extends { id: string }>({
            *
            * Va al final de la lista porque es donde se añade la tarjeta.
            */}
-          {isOver && col.items.length > 0 && (
+          {isOver && !oculta && col.items.length > 0 && (
             <motion.div
               key="destino"
               initial={{ opacity: 0, height: 0 }}
@@ -314,9 +419,28 @@ export function KanbanBoard<T extends { id: string }>({
   scrollContainerRef,
   trashZone,
   orientation = 'responsive',
+  colapsables = false,
+  memoriaColapso,
 }: KanbanBoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sobrePapelera, setSobrePapelera] = useState(false)
+  // Sin `memoriaColapso` el plegado no se recuerda entre recargas, pero sigue
+  // funcionando dentro de la sesión (`sesion`, abajo).
+  const [sesion, setSesion] = useState<string[]>(VACIO)
+  const guardadas = useSyncExternalStore(
+    suscribir,
+    () => (memoriaColapso ? leerColapsadas(memoriaColapso) : VACIO),
+    () => VACIO,
+  )
+  const colapsadas = memoriaColapso ? guardadas : sesion
+
+  function alternarColapso(id: string) {
+    const siguiente = colapsadas.includes(id)
+      ? colapsadas.filter((c) => c !== id)
+      : [...colapsadas, id]
+    if (memoriaColapso) guardarColapsadas(memoriaColapso, siguiente)
+    else setSesion(siguiente)
+  }
 
   // Sensores separados a proposito: con un solo PointerSensor, en el celular
   // cualquier intento de hacer scroll horizontal por las columnas arrancaba un
@@ -454,25 +578,58 @@ export function KanbanBoard<T extends { id: string }>({
                 : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink lg:min-w-[200px]'
             }
           >
-            {/* Column header */}
-            <div className="flex items-center justify-between mb-2.5 px-1">
-              <div className="flex items-center gap-2">
-                {col.color && (
-                  <span
-                    className="h-2 w-2 rounded-full shrink-0"
-                    style={{ background: col.color }}
-                  />
-                )}
-                <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] tracking-tight">
-                  {col.title}
-                </span>
-              </div>
-              <span className="text-[11px] font-medium text-[var(--tx-ink-muted)] bg-[var(--tx-surface-2)] rounded-full px-2 py-0.5 tabular-nums">
-                {col.items.length}
-              </span>
-            </div>
+            {/* Cabecera de la columna. Con `colapsables` es un botón que la
+                pliega; sin eso se comporta como siempre y ni siquiera cambia
+                el cursor, para no sugerir que se puede apretar algo que no. */}
+            {(() => {
+              const plegada = colapsadas.includes(col.id)
+              const Cabecera = colapsables ? 'button' : 'div'
+              return (
+                <>
+                  <Cabecera
+                    {...(colapsables
+                      ? {
+                          type: 'button' as const,
+                          onClick: () => alternarColapso(col.id),
+                          'aria-expanded': !plegada,
+                          title: plegada ? `Desplegar ${col.title}` : `Plegar ${col.title}`,
+                        }
+                      : {})}
+                    className={cn(
+                      'flex w-full items-center justify-between mb-2.5 px-1 text-left',
+                      colapsables &&
+                        'rounded-lg py-0.5 hover:bg-[var(--tx-surface-2)] transition-colors',
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {colapsables && (
+                        <ChevronDown
+                          size={13}
+                          className={cn(
+                            'shrink-0 text-[var(--tx-ink-muted)] transition-transform duration-150',
+                            plegada && '-rotate-90',
+                          )}
+                        />
+                      )}
+                      {col.color && (
+                        <span
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{ background: col.color }}
+                        />
+                      )}
+                      <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] tracking-tight truncate">
+                        {col.title}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-medium text-[var(--tx-ink-muted)] bg-[var(--tx-surface-2)] rounded-full px-2 py-0.5 tabular-nums shrink-0">
+                      {col.items.length}
+                    </span>
+                  </Cabecera>
 
-            <DroppableColumn col={col} renderCard={renderCard} />
+                  <DroppableColumn col={col} renderCard={renderCard} colapsada={plegada} />
+                </>
+              )
+            })()}
           </div>
         ))}
       </div>

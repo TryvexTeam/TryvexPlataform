@@ -213,16 +213,41 @@ export class TareasRepository {
     return ((data ?? []) as SupabaseTarea[]).map(mapTarea)
   }
 
+  /**
+   * Cuántas tareas hay en la papelera, sin traerlas.
+   *
+   * El tablero solo necesita el número (para el tacho y la cabecera); la lista
+   * recién hace falta cuando alguien abre el panel. Al 11-sep-2026 la papelera
+   * tenía 48 tareas contra 23 vivas: traerlas todas en cada carga era mover el
+   * doble de datos para pintar un "48".
+   */
+  async contarPapelera(proyectoId?: string): Promise<number> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q = (this.supabase as any)
+      .from('tareas')
+      .select('id', { count: 'exact', head: true })
+      .not('eliminado_at', 'is', null)
+    if (proyectoId) q = q.eq('proyecto_id', proyectoId)
+
+    const { count, error } = await q
+    if (error) throw new Error(error.message)
+    return count ?? 0
+  }
+
   /** Tareas en la papelera, mas recientes primero. Conservan estado, fecha
    *  limite, responsables y subtareas tal cual estaban al momento de borrarlas. */
-  async listPapelera(): Promise<TareaConResponsables[]> {
+  async listPapelera(proyectoId?: string): Promise<TareaConResponsables[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (this.supabase as any)
+    let q = (this.supabase as any)
       .from('tareas')
       .select(`*, tarea_responsables ( integrante_id, dim_integrantes ( nombre, avatar_url ) )`)
       .not('eliminado_at', 'is', null)
       .order('eliminado_at', { ascending: false })
+    // Dentro de un proyecto la papelera es la suya: mezclar las de otros
+    // proyectos deja restaurar ahi algo que no pertenece a este tablero.
+    if (proyectoId) q = q.eq('proyecto_id', proyectoId)
 
+    const { data, error } = await q
     if (error) throw new Error(error.message)
     return ((data ?? []) as SupabaseTarea[]).map(mapTarea)
   }
