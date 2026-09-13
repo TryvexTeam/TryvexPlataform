@@ -43,6 +43,38 @@ function ipDeLaSolicitud(req: Request): string | null {
   return null
 }
 
+/** Forma plausible de IPv4 o IPv6. No valida rangos: solo evita que entre
+ *  basura arbitraria a la tabla del rate limit. */
+export function pareceIP(valor: string): boolean {
+  if (valor.length > 45) return false
+  const ipv4 = /^(\d{1,3}\.){3}\d{1,3}$/
+  const ipv6 = /^[0-9a-fA-F:]+$/
+  return ipv4.test(valor) || (valor.includes(':') && ipv6.test(valor))
+}
+
+/**
+ * Quién es la persona que reserva, para el rate limit.
+ *
+ * El problema que resuelve: esta ruta no la llama el visitante, la llama el
+ * SERVIDOR de la landing con su token. Así que `ipDeLaSolicitud` devolvía
+ * siempre la IP de Vercel, y el límite de 3 reservas por hora se repartía
+ * entre TODOS los visitantes juntos: con tráfico real, el cuarto que agendara
+ * en una hora quedaba bloqueado sin haber hecho nada. Verificado el
+ * 13-sep-2026 — en `intentos_reserva_publica` todos los intentos figuraban con
+ * IPs de servidor, ninguna de un visitante.
+ *
+ * Por qué se puede confiar en la cabecera: para llegar acá hay que traer el
+ * `x-landing-token` válido, que solo tiene la landing. Un visitante no puede
+ * fabricar esta cabecera sin el token, y quien tiene el token es de casa. Si
+ * no viene, se cae a la IP de la petición: el límite sigue existiendo, solo
+ * que compartido como antes.
+ */
+export function ipDelVisitante(req: Request): string | null {
+  const declarada = req.headers.get('x-visitante-ip')?.trim()
+  if (declarada && pareceIP(declarada)) return declarada
+  return ipDeLaSolicitud(req)
+}
+
 function secretoValido(recibido: string | null): boolean {
   const esperado = process.env.LANDING_API_TOKEN
   if (!recibido || !esperado) return false
@@ -70,7 +102,7 @@ export async function POST(req: Request) {
   }
   const datos = parseo.data
 
-  const ip = ipDeLaSolicitud(req)
+  const ip = ipDelVisitante(req)
   const userAgent = req.headers.get('user-agent')?.slice(0, 180) ?? null
 
   // Sin IP no hay a quién frenar. Antes esto salteaba el rate limit por
