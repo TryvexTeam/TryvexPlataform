@@ -52,9 +52,11 @@ export function LeadDetalle({ lead, initialInteracciones, integranteId }: LeadDe
   }
 
   async function handleDelete() {
-    if (!confirm('¿Eliminar este lead?')) return
+    // Ya no destruye: el lead cae a la papelera y se puede restaurar con todo
+    // su historial. El texto lo dice para que nadie dude antes de apretar.
+    if (!confirm('¿Mandar este lead a la papelera? Podrás restaurarlo desde ahí.')) return
     await fetch(`/api/leads/${lead.id}`, { method: 'DELETE' })
-    toast.success('Lead eliminado')
+    toast.success('Lead en la papelera', { description: 'Se puede restaurar desde /leads/papelera' })
     router.push('/leads')
   }
 
