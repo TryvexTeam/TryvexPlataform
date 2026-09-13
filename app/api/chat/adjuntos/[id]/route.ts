@@ -154,8 +154,18 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         'Cache-Control': 'private, max-age=60',
       }
       if (esPagina) {
-        cabeceras['Content-Security-Policy'] = 'sandbox allow-scripts allow-popups allow-forms'
+        // `sandbox` = origen opaco: sin cookies, sin sesión, sin acceso al CRM,
+        // aunque abran la URL suelta. `frame-ancestors 'self'` es lo que
+        // permite que el visor del chat lo dibuje, y solo desde nuestro
+        // dominio — la versión moderna de X-Frame-Options, en la misma
+        // cabecera.
+        cabeceras['Content-Security-Policy'] =
+          "sandbox allow-scripts allow-popups allow-forms; frame-ancestors 'self'"
       }
+      // Para navegadores que todavía miran esta cabecera antes que la CSP. Va
+      // en la respuesta y no en next.config porque este endpoint es la
+      // excepción: el resto del CRM sigue en DENY.
+      cabeceras['X-Frame-Options'] = 'SAMEORIGIN'
       return new NextResponse(await data.arrayBuffer(), { headers: cabeceras })
     }
   }

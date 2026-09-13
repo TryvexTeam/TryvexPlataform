@@ -27,13 +27,44 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        // Todo el CRM, MENOS el endpoint que sirve adjuntos del chat.
+        //
+        // `X-Frame-Options: DENY` llegó el 26-ago-2026 con la auditoría de
+        // seguridad y está bien para las pantallas: impide que alguien monte el
+        // CRM dentro de un marco ajeno y le robe clics al que está logueado.
+        //
+        // Pero aplicado a `/:path*` alcanzaba también a
+        // `/api/chat/adjuntos/[id]`, que existe justamente PARA mostrarse
+        // dentro de un marco: es lo que dibuja la vista previa de un HTML o un
+        // PDF en el chat. El navegador rechazaba enmarcarlo y mostraba
+        // "ha rechazado la conexión" sobre un recuadro en blanco — sin error en
+        // consola, sin fallo en el servidor, sin nada que delatara la causa.
+        // El visor estaba sano; lo bloqueaba una cabecera puesta cinco días
+        // después de construirlo.
+        //
+        // Ese endpoint trae su propia protección, que es la que de verdad
+        // importa acá: sirve el archivo con `Content-Security-Policy: sandbox`,
+        // así que el navegador lo trata como origen opaco —sin cookies, sin
+        // sesión, sin acceso al CRM— y además solo se deja enmarcar desde
+        // nuestro propio dominio.
+        source: "/((?!api/chat/adjuntos).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
           { key: "Content-Security-Policy-Report-Only", value: csp },
+        ],
+      },
+      {
+        // El endpoint de adjuntos: mismas protecciones, menos el DENY que le
+        // impedía cumplir su función. Se deja enmarcar solo desde este dominio.
+        source: "/api/chat/adjuntos/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
         ],
       },
     ];
