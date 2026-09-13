@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 
 import type { Lead } from '@/lib/types/lead'
 
@@ -85,6 +86,20 @@ export function LeadsCategories({ leads, activeEstado, onSelect }: LeadsCategori
       <div className="leads-categories__divider" />
       <span className="leads-categories__title">ESTADO</span>
       {ESTADO_CATS.map(renderItem)}
+
+      {/* La papelera necesita puerta propia: un lead marcado `eliminado_at` sin
+          pantalla donde verlo queda tan invisible como uno borrado, que es
+          justo el problema que la 104 vino a arreglar. */}
+      <div className="leads-categories__divider" />
+      <Link
+        href="/leads/papelera"
+        className="leads-categories__item"
+        style={{ color: 'var(--tx-ink-secondary)', textDecoration: 'none' }}
+      >
+        <span className="leads-categories__left">
+          <span className="truncate">Papelera</span>
+        </span>
+      </Link>
     </nav>
   )
 }

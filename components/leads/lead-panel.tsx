@@ -203,25 +203,25 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   const deleteLead = async () => {
     if (!lead) return
     // Toast destructivo — no confirm() nativo
-    toast('¿Eliminar este lead?', {
-      description: lead.nombre_negocio,
+    toast('¿Mandar este lead a la papelera?', {
+      description: `${lead.nombre_negocio} — se puede restaurar después`,
       action: {
-        label: 'Eliminar',
+        label: 'A la papelera',
         onClick: async () => {
           setLoading(true)
           try {
             const res = await fetch(`/api/leads/${lead.id}`, { method: 'DELETE' })
             if (res.ok) {
-              toast.success('Lead eliminado')
+              toast.success('Lead en la papelera', { description: 'Restaurable desde /leads/papelera' })
               const params = new URLSearchParams(window.location.search)
               params.delete('lead')
               router.replace(`/leads?${params.toString()}`)
               router.refresh()
             } else {
-              toast.error('Error al eliminar')
+              toast.error('No se pudo mover a la papelera')
             }
           } catch {
-            toast.error('Error de red al eliminar')
+            toast.error('Error de red al mover a la papelera')
           } finally {
             setLoading(false)
           }

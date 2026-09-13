@@ -63,6 +63,10 @@ export type TurnoPitch = z.infer<typeof TurnoPitchSchema>
 
 export const LeadSchema = z.object({
   id: z.string().uuid(),
+  // Papelera (migración 104): NULL = lead activo. Con fecha, el lead salió del
+  // tablero pero conserva ficha, historial y asignaciones hasta un borrado
+  // explícito desde la papelera.
+  eliminado_at: z.string().nullable().optional(),
   nombre_negocio: z.string(),
   telefono: z.string().nullable(),
   // Datos de contacto para confirmar/corregir en la llamada. `email` y

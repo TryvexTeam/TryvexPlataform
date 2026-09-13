@@ -33,6 +33,9 @@ export class LeadsRepository {
       // acerca, lo que hace falta es paginación de verdad en la UI, no subir
       // el número.
       .limit(5000)
+      // La papelera no es parte del tablero: un lead con `eliminado_at` salio
+      // de la vista pero conserva su ficha y todo su historial.
+      .is('eliminado_at', null)
 
     if (filters?.estado) query = query.eq('estado', filters.estado)
     if (filters?.nicho) query = query.eq('nicho', filters.nicho)
@@ -181,7 +184,75 @@ export class LeadsRepository {
     return (creado as { id: string }).id
   }
 
-  async delete(id: string): Promise<void> {
+  /**
+   * Manda el lead a la papelera. Reversible y sin tocar nada mas: conserva
+   * estado, score, asignaciones, interacciones y el hilo de WhatsApp.
+   *
+   * Esto reemplaza al DELETE que habia antes detras del boton "eliminar".
+   */
+  async moverAPapelera(id: string): Promise<void> {
+    const { error } = await this.sb
+      .from('fact_leads')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({ eliminado_at: new Date().toISOString() } as any)
+      .eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  /** Saca el lead de la papelera y lo devuelve al tablero con su estado intacto. */
+  async restaurar(id: string): Promise<void> {
+    const { error } = await this.sb
+      .from('fact_leads')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({ eliminado_at: null } as any)
+      .eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  /** Leads en la papelera, los ultimos en caer primero. */
+  async listPapelera(): Promise<Lead[]> {
+    const { data, error } = await this.sb
+      .from('fact_leads')
+      .select('*')
+      .not('eliminado_at', 'is', null)
+      .order('eliminado_at', { ascending: false })
+      .limit(5000)
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Lead[]
+  }
+
+  /** Cuantos leads hay en la papelera, sin traerlos. */
+  async contarPapelera(): Promise<number> {
+    const { count, error } = await this.sb
+      .from('fact_leads')
+      .select('id', { count: 'exact', head: true })
+      .not('eliminado_at', 'is', null)
+    if (error) throw new Error(error.message)
+    return count ?? 0
+  }
+
+  /**
+   * Borra el lead de verdad, sin vuelta atras.
+   *
+   * ⚠️ Esto NO borra solo una fila. De `fact_leads` cuelgan con ON DELETE
+   * CASCADE: `interacciones_lead`, `outreach_messages`, `mensajes_wa`,
+   * `lead_asignaciones` y `vex_conversaciones`. Se va el negocio Y todo lo que
+   * alguna vez se hablo con el — incluida su respuesta, si contesto.
+   *
+   * Por eso exige que el lead ya este en la papelera: borrar es un segundo
+   * paso deliberado, nunca el efecto de un clic en la ficha.
+   */
+  async borrarDefinitivo(id: string): Promise<void> {
+    const { data, error: errorLectura } = await this.sb
+      .from('fact_leads')
+      .select('eliminado_at')
+      .eq('id', id)
+      .single()
+    if (errorLectura || !data) throw new Error('El lead no existe')
+    if (!(data as { eliminado_at: string | null }).eliminado_at) {
+      throw new Error('Primero hay que mandar el lead a la papelera')
+    }
+
     const { error } = await this.sb.from('fact_leads').delete().eq('id', id)
     if (error) throw new Error(error.message)
   }
@@ -200,6 +271,7 @@ export class LeadsRepository {
       .from('fact_leads')
       .select('id', { count: 'exact', head: true })
       .eq('estado', estado)
+      .is('eliminado_at', null)
 
     if (soloIds) query = query.in('id', soloIds)
 
@@ -243,6 +315,7 @@ export class LeadsRepository {
       .from('fact_leads')
       .select('id, nombre_negocio, nicho, localidad, score, origen')
       .eq('estado', 'sin_contactar')
+      .is('eliminado_at', null)
       .order('score', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: true })
       .limit(limite)
@@ -393,6 +466,7 @@ export class LeadsRepository {
       // Estados cerrados no requieren acción: si ya se ganó, perdió o
       // descartó, escribirle hoy no mueve nada.
       .not('estado', 'in', '("ganado","perdido","descartado")')
+      .is('eliminado_at', null)
       .order('ultimo_contacto', { ascending: true, nullsFirst: true })
       .order('created_at', { ascending: true })
       .limit(10)

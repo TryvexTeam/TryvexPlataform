@@ -692,6 +692,7 @@ export interface Database {
       }
       fact_leads: {
         Row: {
+          eliminado_at: string | null
           id: string
           nombre_negocio: string
           telefono: string | null
@@ -727,6 +728,7 @@ export interface Database {
           ultima_llamada_respondio: boolean | null
         }
         Insert: {
+          eliminado_at?: string | null
           id?: string
           nombre_negocio: string
           telefono?: string | null
@@ -758,6 +760,7 @@ export interface Database {
           ultima_llamada_respondio?: boolean | null
         }
         Update: {
+          eliminado_at?: string | null
           id?: string
           nombre_negocio?: string
           telefono?: string | null
