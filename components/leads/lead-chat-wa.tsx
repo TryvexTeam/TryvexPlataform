@@ -7,6 +7,7 @@ import { iniciarSondeoVisible, visibilidadDelNavegador } from '@/lib/ui/sondeo-v
 import type { Lead } from '@/lib/types/lead'
 import { abreDiaNuevo } from '@/lib/utils/fecha-santiago'
 import { SeparadorDia } from '@/components/shared/separador-dia'
+import { textoSugerido } from '@/lib/leads/texto-sugerido'
 
 /**
  * El chat de WhatsApp del lead, DENTRO del CRM.
@@ -35,15 +36,15 @@ interface MensajeWa {
 /** Cada cuanto se mira si contestaron, mientras el chat esta abierto. */
 const REFRESCO_MS = 5000
 
-/** El primer mensaje, ya escrito. Editable: es un punto de partida, no un molde. */
-export function textoSugerido(lead: Lead): string {
-  const negocio = lead.nombre_negocio ?? 'tu negocio'
-  return (
-    `Hola 👋 ¿hablo con ${negocio}?\n\n` +
-    `Somos Tryvex. Ayudamos a negocios como el tuyo a conseguir más clientes ` +
-    `con una página web lista en días. ¿Te muestro un ejemplo, sin compromiso?`
-  )
-}
+/**
+ * El primer mensaje, ya escrito. Editable: es un punto de partida, no un molde.
+ *
+ * La plantilla vive en `lib/leads/texto-sugerido`, compartida con el otro panel
+ * de WhatsApp. Antes cada componente tenía la suya y las dos afirmaban cosas
+ * que nadie había mirado: esta ofrecía una página a cualquiera, y la del otro
+ * panel decía «todavía no tiene sitio web» a todos, siempre.
+ */
+export { textoSugerido }
 
 /** ¿Este estado de envío significa que el mensaje NO llegó? */
 function fallado(estado: string): boolean {
