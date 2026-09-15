@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/lib/types/lead'
 import type { MensajeWa } from '@/lib/types/mensaje-wa'
+import { textoSugerido } from '@/lib/leads/texto-sugerido'
 
 /** Cada cuánto se vuelve a mirar si llegó algo nuevo, con el panel a la vista. */
 const CADA_MS = 10_000
@@ -222,15 +223,16 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
   )
 }
 
-/** Template inicial de contacto. Vex lo reemplaza con copy personalizada (PAS). */
+/**
+ * Template inicial de contacto. Vex lo reemplaza con copy personalizada (PAS).
+ *
+ * 🔴 Antes afirmaba «Vimos que {negocio} todavía no tiene sitio web» a TODOS,
+ * sin mirar un solo dato — el mismo error que estuvimos toda la tarde del
+ * 15-sep sacando del redactor con IA, escrito a mano acá. Ahora usa la
+ * plantilla compartida, que solo afirma lo que sabemos.
+ */
 function buildTemplate(lead: Lead): string {
-  const negocio = lead.nombre_negocio ?? 'tu negocio'
-  return (
-    `Hola 👋 ¿hablo con ${negocio}?\n\n` +
-    `Somos Tryvex. Vimos que ${negocio} todavía no tiene sitio web y ayudamos a ` +
-    `negocios como el tuyo a conseguir más clientes con una página lista en días. ` +
-    `¿Te muestro un ejemplo sin compromiso?`
-  )
+  return textoSugerido(lead)
 }
 
 /**
