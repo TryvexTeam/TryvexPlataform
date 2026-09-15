@@ -283,7 +283,12 @@ export function generarGuionAuto(lead: Lead): Guion {
         texto:
           estadoWeb === 'si'
             ? '“Y todo ese tiempo que se va contestando lo mismo —¿cuántas horas a la semana calculas que son?”'
-            : '“Y cuando eso pasa —que alguien te busca y no te encuentra, o se cansa de esperar— ¿tienes idea de cuántos se te van así, más o menos, al mes?”',
+            : estadoWeb === 'no-sabemos'
+              ? // Sin saber si tienen sitio, "alguien te busca y no te
+                // encuentra" ya da por hecho que no lo encuentran. Se pregunta
+                // por el trabajo manual, que es cierto en los dos casos.
+                '“Y de los que llegan preguntando, ¿cuántos terminas atendiendo tú mismo uno por uno —más o menos, al día?”'
+              : '“Y cuando eso pasa —que alguien te busca y no te encuentra, o se cansa de esperar— ¿tienes idea de cuántos se te van así, más o menos, al mes?”',
         guia: 'No le des tú el número: déjalo que lo diga él. La respuesta no importa tanto como el hecho de que la piense.',
       },
       {
@@ -296,7 +301,13 @@ export function generarGuionAuto(lead: Lead): Guion {
         texto:
           estadoWeb === 'si'
             ? `“Mira, no te llamo para venderte nada ahora. Lo que hacemos es ${BENEFICIO_CON_WEB[f]}. Tener la página es el primer paso y ya lo dieron; la mayoría se queda ahí, con una vitrina bonita que igual obliga a contestar todo a mano. Te quiero mostrar rapidito qué se puede sacar de encima.”`
-            : `“Mira, no te llamo para venderte nada ahora. Lo que hacemos es ${BENEFICIO[f]}. Y esto no te pasa solo a ti: casi 8 de cada 10 pymes en Chile tampoco tienen página web propia. Por eso el que sí la tiene se está llevando a los clientes que te buscan a ti por Google. Te quiero mostrar rapidito qué te estás perdiendo.”`,
+            : estadoWeb === 'no-sabemos'
+              ? // Dos turnos antes acabamos de decirle "no sé si tienen sitio".
+                // Afirmar acá que le vamos a hacer uno se contradice con eso en
+                // la misma llamada, y es justo lo que el lead escucha: que no
+                // miramos su negocio. Se ofrece segun lo que conteste.
+                `“Mira, no te llamo para venderte nada ahora. Depende de lo que me digas: si todavía no tienen sitio, lo que hacemos es ${BENEFICIO[f]}; y si ya tienen uno, lo que aportamos es ${BENEFICIO_CON_WEB[f]}. Por eso prefiero preguntarte antes que llegar con algo armado. Te quiero mostrar rapidito qué se puede hacer en tu caso.”`
+              : `“Mira, no te llamo para venderte nada ahora. Lo que hacemos es ${BENEFICIO[f]}. Y esto no te pasa solo a ti: casi 8 de cada 10 pymes en Chile tampoco tienen página web propia. Por eso el que sí la tiene se está llevando a los clientes que te buscan a ti por Google. Te quiero mostrar rapidito qué te estás perdiendo.”`,
       },
       {
         rol: 'Tú — cierre',

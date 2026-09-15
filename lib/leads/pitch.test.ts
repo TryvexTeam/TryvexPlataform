@@ -97,6 +97,32 @@ describe('generarGuionAuto — la señal no miente sobre la web', () => {
     expect(g.resumen).not.toContain('Sitio web con agenda')
   })
 
+  // El bug que esto cierra: el turno de "la señal" decia honestamente "no se si
+  // tienen sitio web" y cuatro turnos despues el del "porque" le ofrecia hacerle
+  // uno igual. El mismo guion se contradecia, y el lead escuchaba que no
+  // miramos su negocio. Reportado por Cristian con Opticas Premium, que tiene
+  // opticaspremium.com.
+  it('si no sabemos, el porque NO afirma que no tiene pagina ni se la ofrece derecho', () => {
+    const t = textoDe(lead({ tiene_web: false, url_web: 'https://opticaspremium.com' }))
+    expect(t).not.toContain('tampoco tienen página web propia')
+    expect(t).not.toContain('qué te estás perdiendo')
+    // Ofrece las dos salidas, condicionadas a lo que conteste.
+    expect(t).toContain('si todavía no tienen sitio')
+    expect(t).toContain('si ya tienen uno')
+  })
+
+  it('si no sabemos, la implicacion no da por hecho que no lo encuentran', () => {
+    const t = textoDe(lead({ tiene_web: false, url_web: 'https://x.cl' }))
+    expect(t).not.toContain('te busca y no te encuentra')
+    expect(t).toContain('terminas atendiendo tú mismo')
+  })
+
+  it('con web confirmada el porque sigue sin ofrecer una pagina', () => {
+    const t = textoDe(lead({ tiene_web: true }))
+    expect(t).not.toContain('tampoco tienen página web propia')
+    expect(t).toContain('Tener la página es el primer paso y ya lo dieron')
+  })
+
   it('el guion completo sigue teniendo todos sus turnos en los tres estados', () => {
     for (const l of [
       lead({ tiene_web: true }),
