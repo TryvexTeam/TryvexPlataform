@@ -1,0 +1,65 @@
+"""Que las senales digan la verdad: sin inventar capacidades y sin callarlas.
+
+El sesgo elegido y por que: preferimos NO detectar una agenda real antes que
+afirmar una que no existe. Un falso positivo hace que le callemos justo lo que
+ese negocio necesita; un falso negativo solo nos deja donde estabamos.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from revisar_web import senales_en  # noqa: E402
+
+
+# --- lo que SI tiene que encontrar -------------------------------------------
+
+def test_reconoce_proveedores_de_agenda_chilenos():
+    assert "reserva" in senales_en('<a href="https://www.reservo.cl/abc">Reservar</a>')
+    assert "reserva" in senales_en('<a href="https://agendapro.com/x">Agenda</a>')
+
+
+def test_reconoce_boton_book_now():
+    # Caso real: fycsalon.com tiene <div data-testid="book-now">book now</div>.
+    assert "reserva" in senales_en('<div data-testid="book-now"><span>Book Now</span></div>')
+
+
+def test_reconoce_reservar_hora_escrito_en_espanol():
+    assert "reserva" in senales_en("<button>Reserva tu hora</button>")
+    assert "reserva" in senales_en("<a>Agendar cita</a>")
+    assert "reserva" in senales_en("<a>Pedir hora</a>")
+
+
+def test_reconoce_carrito_y_medios_de_pago_chilenos():
+    assert "carrito" in senales_en('<script src="/woocommerce.js">')
+    assert "carrito" in senales_en('<form action="https://webpay.transbank.cl/pago">')
+    assert "carrito" in senales_en('<a href="https://bsale.cl/tienda">')
+
+
+def test_reconoce_whatsapp_y_formulario():
+    assert "whatsapp" in senales_en('<a href="https://wa.me/56912345678">Escríbenos</a>')
+    assert "formulario" in senales_en('<form action="/enviar"><input name="mail"></form>')
+
+
+# --- lo que NO tiene que confundir -------------------------------------------
+
+def test_la_palabra_agenda_sola_no_es_una_agenda_de_horas():
+    # "agenda de actividades" o "nuestra agenda cultural" no permiten pedir hora.
+    html = "<h2>Agenda de actividades</h2><p>Mira nuestra agenda cultural del mes</p>"
+    assert "reserva" not in senales_en(html)
+
+
+def test_un_sitio_vitrina_no_reporta_capacidades():
+    html = "<html><body><h1>Optica Premium</h1><p>Visitanos en Santiago</p></body></html>"
+    assert senales_en(html) == set()
+
+
+def test_no_confunde_telefono_con_whatsapp():
+    # Tener el numero escrito no es tener WhatsApp enlazado: no se puede
+    # afirmar que el cliente pueda escribirle con un clic.
+    assert "whatsapp" not in senales_en("<p>Llámanos al +56 9 1234 5678</p>")
+
+
+def test_las_mayusculas_no_esconden_una_senal():
+    assert "reserva" in senales_en("<A HREF='HTTPS://RESERVO.CL/X'>RESERVAR</A>")

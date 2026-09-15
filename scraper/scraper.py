@@ -24,6 +24,7 @@ from supabase import create_client, Client
 
 from notificaciones import notificar
 from crm_map import a_crm, campos_update  # mapeo esquema viejo -> CRM de Tryvex
+from revisar_web import revisar_web  # que ofrece el sitio del lead, no solo si tiene uno
 
 # Alias para correr llamadas síncronas de Supabase sin bloquear el event loop
 _in_thread = asyncio.to_thread
@@ -647,6 +648,20 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
     except Exception:
         redes = redes_desde_web
 
+    # Si tiene sitio, se mira QUE ofrece. Saber que tiene web no alcanzo: a un
+    # lead con agenda online igual se le ofrecia "agenda de horas", y eso se lee
+    # tan mal como ofrecerle una pagina al que ya tiene una. Que falle no
+    # invalida el lead: queda sin el dato y el redactor lo trata como
+    # "no sabemos", que es lo honesto.
+    web_capacidades = None
+    if tiene_web and url_web:
+        try:
+            web_capacidades = (await revisar_web(url_web)).como_dict()
+            if web_capacidades["capacidades"]:
+                log.info(f"  web de {nombre}: {', '.join(web_capacidades['capacidades'])}")
+        except Exception as e:
+            log.info(f"  no se pudo revisar la web de {nombre}: {type(e).__name__}")
+
     return {
         "nombre": nombre,
         "google_place_id": id_de_google(page.url),
@@ -656,6 +671,7 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
         "redes": redes,
         "tiene_web": tiene_web,
         "url_web": url_web,
+        "web_capacidades": web_capacidades,
         "rating": rating,
         "num_resenas": num_resenas,
         "direccion": direccion,

@@ -6,7 +6,7 @@ import { CuotaAgotada } from './llm'
 // común de la cartera real y el que antes se convertía en un "No" inventado.
 const lead = { id: 'u1', nombre_negocio: 'Panadería San José', nicho: 'panadería',
   localidad: 'Maipú', score: 90, telefono: '987654321', redes_sociales: null,
-  tiene_web: null, info_texto: null, url_web: null,
+  tiene_web: null, info_texto: null, url_web: null, web_capacidades: null,
   google_rating: null, google_resenas: null, horario: null, instagram: null,
   categoria_google: null }
 
@@ -100,6 +100,63 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     const espia = llmEspia()
     await generarDraftLead({ ...lead, tiene_web: false }, undefined, espia.llm)
     expect(espia.prompt()).not.toContain('YA TIENE SITIO WEB')
+  })
+
+  // Saber que tiene web no alcanzaba: a un lead cuya pagina YA tenia agenda y
+  // cotizaciones, el mensaje le ofrecio justo eso. Migracion 106 + revisar_web.py.
+  it('si su web ya tiene agenda, le prohibe ofrecerle agenda', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      {
+        ...lead,
+        tiene_web: true,
+        url_web: 'https://opticaspremium.com',
+        web_capacidades: {
+          url: 'https://opticaspremium.com',
+          revisada: true,
+          capacidades: ['reserva', 'cotiza'],
+        },
+      },
+      undefined,
+      espia.llm,
+    )
+    const p = espia.prompt()
+    expect(p).toContain('SU SITIO YA TIENE ESTO')
+    expect(p).toContain('reservar hora / agendar online')
+    expect(p).toContain('pedir cotización o presupuesto online')
+  })
+
+  it('si NO se pudo revisar la web, no afirma nada sobre lo que tiene', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      {
+        ...lead,
+        tiene_web: true,
+        web_capacidades: {
+          url: 'https://x.cl',
+          revisada: false,
+          capacidades: [],
+          error: 'ConnectTimeout',
+        },
+      },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).not.toContain('SU SITIO YA TIENE ESTO')
+  })
+
+  it('una web revisada sin capacidades tampoco inventa prohibiciones', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      {
+        ...lead,
+        tiene_web: true,
+        web_capacidades: { url: 'https://x.cl', revisada: true, capacidades: [] },
+      },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).not.toContain('SU SITIO YA TIENE ESTO')
   })
 
   it('sin web confirmado, se lo dice tal cual', async () => {
