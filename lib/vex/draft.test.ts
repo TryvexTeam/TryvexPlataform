@@ -76,6 +76,32 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).toMatch(/¿Tiene sitio web\?:\s*Sí/)
   })
 
+  // El bug que esto cierra: pasarle el dato al modelo no alcanzaba. El catálogo
+  // del prompt incluye "Landing o sitio web — 1 a 2 semanas" y nada le prohibía
+  // ofrecerla, así que a Ópticas Premium (que tiene opticaspremium.com) le
+  // escribió "estás perdiendo clientes que no te encuentran. Podemos crear un
+  // sitio web". Había aviso para el caso "no sabemos" y ninguno para el "sí".
+  it('con web confirmada, le PROHIBE ofrecer una pagina y decir que no lo encuentran', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, tiene_web: true, url_web: 'https://opticaspremium.com' },
+      undefined,
+      espia.llm,
+    )
+    const p = espia.prompt()
+    expect(p).toContain('YA TIENE SITIO WEB')
+    expect(p).toContain('PROHIBIDO ofrecerle una pagina')
+    expect(p).toContain('opticaspremium.com')
+    // Y le dice por dónde sí: automatizar lo que ya tiene.
+    expect(p).toMatch(/deje de ser una vitrina/)
+  })
+
+  it('sin web, NO aparece la prohibicion (ahi si se le ofrece la pagina)', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, tiene_web: false }, undefined, espia.llm)
+    expect(espia.prompt()).not.toContain('YA TIENE SITIO WEB')
+  })
+
   it('sin web confirmado, se lo dice tal cual', async () => {
     const espia = llmEspia()
     await generarDraftLead({ ...lead, tiene_web: false }, undefined, espia.llm)
