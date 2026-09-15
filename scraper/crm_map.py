@@ -138,6 +138,9 @@ def a_crm(lead: dict) -> dict:
         # Sin esta linea el scraper lee bien la URL del sitio y la pierde
         # al armar la fila, en silencio. Ver comentario del 17-ago en scraper.py.
         "url_web": (lead.get("url_web") or None),
+        # Que ofrece ese sitio (migracion 106). Sin esta linea el scraper lo
+        # averigua y lo pierde al armar la fila, igual que paso con url_web.
+        "web_capacidades": (lead.get("web_capacidades") or None),
         "nicho": normalizar_nicho(lead.get("nicho")),
         "localidad": localidad,
         "score": score_1_10(lead.get("score")),

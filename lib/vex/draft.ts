@@ -55,6 +55,33 @@ function sabemosDeSuWeb(lead: LeadDraftInput): boolean {
   return estadoWeb(lead.tiene_web, lead.url_web) !== "no sabemos"
 }
 
+/** Cómo se le nombra a cada capacidad cuando se le prohíbe ofrecerla. */
+const COMO_SE_LLAMA: Record<string, string> = {
+  reserva: "reservar hora / agendar online",
+  cotiza: "pedir cotización o presupuesto online",
+  carrito: "comprar online / carrito",
+  whatsapp: "contacto por WhatsApp desde la web",
+  formulario: "formulario de contacto",
+  chat: "chat en la web",
+}
+
+/**
+ * Lo que su sitio YA resuelve, para que el mensaje no se lo ofrezca.
+ *
+ * Nace de un caso concreto: a un lead cuya web ya tenía agenda y cotizaciones,
+ * el mensaje le ofreció "agenda de horas" y "cotizaciones online". Saber que
+ * tenía web no bastaba — había que saber qué hacía esa web.
+ *
+ * Solo se usa lo ENCONTRADO. Una capacidad ausente no se convierte en "no la
+ * tiene", porque el revisor puede no haberla visto.
+ */
+function loQueSuWebYaHace(lead: LeadDraftInput): string {
+  const w = lead.web_capacidades
+  if (!w?.revisada || !w.capacidades?.length) return ""
+  const lista = w.capacidades.map((c) => COMO_SE_LLAMA[c] ?? c).join(", ")
+  return `\n⛔ SU SITIO YA TIENE ESTO: ${lista}. PROHIBIDO ofrecerle cualquiera de esas cosas como si le faltara — es lo mismo que ofrecerle una pagina al que ya tiene una. Habla de lo que queda fuera: que eso que ya tiene funcione solo y sin que alguien lo atienda a mano, o el pedazo del proceso que sigue siendo manual despues de que el cliente usa su web.`
+}
+
 /** Un mensaje del hilo de WhatsApp con ese lead. */
 export type TurnoWa = { direccion: "in" | "out"; texto: string };
 
@@ -344,7 +371,7 @@ ${sabemosDeSuWeb(lead) ? "" : "\n⚠️ NO SABEMOS si tiene sitio web. No mencio
     estadoWeb(lead.tiene_web, lead.url_web) === "Sí"
       ? `\n⛔ ESTE NEGOCIO YA TIENE SITIO WEB${lead.url_web?.trim() ? ` (${lead.url_web.trim()})` : ""}. PROHIBIDO ofrecerle una pagina, una landing o "un sitio que aparezca en Google": ya la tiene, y ofrecersela le dice en la primera linea que no miramos su negocio. Prohibido tambien decir que no lo encuentran o que es invisible en Google. Para el, la oportunidad NO es tener web: es que esa web deje de ser una vitrina y le saque trabajo de encima — que el cliente reserve, cotice o pida solo, y que lo repetitivo de atender por WhatsApp deje de hacerse a mano.`
       : ""
-  }
+  }${loQueSuWebYaHace(lead)}
 ${bloqueHistorial(historial)}
 
 ${customPrompt ? `\nInstrucciones adicionales del usuario (priorizalas): ${customPrompt}\n` : ""}

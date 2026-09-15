@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { coincideTermino } from "./texto";
+import type { WebCapacidades } from "@/lib/types/lead";
 
 /** Estados posibles de un lead en el CRM (schema 000 + migración 003 won/lost). */
 export const ESTADOS_LEAD = [
@@ -28,6 +29,10 @@ export type LeadResumen = {
   tiene_web: boolean | null;
   info_texto: string | null;
   url_web: string | null;
+  // Que OFRECE ese sitio (migracion 106). Saber que tiene web no alcanzo: a un
+  // lead cuya pagina ya tenia agenda igual se le ofrecio "agenda de horas".
+  // ⚠️ Una capacidad ausente es "no sabemos", NO "no la tiene".
+  web_capacidades: WebCapacidades | null;
   // Datos del negocio ya interpretados (migracion 047). Antes vivian aplastados
   // dentro de `notas` como texto suelto, invisibles para el redactor.
   google_rating: number | null;
@@ -86,7 +91,7 @@ export async function recomendarLeads(
   // (la base es chica). ilike de Postgres no ignora acentos: "barberias" != "barberías".
   const { data, error } = await sb
     .from("fact_leads")
-    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web,google_rating,google_resenas,horario,instagram,categoria_google")
+    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web,web_capacidades,google_rating,google_resenas,horario,instagram,categoria_google")
     .eq("estado", estado)
     .order("score", { ascending: false })
     // TODO: tope de escaneo; revisar si la cartera supera 800 leads

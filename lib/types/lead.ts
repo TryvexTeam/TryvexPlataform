@@ -61,6 +61,27 @@ export const TurnoPitchSchema = z.object({
 })
 export type TurnoPitch = z.infer<typeof TurnoPitchSchema>
 
+/**
+ * Lo que el sitio del lead ya resuelve, según `scraper/revisar_web.py`.
+ *
+ * 🔴 Leer con cuidado: `revisada: false` significa "no pudimos mirar la página",
+ * no "no tiene nada". Y una capacidad que no aparece en la lista es "no
+ * sabemos", no "no la tiene": el revisor solo ve el HTML que entrega el
+ * servidor, así que un sitio hecho con JavaScript puede tener agenda sin que
+ * se note. El sesgo es deliberado — preferimos callar una capacidad real antes
+ * que afirmar una que no existe.
+ */
+export const WebCapacidadesSchema = z.object({
+  url: z.string(),
+  revisada: z.boolean(),
+  capacidades: z.array(
+    z.enum(['reserva', 'cotiza', 'carrito', 'whatsapp', 'formulario', 'chat']),
+  ),
+  paginas_leidas: z.number().optional(),
+  error: z.string().nullable().optional(),
+})
+export type WebCapacidades = z.infer<typeof WebCapacidadesSchema>
+
 export const LeadSchema = z.object({
   id: z.string().uuid(),
   // Papelera (migración 104): NULL = lead activo. Con fecha, el lead salió del
@@ -77,6 +98,11 @@ export const LeadSchema = z.object({
   redes_sociales: z.record(z.string(), z.string()).nullable(),
   tiene_web: z.boolean().nullable(),
   url_web: z.string().nullable(),
+  // Qué OFRECE ese sitio (migración 106). Saber que tiene web no alcanzó: a un
+  // lead con agenda online igual se le ofrecía "agenda de horas".
+  // ⚠️ Una capacidad ausente es "no sabemos", NO "no la tiene": el revisor solo
+  // lee el HTML que entrega el servidor.
+  web_capacidades: WebCapacidadesSchema.nullable().optional(),
   instagram: z.string().nullable().optional(),
   nicho: z.string().nullable(),
   localidad: z.string().nullable(),
