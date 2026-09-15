@@ -82,6 +82,88 @@ function loQueSuWebYaHace(lead: LeadDraftInput): string {
   return `\n⛔ SU SITIO YA TIENE ESTO: ${lista}. PROHIBIDO ofrecerle cualquiera de esas cosas como si le faltara — es lo mismo que ofrecerle una pagina al que ya tiene una. Habla de lo que queda fuera: que eso que ya tiene funcione solo y sin que alguien lo atienda a mano, o el pedazo del proceso que sigue siendo manual despues de que el cliente usa su web.`
 }
 
+/**
+ * Lo que el mensaje NO puede afirmar sobre este negocio, revisado sobre el
+ * texto ya escrito.
+ *
+ * Por qué existe, y por qué no alcanzaba con pedirlo en el prompt: el prompt
+ * decía textual "no menciones su web, ni Google, ni que no aparece" para los
+ * leads en "no sabemos", y el modelo igual escribió —el 15-sep, a Ópticas
+ * Premium— *"cuando alguien busca ópticas en Santiago no aparecen tus datos,
+ * así pierdes clientes que ya están interesados. Podemos crear una página
+ * web"*. Las tres son inventadas, y la primera la desmiente el dueño abriendo
+ * Google: lo encontramos AHÍ, con sus 21 reseñas.
+ *
+ * Un prompt es un pedido. Esto es una condición: si el texto afirma algo que
+ * no podemos sostener, no se entrega.
+ *
+ * Solo entran patrones de cosas que **afirmamos sobre el negocio** y no
+ * podemos probar. Las preguntas quedan fuera a propósito: preguntarle si lo
+ * encuentran es legítimo; decirle que no lo encuentran, no.
+ */
+const NO_SE_PUEDE_AFIRMAR: { patron: RegExp; porque: string }[] = [
+  {
+    patron: /no (te |lo |los )?(encuentran|ubican|ven)\b/i,
+    porque: 'afirma que no lo encuentran, y no lo sabemos',
+  },
+  {
+    patron: /no aparece[ns]?\b(?![^.]*\?)/i,
+    porque: 'afirma que no aparece en las búsquedas, y no lo sabemos',
+  },
+  {
+    patron: /(eres|son|es) invisible|invisibilidad/i,
+    porque: 'lo llama invisible sin tener cómo saberlo',
+  },
+  {
+    patron: /(pierdes|estás perdiendo|se te van|se te escapan) (clientes|pacientes|ventas)/i,
+    porque: 'afirma que pierde clientes, y eso no lo medimos nunca',
+  },
+  {
+    patron: /\bno tienes? (una |un )?(página|pagina|sitio|web)/i,
+    porque: 'afirma que no tiene web',
+  },
+];
+
+/** Además de lo anterior, esto depende de lo que sepamos de su web. */
+function prohibidoSegunSuWeb(estado: string): { patron: RegExp; porque: string }[] {
+  if (estado === "No") return []; // sin web confirmada, ofrecerle una es correcto
+  return [
+    {
+      patron: /(crear|hacer|armar|construir|dise[ñn]ar)(te)? (una |un )?(página|pagina|sitio|web|landing)/i,
+      porque:
+        estado === "Sí"
+          ? 'le ofrece una página y ya tiene uno'
+          : 'le ofrece una página sin que sepamos si ya tiene uno',
+    },
+  ];
+}
+
+/**
+ * Revisa el texto contra lo que sabemos del lead. Devuelve los motivos por los
+ * que NO se puede enviar; vacío = está limpio.
+ */
+export function afirmacionesSinRespaldo(
+  texto: string,
+  lead: Pick<LeadResumen, "tiene_web" | "url_web" | "google_rating" | "google_resenas" | "horario">
+): string[] {
+  const estado = estadoWeb(lead.tiene_web, lead.url_web);
+  const reglas = [...NO_SE_PUEDE_AFIRMAR, ...prohibidoSegunSuWeb(estado)];
+  const motivos = reglas.filter((r) => r.patron.test(texto)).map((r) => r.porque);
+
+  // Sin reputación en la ficha, no puede citar estrellas ni reseñas.
+  const sinReputacion = lead.google_rating == null && lead.google_resenas == null;
+  if (sinReputacion && /\b(estrellas?|rese[ñn]as?)\b/i.test(texto)) {
+    motivos.push('menciona estrellas o reseñas y no tenemos ese dato');
+  }
+
+  // Sin horario, no puede afirmar a qué hora abre o cierra.
+  if (!lead.horario?.trim() && /\b(abres|cierras|cierran|abren) a las\b/i.test(texto)) {
+    motivos.push('afirma un horario que no tenemos');
+  }
+
+  return [...new Set(motivos)];
+}
+
 /** Un mensaje del hilo de WhatsApp con ese lead. */
 export type TurnoWa = { direccion: "in" | "out"; texto: string };
 
@@ -402,13 +484,43 @@ ${disponibles.includes("whatsapp") ? '- "whatsapp_text": el mensaje completo con
   }
 
   const setDisp = new Set<Canal>(disponibles);
+  let whatsappText = ia.whatsapp_text?.trim() || "";
+  let socialText = ia.social_text?.trim() || "";
 
-  const whatsappText = ia.whatsapp_text?.trim() || "";
+  // La última puerta: si el texto afirma algo que no podemos sostener, se pide
+  // de nuevo señalando el motivo, y si insiste NO se entrega. Antes esto se
+  // pedía solo en el prompt y el modelo lo saltaba igual.
+  let motivos = afirmacionesSinRespaldo(whatsappText + "\n" + socialText, lead);
+
+  if (motivos.length) {
+    const reclamo = `${prompt}
+
+⛔ EL MENSAJE ANTERIOR NO SIRVE. Lo que escribiste ${motivos.join("; ")}.
+Reescribelo COMPLETO sin esa afirmacion. Si no tienes el dato, el angulo no
+existe: usa otro (su rubro, su comuna, su reputacion si la tenemos, o el
+trabajo manual de atender). Puedes PREGUNTAR lo que no sabes, nunca afirmarlo.`;
+    try {
+      const segunda = JSON.parse(await llm(reclamo)) as DraftIA;
+      whatsappText = segunda.whatsapp_text?.trim() || "";
+      socialText = segunda.social_text?.trim() || "";
+      motivos = afirmacionesSinRespaldo(whatsappText + "\n" + socialText, lead);
+    } catch {
+      // Se queda con los motivos del primero: igual no se entrega.
+    }
+  }
+
+  if (motivos.length) {
+    return {
+      ...base,
+      aviso: `Vex escribió algo que no podemos sostener (${motivos.join("; ")}). No se entrega el mensaje: hay que escribirlo a mano.`,
+    };
+  }
+
   const whatsapp = setDisp.has("whatsapp")
     ? { text: whatsappText, link: construirLinkWhatsApp(lead.telefono, whatsappText) }
     : null;
 
-  const social = setDisp.has("social") ? { text: ia.social_text?.trim() || "" } : null;
+  const social = setDisp.has("social") ? { text: socialText } : null;
 
   return { ...base, whatsapp, social };
 }

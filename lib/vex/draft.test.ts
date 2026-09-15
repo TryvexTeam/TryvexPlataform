@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generarDraftLead } from './draft'
+import { afirmacionesSinRespaldo, generarDraftLead } from './draft'
 import { CuotaAgotada } from './llm'
 
 // `tiene_web: null` a propósito en el lead base: "no sabemos" es el caso más
@@ -510,5 +510,116 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
       espia.llm,
     )
     expect(espia.prompt()).toContain('Atiende solo con reserva')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// El filtro de salida: lo que el prompt pide y el modelo igual se salta.
+// ---------------------------------------------------------------------------
+describe('afirmacionesSinRespaldo', () => {
+  const sinSaber = { tiene_web: null, url_web: 'https://x.cl', google_rating: 4.2, google_resenas: 21, horario: null }
+  const conWeb = { tiene_web: true, url_web: 'https://x.cl', google_rating: 4.2, google_resenas: 21, horario: null }
+  const sinWeb = { tiene_web: false, url_web: null, google_rating: 4.2, google_resenas: 21, horario: null }
+
+  // Este es el mensaje REAL que Vex escribió para Ópticas Premium el 15-sep,
+  // con el prompt que ya le decía "no menciones su web, ni Google, ni que no
+  // aparece". Lo encontramos AHÍ, en Google, con sus 21 reseñas.
+  const mensajeReal =
+    'Hola, ¿hablo con Opticas Premium? Te escribimos de Tryvex. Veo que tienes 4,2 estrellas y 21 reseñas, ' +
+    'pero cuando alguien busca ópticas en Santiago no aparecen tus datos, así pierdes clientes que ya están ' +
+    'interesados. Podemos crear una página web de 1 a 2 semanas que muestre tus reseñas.'
+
+  it('atrapa el mensaje real que se coló', () => {
+    const m = afirmacionesSinRespaldo(mensajeReal, sinSaber)
+    expect(m.length).toBeGreaterThanOrEqual(3)
+    expect(m.join(' ')).toContain('no aparece')
+    expect(m.join(' ')).toContain('pierde clientes')
+    expect(m.join(' ')).toContain('página')
+  })
+
+  it('a quien YA tiene web, no le deja ofrecer una', () => {
+    const m = afirmacionesSinRespaldo('Podemos crearte un sitio web en dos semanas.', conWeb)
+    expect(m.join(' ')).toContain('ya tiene uno')
+  })
+
+  it('a quien NO tiene web, ofrecerle una es correcto y pasa', () => {
+    expect(afirmacionesSinRespaldo('Podemos crearte un sitio web en dos semanas.', sinWeb)).toEqual([])
+  })
+
+  it('preguntar lo que no sabemos SÍ se puede', () => {
+    const texto = '¿Cómo llegan hoy tus clientes nuevos, te escriben o llaman?'
+    expect(afirmacionesSinRespaldo(texto, sinSaber)).toEqual([])
+  })
+
+  it('sin reputación en la ficha, no puede citar estrellas', () => {
+    const lead = { ...sinWeb, google_rating: null, google_resenas: null }
+    const m = afirmacionesSinRespaldo('Vi que tienes 4,8 estrellas.', lead)
+    expect(m.join(' ')).toContain('estrellas')
+  })
+
+  it('con reputación real, citarla no es problema', () => {
+    expect(afirmacionesSinRespaldo('Vi tus 21 reseñas con 4,2 estrellas.', sinWeb)).toEqual([])
+  })
+
+  it('sin horario, no puede afirmar a qué hora cierra', () => {
+    const m = afirmacionesSinRespaldo('Cuando cierras a las 7 nadie contesta.', sinWeb)
+    expect(m.join(' ')).toContain('horario')
+  })
+
+  it('un mensaje limpio no reporta nada', () => {
+    const texto =
+      'Hola, ¿hablo con Ópticas Premium? Te escribimos de Tryvex. Vi que tienen 21 reseñas con 4,2 estrellas. ' +
+      '¿Cuando alguien quiere una hora para examen de vista, cómo la piden hoy?'
+    expect(afirmacionesSinRespaldo(texto, sinSaber)).toEqual([])
+  })
+})
+
+describe('generarDraftLead: no entrega lo que no puede sostener', () => {
+  const malo =
+    'Veo que tienes 4,2 estrellas y 21 reseñas, pero cuando alguien busca ópticas en Santiago ' +
+    'no aparecen tus datos, así pierdes clientes. Podemos crear una página web.'
+  const bueno =
+    'Hola, ¿hablo con Ópticas Premium? Vi tus 21 reseñas con 4,2 estrellas. ' +
+    '¿Cómo pide hoy la gente su hora para examen de vista?'
+  const premium = { ...lead, tiene_web: null, url_web: 'https://opticaspremium.com',
+    google_rating: 4.2, google_resenas: 21 }
+
+  it('si insiste con la invención, NO entrega mensaje y avisa por qué', async () => {
+    const llm = async () => JSON.stringify({ whatsapp_text: malo })
+    const d = await generarDraftLead(premium, undefined, llm)
+    expect(d.whatsapp).toBeNull()
+    expect(d.aviso).toMatch(/no podemos sostener/i)
+    expect(d.aviso).toMatch(/no aparece/i)
+  })
+
+  it('le da una segunda oportunidad y acepta el mensaje corregido', async () => {
+    let n = 0
+    const llm = async () => {
+      n++
+      return JSON.stringify({ whatsapp_text: n === 1 ? malo : bueno })
+    }
+    const d = await generarDraftLead(premium, undefined, llm)
+    expect(n).toBe(2)
+    expect(d.aviso).toBeUndefined()
+    expect(d.whatsapp?.text).toContain('examen de vista')
+  })
+
+  it('en el reintento le dice al modelo qué estuvo mal', async () => {
+    const vistos: string[] = []
+    const llm = async (p: string) => {
+      vistos.push(p)
+      return JSON.stringify({ whatsapp_text: vistos.length === 1 ? malo : bueno })
+    }
+    await generarDraftLead(premium, undefined, llm)
+    expect(vistos[1]).toContain('EL MENSAJE ANTERIOR NO SIRVE')
+    expect(vistos[1]).toMatch(/PREGUNTAR lo que no sabes/i)
+  })
+
+  it('un mensaje limpio pasa a la primera, sin reintento', async () => {
+    let n = 0
+    const llm = async () => { n++; return JSON.stringify({ whatsapp_text: bueno }) }
+    const d = await generarDraftLead(premium, undefined, llm)
+    expect(n).toBe(1)
+    expect(d.whatsapp?.text).toBe(bueno)
   })
 })
