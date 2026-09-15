@@ -539,7 +539,7 @@ describe('afirmacionesSinRespaldo', () => {
 
   it('a quien YA tiene web, no le deja ofrecer una', () => {
     const m = afirmacionesSinRespaldo('Podemos crearte un sitio web en dos semanas.', conWeb)
-    expect(m.join(' ')).toContain('ya tiene uno')
+    expect(m.join(' ')).toContain('ya tiene una')
   })
 
   it('a quien NO tiene web, ofrecerle una es correcto y pasa', () => {
@@ -621,5 +621,45 @@ describe('generarDraftLead: no entrega lo que no puede sostener', () => {
     const d = await generarDraftLead(premium, undefined, llm)
     expect(n).toBe(1)
     expect(d.whatsapp?.text).toBe(bueno)
+  })
+})
+
+// El segundo escape: el filtro enumeraba verbos y el modelo ofrecio la pagina
+// sin usar ninguno. Mensaje real del 15-sep, ya con el filtro puesto.
+describe('afirmacionesSinRespaldo: ofrecer una web sin decir "crear"', () => {
+  const sinSaber = { tiene_web: null, url_web: 'https://x.cl', google_rating: 4.2, google_resenas: 21, horario: null }
+  const conWeb = { tiene_web: true, url_web: 'https://x.cl', google_rating: 4.2, google_resenas: 21, horario: null }
+  const sinWeb = { tiene_web: false, url_web: null, google_rating: 4.2, google_resenas: 21, horario: null }
+
+  const escape =
+    'Hola 👋 ¿hablo con Opticas Premium? Somos Tryvex. Ayudamos a negocios como el tuyo a ' +
+    'conseguir más clientes con una página web lista en días. ¿Te muestro un ejemplo, sin compromiso?'
+
+  it('atrapa el mensaje que se colo por no usar el verbo', () => {
+    const m = afirmacionesSinRespaldo(escape, sinSaber)
+    expect(m.join(' ')).toContain('página web')
+  })
+
+  it('si no sabemos, NINGUNA mencion de pagina pasa', () => {
+    for (const t of [
+      'Te armamos un sitio web.',
+      'con una página web lista en días',
+      'una landing que convierta',
+      'tu sitio puede recibir reservas',
+    ]) {
+      expect(afirmacionesSinRespaldo(t, sinSaber).length).toBeGreaterThan(0)
+    }
+  })
+
+  it('si NO tiene web, ofrecersela sigue siendo correcto', () => {
+    expect(afirmacionesSinRespaldo(escape, sinWeb)).toEqual([])
+    expect(afirmacionesSinRespaldo('Te armamos una página web lista en días.', sinWeb)).toEqual([])
+  })
+
+  it('con web confirmada puede nombrarla, pero no ofrecersela', () => {
+    // Nombrarla para automatizar lo que ya tiene: correcto.
+    expect(afirmacionesSinRespaldo('Conectamos tu sitio con la agenda.', conWeb)).toEqual([])
+    // Ofrecersela como si le faltara: no.
+    expect(afirmacionesSinRespaldo(escape, conWeb).length).toBeGreaterThan(0)
   })
 })
