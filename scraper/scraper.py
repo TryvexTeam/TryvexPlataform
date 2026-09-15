@@ -612,15 +612,23 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
     # asumir "no tiene web" se prueba el dominio obvio a partir del nombre
     # (PR #211). Esto evita el caso reportado: escribirle a un negocio que SÍ
     # tiene sitio, diciéndole que no tiene.
+    # 🔴 La web que sale de ADIVINAR el dominio NO es la web del negocio: es un
+    # dominio que se llama parecido. El 15-sep, "Opticas Premium" de Santiago
+    # quedo con opticaspremium.com, que es una empresa PERUANA. Lo mismo con
+    # Optica Morales, Optica San Cristobal, Restaurante Don Pepe (Peru) y
+    # Ferreteria Santa Rosa (Argentina). Vex le escribio a un chileno hablandole
+    # del negocio de otro.
+    #
+    # Por eso `tiene_web` queda en None (= "no sabemos") y no en True: se guarda
+    # la pista para que alguien la confirme, sin afirmarla. Confirmada de verdad
+    # es solo la que trae Maps en la ficha, que la cargo el dueño.
+    web_confirmada = tiene_web
     if not tiene_web:
         web_por_nombre = await buscar_web_por_nombre(nombre)
         if web_por_nombre:
-            tiene_web = True
+            tiene_web = None
             url_web = web_por_nombre
-            DESCARTES["con_web"] += 1
-            log.info(f"  descartado (web encontrada por nombre, no en Maps): {nombre} -> {web_por_nombre}")
-            if DESCARTAR_CON_WEB:
-                return None
+            log.info(f"  posible web por nombre (SIN CONFIRMAR): {nombre} -> {web_por_nombre}")
 
     # Un negocio que cerro definitivamente no es un lead: escribirle es la peor
     # carta de presentacion posible. Se descarta antes de gastar tiempo en el.
@@ -653,8 +661,11 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
     # tan mal como ofrecerle una pagina al que ya tiene una. Que falle no
     # invalida el lead: queda sin el dato y el redactor lo trata como
     # "no sabemos", que es lo honesto.
+    # Solo se revisa la web CONFIRMADA. Mirar lo que ofrece un sitio que quiza
+    # no es suyo es peor que no mirar nada: le terminamos diciendo "ya tienes
+    # agenda" por la agenda de otra empresa.
     web_capacidades = None
-    if tiene_web and url_web:
+    if web_confirmada and url_web:
         try:
             web_capacidades = (await revisar_web(url_web)).como_dict()
             if web_capacidades["capacidades"]:
