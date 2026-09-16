@@ -188,3 +188,104 @@ export interface ConversacionCliente {
 
 export const MODOS_HILO = ['AI', 'HUMANO'] as const
 export type ModoHilo = (typeof MODOS_HILO)[number]
+
+/**
+ * Por dónde entra y sale el trabajo de los agentes.
+ *
+ * Lo que Forja llama `conexiones`. La diferencia es que acá cada canal declara
+ * su RIESGO y sus plazos, porque no son equivalentes: WhatsApp por Baileys
+ * puede perder el número para siempre, la API oficial cobra por mensaje, e
+ * Instagram cierra la puerta a las 24 horas. Un panel que los muestra a todos
+ * como "conectado / desconectado" esconde justo lo que decide el negocio.
+ */
+export const TIPOS_CANAL = [
+  'whatsapp_baileys',
+  'whatsapp_oficial',
+  'web',
+  'instagram',
+  'telegram',
+  'correo',
+] as const
+export type TipoCanal = (typeof TIPOS_CANAL)[number]
+
+export const ESTADOS_CANAL = [
+  'conectado',
+  'sin_latido',
+  'esperando_qr',
+  'bloqueado',
+  'apagado',
+] as const
+export type EstadoCanal = (typeof ESTADOS_CANAL)[number]
+
+export interface Canal {
+  id: string
+  tipo: TipoCanal
+  /** El número, el dominio o la cuenta. Lo que identifica este canal. */
+  etiqueta: string
+  agenteId: string
+  estado: EstadoCanal
+  desde: string
+  /**
+   * Qué se juega este canal si algo sale mal.
+   * `alto` = se puede perder el número sin apelación (Baileys).
+   */
+  riesgo: 'ninguno' | 'medio' | 'alto'
+  nota: string
+  mensajesHoy: number
+  /** Solo en Baileys: por dónde sale a internet. Dos números no comparten IP. */
+  salida?: string
+  /** Un plazo que corre y que alguien tiene que atender antes de que venza. */
+  aviso?: {
+    texto: string
+    cuando: string
+    severidad: 'info' | 'aviso' | 'critico'
+  }
+}
+
+/**
+ * Un traspaso: el momento en que un agente deja de poder y entra una persona.
+ *
+ * Forja llama a esto "tickets" y los ordena por fecha. Ordenarlos por fecha es
+ * exactamente lo que no sirve: el que lleva más tiempo esperando no es el más
+ * urgente. Acá cada traspaso declara POR QUÉ se soltó y QUÉ SE INTENTÓ antes,
+ * porque las dos cosas deciden quién lo toma y con cuánta prisa.
+ *
+ * `motivo` no es texto libre a propósito: si no está en la lista, es un motivo
+ * que nadie midió, y un motivo que nadie mide no se puede arreglar.
+ */
+export const MOTIVOS_TRASPASO = [
+  'pidio_humano',
+  'fuera_de_guion',
+  'precio_no_autorizado',
+  'reclamo',
+  'dato_sensible',
+  'sin_conocimiento',
+  'tres_intentos',
+] as const
+export type MotivoTraspaso = (typeof MOTIVOS_TRASPASO)[number]
+
+export type EstadoTraspaso = 'esperando' | 'tomado' | 'devuelto' | 'cerrado'
+
+export interface Traspaso {
+  id: string
+  /** La conversación de la que viene, para poder abrirla. */
+  conversacionId: string
+  cliente: string
+  canal: TipoCanal
+  /** Quién lo soltó. */
+  agenteId: string
+  motivo: MotivoTraspaso
+  /** Lo que hay que saber para retomar sin leer todo el hilo. */
+  resumen: string
+  /** Lo último que dijo el cliente, literal. */
+  ultimoMensaje: string
+  estado: EstadoTraspaso
+  /** Desde cuándo espera, en ISO. */
+  desde: string
+  /** Quién lo tomó, si alguien lo tomó. */
+  tomadoPor?: string
+  /** Lo que el agente ya probó, para no repetirlo. */
+  intentos: string[]
+  /** Si el cliente está esperando una respuesta en este momento. */
+  clienteEsperando: boolean
+}

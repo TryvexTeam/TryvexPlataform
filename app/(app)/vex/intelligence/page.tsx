@@ -10,12 +10,17 @@ import { EstadoAgente } from '@/components/vex/intelligence/estado-agente'
 import { PanelIntelligence } from '@/components/vex/intelligence/panel-intelligence'
 import {
   AGENTES_EJEMPLO,
+  CAMPANAS_EJEMPLO,
+  CANALES_EJEMPLO,
   CONVERSACIONES_EJEMPLO,
   COSTOS_EJEMPLO,
+  DOCUMENTOS_EJEMPLO,
   ENCARGOS_EJEMPLO,
   HERRAMIENTAS_EJEMPLO,
   HILO_EJEMPLO,
+  METRICAS_EJEMPLO,
   RUTINAS_EJEMPLO,
+  TRASPASOS_EJEMPLO,
 } from '@/lib/vex/sala-ejemplo'
 
 export const dynamic = 'force-dynamic'
@@ -74,6 +79,11 @@ export default async function TryvexIntelligencePage() {
       herramientas={HERRAMIENTAS_EJEMPLO}
       conversaciones={CONVERSACIONES_EJEMPLO}
       costos={COSTOS_EJEMPLO}
+      canales={CANALES_EJEMPLO}
+      documentos={DOCUMENTOS_EJEMPLO}
+      traspasos={TRASPASOS_EJEMPLO}
+      metricas={METRICAS_EJEMPLO}
+      campanas={CAMPANAS_EJEMPLO}
       panelWhatsapp={await PanelDeWhatsapp()}
     />
   )

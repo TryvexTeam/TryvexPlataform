@@ -1,11 +1,16 @@
 import type { CostoAgente } from '@/components/vex/intelligence/panel-costos'
+import type { Campana } from '@/components/vex/intelligence/panel-campanas'
+import type { MetricasSala } from '@/components/vex/intelligence/panel-metricas'
+import type { DocumentoConocimiento } from '@/components/vex/intelligence/panel-conocimiento'
 import type {
   AgenteSala,
+  Canal,
   ConversacionCliente,
   Encargo,
   EntradaHilo,
   Herramienta,
   Rutina,
+  Traspaso,
 } from '@/lib/types/sala-agentes'
 
 /**
@@ -282,6 +287,92 @@ export const HERRAMIENTAS_EJEMPLO: Herramienta[] = [
 ]
 
 /**
+ * Los canales por donde trabajan los agentes.
+ *
+ * Los plazos son reales, no de adorno: la app de WhatsApp Business hay que
+ * abrirla cada 13 días o la coexistencia se rompe, y desde el 1-oct-2026 Meta
+ * cobra los mensajes de servicio pasados los 1.000 del mes.
+ */
+export const CANALES_EJEMPLO: Canal[] = [
+  {
+    id: 'ch1',
+    tipo: 'whatsapp_oficial',
+    etiqueta: '+56 9 4421 8890',
+    agenteId: 'emili',
+    estado: 'conectado',
+    desde: 'agosto 2026',
+    riesgo: 'ninguno',
+    nota: 'API oficial de Meta. Sin riesgo de bloqueo; se paga por mensaje.',
+    mensajesHoy: 148,
+    aviso: {
+      texto: 'Abrí la app de WhatsApp Business: la coexistencia se rompe a los 13 días sin usarla.',
+      cuando: 'quedan 4 días',
+      severidad: 'aviso',
+    },
+  },
+  {
+    id: 'ch2',
+    tipo: 'whatsapp_baileys',
+    etiqueta: '+56 9 7712 3345',
+    agenteId: 'vex',
+    estado: 'conectado',
+    desde: 'julio 2026',
+    riesgo: 'alto',
+    nota: 'Número propio, sin costo por mensaje. Si WhatsApp lo bloquea, se pierde sin apelación.',
+    mensajesHoy: 63,
+    salida: 'Router 4G de la oficina · IP chilena propia',
+    aviso: {
+      texto: 'Este número no puede compartir salida con otro: si WhatsApp marca la IP, caen todos juntos.',
+      cuando: 'regla permanente',
+      severidad: 'critico',
+    },
+  },
+  {
+    id: 'ch3',
+    tipo: 'web',
+    etiqueta: 'tryvex.tech',
+    agenteId: 'vex',
+    estado: 'conectado',
+    desde: 'junio 2026',
+    riesgo: 'ninguno',
+    nota: 'Chat en el sitio. Sin trámites y sin costo por mensaje: el canal más barato que hay.',
+    mensajesHoy: 22,
+  },
+  {
+    id: 'ch4',
+    tipo: 'instagram',
+    etiqueta: '@tryvex.cl',
+    agenteId: 'emili',
+    estado: 'apagado',
+    desde: '—',
+    riesgo: 'medio',
+    nota: 'Meta solo deja responder dentro de las 24 h. Fuera de esa ventana, contesta una persona.',
+    mensajesHoy: 0,
+    aviso: {
+      texto: 'Falta la revisión de la app en Meta: puede tardar semanas, conviene mandarla antes de venderlo.',
+      cuando: 'sin enviar',
+      severidad: 'info',
+    },
+  },
+  {
+    id: 'ch5',
+    tipo: 'telegram',
+    etiqueta: '@tryvex_bot',
+    agenteId: 'spike',
+    estado: 'sin_latido',
+    desde: 'agosto 2026',
+    riesgo: 'ninguno',
+    nota: 'Se usa para avisos internos del equipo, no para clientes.',
+    mensajesHoy: 0,
+    aviso: {
+      texto: 'No responde hace 3 horas. Puede ser el webhook o el token.',
+      cuando: 'hace 3 h',
+      severidad: 'aviso',
+    },
+  },
+]
+
+/**
  * Lo que cuesta tener a los agentes trabajando.
  *
  * Los montos son de ejemplo pero el orden de magnitud es el real de un modelo
@@ -513,5 +604,271 @@ export const CONVERSACIONES_EJEMPLO: ConversacionCliente[] = [
         evidencias: [{ tipo: 'log', resumen: 'guardrail precio bloqueado' }],
       },
     ],
+  },
+]
+
+/**
+ * Lo que los agentes saben, y de dónde lo sacaron.
+ *
+ * Un documento sin citas en 30 días es peso muerto: o está mal indexado o
+ * nadie pregunta por eso. Por eso `citasMes` y `ultimaCita` viajan siempre.
+ */
+export const DOCUMENTOS_EJEMPLO: DocumentoConocimiento[] = [
+  {
+    id: 'doc-precios',
+    titulo: 'Lista de precios y planes 2026',
+    origen: 'manual',
+    resumen: 'Los tres planes, el anual con descuento y las cuotas derivadas.',
+    fragmentos: 24,
+    agentes: ['vex', 'ariel'],
+    citasMes: 187,
+    ultimaCita: '2026-09-15T22:40:00-03:00',
+    actualizado: '2026-09-02T11:20:00-03:00',
+  },
+  {
+    id: 'doc-objeciones',
+    titulo: 'Objeciones frecuentes y cómo responderlas',
+    origen: 'reunion',
+    resumen: 'Doce objeciones reales de cierre, con la respuesta acordada por el equipo.',
+    fragmentos: 41,
+    agentes: ['vex', 'ariel', 'emili'],
+    citasMes: 96,
+    ultimaCita: '2026-09-15T19:05:00-03:00',
+    actualizado: '2026-08-28T16:00:00-03:00',
+  },
+  {
+    id: 'doc-sitio',
+    titulo: 'tryvex.cl · páginas públicas',
+    origen: 'web',
+    resumen: 'Servicios, casos y preguntas frecuentes, tal como están publicados.',
+    fragmentos: 118,
+    agentes: ['vex'],
+    citasMes: 54,
+    ultimaCita: '2026-09-14T10:12:00-03:00',
+    actualizado: '2026-09-10T08:00:00-03:00',
+  },
+  {
+    id: 'doc-soporte',
+    titulo: 'Guion de soporte técnico nivel 1',
+    origen: 'manual',
+    resumen: 'Los ocho problemas que resuelve el equipo sin escalar a ingeniería.',
+    fragmentos: 33,
+    agentes: ['spike', 'emili'],
+    citasMes: 12,
+    ultimaCita: '2026-09-08T15:30:00-03:00',
+    actualizado: '2026-06-19T09:45:00-03:00',
+  },
+  {
+    id: 'doc-integraciones',
+    titulo: 'Integraciones disponibles y sus límites',
+    origen: 'manual',
+    resumen: 'Qué se conecta hoy, qué no, y qué requiere desarrollo a medida.',
+    fragmentos: 57,
+    agentes: ['spike'],
+    citasMes: 0,
+    ultimaCita: null,
+    actualizado: '2026-04-03T14:00:00-03:00',
+  },
+  {
+    id: 'doc-llamadas',
+    titulo: 'Transcripciones de llamadas cerradas · agosto',
+    origen: 'conversacion',
+    resumen: 'Lo que dijeron los clientes que sí compraron, en sus palabras.',
+    fragmentos: 206,
+    agentes: ['ariel', 'jarvis'],
+    citasMes: 31,
+    ultimaCita: '2026-09-13T17:22:00-03:00',
+    actualizado: '2026-09-01T12:00:00-03:00',
+  },
+]
+
+/**
+ * Traspasos de ejemplo.
+ *
+ * Elegidos para que se note el orden: el reclamo de hace 8 minutos tiene que
+ * quedar arriba del 'pidio hablar con alguien' de anteayer.
+ */
+export const TRASPASOS_EJEMPLO: Traspaso[] = [
+  {
+    id: 'tr-01',
+    conversacionId: 'conv-01',
+    cliente: 'Camila Vergara · Clínica Andes',
+    canal: 'whatsapp_baileys',
+    agenteId: 'vex',
+    motivo: 'reclamo',
+    resumen: 'Cobro duplicado del plan de septiembre. Pide la plata de vuelta hoy.',
+    ultimoMensaje: 'Me cobraron dos veces y nadie me responde, necesito que me devuelvan eso hoy.',
+    estado: 'esperando',
+    desde: '2026-09-15T23:42:00-03:00',
+    intentos: [
+      'Pidió el comprobante y lo recibió.',
+      'Ofreció nota de crédito; la clienta quiere la devolución, no crédito.',
+    ],
+    clienteEsperando: true,
+  },
+  {
+    id: 'tr-02',
+    conversacionId: 'conv-07',
+    cliente: 'Rodrigo Pizarro · Aurora Retail',
+    canal: 'whatsapp_oficial',
+    agenteId: 'ariel',
+    motivo: 'precio_no_autorizado',
+    resumen: 'Pide un 30% por tres años. El descuento máximo autorizado es 15%.',
+    ultimoMensaje: 'Si me dejan el anual en 30% menos firmamos mañana mismo.',
+    estado: 'esperando',
+    desde: '2026-09-15T21:10:00-03:00',
+    intentos: ['Ofreció el 15% anual, que es el tope del guion.'],
+    clienteEsperando: true,
+  },
+  {
+    id: 'tr-03',
+    conversacionId: 'conv-12',
+    cliente: 'Fernanda Soto',
+    canal: 'instagram',
+    agenteId: 'emili',
+    motivo: 'dato_sensible',
+    resumen: 'Mandó una foto de su cédula por el chat para validar identidad.',
+    ultimoMensaje: 'Ahí va mi carnet para que confirmen que soy yo.',
+    estado: 'tomado',
+    desde: '2026-09-15T18:30:00-03:00',
+    tomadoPor: 'Ignacio',
+    intentos: ['Pidió no enviar documentos por el chat; ya estaba enviado.'],
+    clienteEsperando: false,
+  },
+  {
+    id: 'tr-04',
+    conversacionId: 'conv-19',
+    cliente: 'Matías Leiva · Grupo Zeta',
+    canal: 'web',
+    agenteId: 'spike',
+    motivo: 'sin_conocimiento',
+    resumen: 'Pregunta si se integra con un ERP que no está en la base de conocimiento.',
+    ultimoMensaje: 'Trabajamos con Defontana, se puede conectar?',
+    estado: 'devuelto',
+    desde: '2026-09-14T16:05:00-03:00',
+    intentos: [
+      'Buscó en integraciones disponibles: no aparece.',
+      'Lo tomó soporte y lo devolvió: necesita respuesta de desarrollo.',
+    ],
+    clienteEsperando: false,
+  },
+  {
+    id: 'tr-05',
+    conversacionId: 'conv-22',
+    cliente: 'Paulina Ruiz',
+    canal: 'whatsapp_baileys',
+    agenteId: 'vex',
+    motivo: 'pidio_humano',
+    resumen: 'Quiere hablar con una persona antes de contratar. No dio motivo.',
+    ultimoMensaje: 'Prefiero que me llame alguien del equipo.',
+    estado: 'esperando',
+    desde: '2026-09-13T12:00:00-03:00',
+    intentos: ['Ofreció resolver las dudas por chat; insistió en la llamada.'],
+    clienteEsperando: false,
+  },
+  {
+    id: 'tr-06',
+    conversacionId: 'conv-04',
+    cliente: 'Hernán Cortés · Vitacura Motors',
+    canal: 'whatsapp_oficial',
+    agenteId: 'ariel',
+    motivo: 'tres_intentos',
+    resumen: 'No entendió la diferencia entre los planes después de tres explicaciones.',
+    ultimoMensaje: 'Sigo sin cachar qué me conviene.',
+    estado: 'cerrado',
+    desde: '2026-09-11T09:20:00-03:00',
+    tomadoPor: 'Ariel (humano)',
+    intentos: [],
+    clienteEsperando: false,
+  },
+]
+
+/**
+ * Métricas de ejemplo de los últimos 14 días.
+ *
+ * Las series suben hacia el final de la quincena, que es lo que pasa cuando
+ * una campaña entra a mitad de período: sirve para ver si el gráfico aguanta
+ * un salto y no solo una línea plana.
+ */
+export const METRICAS_EJEMPLO: MetricasSala = {
+  resueltasSinHumano: 312,
+  conversaciones: 358,
+  traspasos: 46,
+  leadsCaptados: 97,
+  reuniones: 23,
+  segundosPrimeraRespuesta: 38,
+  frenosAplicados: 61,
+  serieConversaciones: [18, 21, 16, 9, 7, 24, 27, 25, 22, 31, 29, 34, 41, 34],
+  serieResueltas: [16, 19, 14, 8, 7, 21, 24, 21, 18, 27, 25, 30, 36, 30],
+  motivosTraspaso: [
+    { motivo: 'Pidió hablar con una persona', veces: 14 },
+    { motivo: 'Precio fuera de lo autorizado', veces: 11 },
+    { motivo: 'No sabe la respuesta', veces: 8 },
+    { motivo: 'Reclamo', veces: 6 },
+    { motivo: 'Dato sensible', veces: 4 },
+    { motivo: 'No pudo en tres intentos', veces: 3 },
+  ],
+}
+
+/**
+ * Campañas de ejemplo.
+ *
+ * La primera está frenada a propósito: sale por el número propio, que es
+ * exactamente lo que no se debe hacer con un envío masivo. Si la pantalla no
+ * muestra ese freno, la pantalla está mal.
+ */
+export const CAMPANAS_EJEMPLO: Campana[] = [
+  {
+    id: 'cam-01',
+    nombre: 'Reactivar leads fríos de julio',
+    publico: '212 leads que cotizaron y no respondieron hace más de 60 días',
+    estado: 'borrador',
+    canal: 'WhatsApp · número propio',
+    canalOficial: false,
+    plantilla: { nombre: 'reactivacion_cotizacion_v2', aprobada: false },
+    destinatarios: 212,
+    conConsentimiento: 148,
+    agenteId: 'ariel',
+    cuando: 'sin fecha',
+  },
+  {
+    id: 'cam-02',
+    nombre: 'Aviso de mantención programada',
+    publico: '86 clientes activos con integración conectada',
+    estado: 'lista',
+    canal: 'WhatsApp · API oficial',
+    canalOficial: true,
+    plantilla: { nombre: 'mantencion_programada', aprobada: true },
+    destinatarios: 86,
+    conConsentimiento: 86,
+    agenteId: 'spike',
+    cuando: 'sale el 18-sep a las 09:00',
+  },
+  {
+    id: 'cam-03',
+    nombre: 'Invitación al taller de octubre',
+    publico: '134 contactos del sector salud',
+    estado: 'esperando_plantilla',
+    canal: 'WhatsApp · API oficial',
+    canalOficial: true,
+    plantilla: { nombre: 'invitacion_taller_oct', aprobada: false },
+    destinatarios: 134,
+    conConsentimiento: 121,
+    agenteId: 'emili',
+    cuando: 'en cuanto Meta apruebe',
+  },
+  {
+    id: 'cam-04',
+    nombre: 'Encuesta de satisfacción de agosto',
+    publico: '158 clientes atendidos el mes pasado',
+    estado: 'enviada',
+    canal: 'WhatsApp · API oficial',
+    canalOficial: true,
+    plantilla: { nombre: 'encuesta_satisfaccion', aprobada: true },
+    destinatarios: 158,
+    conConsentimiento: 158,
+    agenteId: 'vex',
+    resultado: { entregados: 154, respondieron: 61, reuniones: 9 },
+    cuando: 'salió el 2-sep',
   },
 ]

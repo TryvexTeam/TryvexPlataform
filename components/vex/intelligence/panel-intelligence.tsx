@@ -6,13 +6,20 @@ import { SalaAgentes } from './sala-agentes'
 import { EspacioAgente } from './espacio-agente'
 import { PanelHilos } from './panel-hilos'
 import { PanelCostos, type CostoAgente } from './panel-costos'
+import { PanelCanales } from './panel-canales'
+import { PanelTraspasos } from './panel-traspasos'
+import { PanelMetricas, type MetricasSala } from './panel-metricas'
+import { PanelCampanas, type Campana } from './panel-campanas'
+import { PanelConocimiento, type DocumentoConocimiento } from './panel-conocimiento'
 import type {
   AgenteSala,
+  Canal,
   ConversacionCliente,
   Encargo,
   EntradaHilo,
   Herramienta,
   Rutina,
+  Traspaso,
 } from '@/lib/types/sala-agentes'
 
 /**
@@ -37,11 +44,31 @@ interface PanelIntelligenceProps {
   conversaciones: ConversacionCliente[]
   /** Lo que cuesta el trabajo de cada agente. */
   costos: CostoAgente[]
+  /** Por dónde entra y sale el trabajo. */
+  canales: Canal[]
+  /** Lo que los agentes saben, y de dónde lo sacaron. */
+  documentos: DocumentoConocimiento[]
+  /** Lo que soltaron y espera a una persona. */
+  traspasos: Traspaso[]
+  /** Si el trabajo de los agentes sirve o no. */
+  metricas: MetricasSala
+  /** Salir a buscar, en vez de esperar. */
+  campanas: Campana[]
   /** El panel de WhatsApp que ya existía (estado, conversaciones y ajustes). */
   panelWhatsapp: React.ReactNode
 }
 
-type Vista = 'sala' | 'conversaciones' | 'espacio' | 'costos' | 'whatsapp'
+type Vista =
+  | 'sala'
+  | 'conversaciones'
+  | 'espacio'
+  | 'canales'
+  | 'traspasos'
+  | 'conocimiento'
+  | 'campanas'
+  | 'metricas'
+  | 'costos'
+  | 'whatsapp'
 
 export function PanelIntelligence({
   agentes,
@@ -51,11 +78,28 @@ export function PanelIntelligence({
   herramientas,
   conversaciones,
   costos,
+  canales,
+  documentos,
+  traspasos,
+  metricas,
+  campanas,
   panelWhatsapp,
 }: PanelIntelligenceProps) {
   const [vista, setVista] = useState<Vista>('sala')
   const esperandoFirma = encargos.filter((e) => e.requiereFirma && e.estado === 'bloqueada').length
   const sinLeer = conversaciones.reduce((total, c) => total + c.sinLeer, 0)
+  // Canales con un plazo corriendo o caídos: son los que hay que mirar hoy.
+  const canalesEnRiesgo = canales.filter(
+    (c) => c.estado === 'sin_latido' || c.estado === 'bloqueado' || (c.aviso && c.aviso.severidad !== 'info'),
+  ).length
+
+  // Un documento sin citas es peso muerto: o está mal indexado o nadie pregunta
+  // por eso. Se avisa en la pestaña para que alguien lo revise o lo archive.
+  // El que tiene a alguien esperando del otro lado manda sobre todo lo demás.
+  const traspasosUrgentes = traspasos.filter(
+    (t) => t.estado !== 'cerrado' && (t.clienteEsperando || t.estado === 'devuelto'),
+  ).length
+  const sinCitar = documentos.filter((d) => d.citasMes === 0).length
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto p-3 sm:p-5">
@@ -68,8 +112,14 @@ export function PanelIntelligence({
           </p>
         </div>
 
+        {/*
+          En el celular no caben siete pestañas en una línea: sin `flex-wrap`
+          las últimas quedan fuera de la pantalla y son inalcanzables. El equipo
+          trabaja desde el móvil, así que se envuelven y ocupan el ancho
+          completo, en vez de empujar el borde derecho fuera de la vista.
+        */}
         <div
-          className="flex gap-0.5 rounded-xl p-1"
+          className="flex w-full flex-wrap gap-0.5 rounded-xl p-1 sm:w-auto"
           style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-2)' }}
           role="group"
           aria-label="Vista"
@@ -98,6 +148,45 @@ export function PanelIntelligence({
           </Opcion>
           <Opcion activa={vista === 'espacio'} onClick={() => setVista('espacio')}>
             Espacio del agente
+          </Opcion>
+          <Opcion activa={vista === 'canales'} onClick={() => setVista('canales')}>
+            Canales
+            {canalesEnRiesgo > 0 && (
+              <span
+                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
+                style={{ background: 'var(--tx-warning)', color: '#14141b' }}
+              >
+                {canalesEnRiesgo}
+              </span>
+            )}
+          </Opcion>
+          <Opcion activa={vista === 'traspasos'} onClick={() => setVista('traspasos')}>
+            Traspasos
+            {traspasosUrgentes > 0 && (
+              <span
+                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
+                style={{ background: 'var(--tx-error)', color: '#fff' }}
+              >
+                {traspasosUrgentes}
+              </span>
+            )}
+          </Opcion>
+          <Opcion activa={vista === 'conocimiento'} onClick={() => setVista('conocimiento')}>
+            Conocimiento
+            {sinCitar > 0 && (
+              <span
+                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
+                style={{ background: 'var(--tx-warning)', color: '#14141b' }}
+              >
+                {sinCitar}
+              </span>
+            )}
+          </Opcion>
+          <Opcion activa={vista === 'campanas'} onClick={() => setVista('campanas')}>
+            Campañas
+          </Opcion>
+          <Opcion activa={vista === 'metricas'} onClick={() => setVista('metricas')}>
+            Métricas
           </Opcion>
           <Opcion activa={vista === 'costos'} onClick={() => setVista('costos')}>
             Costos
@@ -131,6 +220,13 @@ export function PanelIntelligence({
       {vista === 'conversaciones' && (
         <PanelHilos conversaciones={conversaciones} agentes={agentes} />
       )}
+      {vista === 'canales' && <PanelCanales canales={canales} agentes={agentes} />}
+      {vista === 'traspasos' && <PanelTraspasos traspasos={traspasos} agentes={agentes} />}
+      {vista === 'conocimiento' && (
+        <PanelConocimiento documentos={documentos} agentes={agentes} />
+      )}
+      {vista === 'campanas' && <PanelCampanas campanas={campanas} agentes={agentes} />}
+      {vista === 'metricas' && <PanelMetricas metricas={metricas} />}
       {vista === 'costos' && <PanelCostos costos={costos} agentes={agentes} />}
       {vista === 'espacio' && (
         <EspacioAgente
