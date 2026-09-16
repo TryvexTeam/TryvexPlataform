@@ -13,6 +13,7 @@ Es la MISMA lógica que ya validé migrando los 290 leads (scripts/migrar_leads_
 acá se reusa para que el scraper escriba directo bien en el CRM.
 """
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 # estado viejo -> estado del CRM (enum fact_leads)
@@ -134,13 +135,24 @@ def a_crm(lead: dict) -> dict:
         # codigo que lo lee con ese formato.
         "info_texto": (lead.get("info_texto") or None),
         "redes_sociales": redes_json,
-        "tiene_web": bool(lead.get("tiene_web")),
+        # 🔴 NO se usa bool() aca. `tiene_web` tiene TRES valores y el tercero
+        # importa: True (Maps lo trae en la ficha), False (Maps dice que no) y
+        # None ("no sabemos", cuando el dominio se adivino del nombre).
+        # bool(None) es False, y "no sabemos" convertido en "no tiene" es
+        # justo el error que le escribio a Opticas Premium ofreciendole una
+        # pagina teniendo una. El redactor ya sabe tratar el None.
+        "tiene_web": (None if lead.get("tiene_web") is None else bool(lead.get("tiene_web"))),
         # Sin esta linea el scraper lee bien la URL del sitio y la pierde
         # al armar la fila, en silencio. Ver comentario del 17-ago en scraper.py.
         "url_web": (lead.get("url_web") or None),
         # Que ofrece ese sitio (migracion 106). Sin esta linea el scraper lo
         # averigua y lo pierde al armar la fila, igual que paso con url_web.
         "web_capacidades": (lead.get("web_capacidades") or None),
+        # Cuando se miro ese sitio. Sin fecha no hay forma de saber si el
+        # hallazgo es de hoy o de hace tres meses.
+        "web_revisada_at": (
+            datetime.now(timezone.utc).isoformat() if lead.get("web_capacidades") else None
+        ),
         "nicho": normalizar_nicho(lead.get("nicho")),
         "localidad": localidad,
         "score": score_1_10(lead.get("score")),

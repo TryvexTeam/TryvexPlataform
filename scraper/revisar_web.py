@@ -117,8 +117,22 @@ class RevisionWeb:
 
     @property
     def es_oportunidad(self) -> bool:
-        """¿Su web esta a medio hacer? Entonces es un lead MEJOR, no un descarte."""
-        return self.estado in ("en_obra", "staging", "parqueada", "vacia", "caida")
+        """¿Su web esta a medio hacer? Entonces es un lead MEJOR, no un descarte.
+
+        🔴 Solo cuenta lo que SE PUDO COMPROBAR. Un timeout no es un sitio
+        muerto: es un sitio que no alcanzamos. Caso real del 16-sep, la primera
+        corrida con esto en el VPS: pasteleriavienesa.cl quedo marcada "caida"
+        por ConnectTimeout desde el servidor, y responde 200 desde otra red --
+        el sitio bloquea al datacenter. Si eso pasa por bueno, Vex le escribe
+        al dueño diciendole que su web esta caida cuando no lo esta.
+
+        Por eso `caida` solo vale si vino de una respuesta HTTP de verdad
+        (un 404, un 500). Si `revisada` es False, no sabemos nada y no se
+        afirma nada.
+        """
+        if self.estado == "caida":
+            return self.revisada
+        return self.estado in ("en_obra", "staging", "parqueada", "vacia")
 
     def como_dict(self) -> dict:
         return {
@@ -187,6 +201,9 @@ async def revisar_web(url: str, timeout: float = 8.0) -> RevisionWeb:
                 # negocio tiene dominio y no tiene sitio en pie.
                 r.error = f"home respondio {resp.status_code}"
                 r.estado = "caida"
+                # El servidor contesto: esto SI es una comprobacion. Se
+                # distingue del timeout, donde nunca supimos nada.
+                r.revisada = True
                 return r
             r.revisada = True
             r.paginas_leidas = 1
@@ -194,9 +211,10 @@ async def revisar_web(url: str, timeout: float = 8.0) -> RevisionWeb:
             encontradas |= senales_en(resp.text)
         except Exception as e:  # noqa: BLE001 — el motivo se guarda, no se traga
             r.error = type(e).__name__
-            # No se pudo abrir: puede ser el dominio caido o un problema
-            # nuestro. Se marca como caida pero `revisada` queda en False, que
-            # es lo que dice "no lo pudimos comprobar".
+            # No se pudo abrir. Puede ser el dominio caido, puede ser la red
+            # del servidor, puede ser el sitio bloqueando datacenters. NO
+            # sabemos cual, asi que no se afirma ninguna. `revisada` en False
+            # hace que `es_oportunidad` no lo cuente.
             r.estado = "caida"
             return r
 

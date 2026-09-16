@@ -101,8 +101,10 @@ def test_un_sitio_de_verdad_se_reconoce_como_vivo():
 
 
 def test_el_sitio_a_medias_es_oportunidad_y_el_vivo_no():
-    for estado in ("en_obra", "staging", "parqueada", "vacia", "caida"):
+    for estado in ("en_obra", "staging", "parqueada", "vacia"):
         assert RevisionWeb(url="x", estado=estado).es_oportunidad, estado
+    # "caida" pide haberlo comprobado: ver los tests del timeout mas abajo.
+    assert RevisionWeb(url="x", estado="caida", revisada=True).es_oportunidad
     assert not RevisionWeb(url="x", estado="viva").es_oportunidad
     assert not RevisionWeb(url="x", estado="desconocido").es_oportunidad
 
@@ -112,3 +114,42 @@ def test_el_dominio_parqueado_que_rebota_a_lander():
     # rebota por JavaScript a /lander. El scraper lo contaba como "tiene web".
     html = '<!DOCTYPE html><html><head><script>window.onload=function(){window.location.href="/lander"}</script></head></html>'
     assert clasificar_sitio(html) == "parqueada"
+
+
+# ── Un timeout NO es un sitio caido ──────────────────────────────────────────
+# Caso real del 16-sep, primera corrida con esto en el VPS:
+# pasteleriavienesa.cl quedo marcada "caida" por ConnectTimeout desde el
+# servidor, y responde 200 desde otra red. El sitio bloquea al datacenter.
+# Sin este freno, Vex le escribe al dueño diciendole que su web esta caida.
+
+
+def test_un_timeout_no_cuenta_como_oportunidad():
+    r = RevisionWeb(url="https://www.pasteleriavienesa.cl/")
+    r.estado = "caida"
+    r.revisada = False
+    r.error = "ConnectTimeout"
+    assert not r.es_oportunidad, "un timeout es 'no pudimos ver', no 'esta caida'"
+
+
+def test_una_caida_comprobada_por_http_si_cuenta():
+    # Un 404 o un 500 lo contesto el servidor: eso si lo vimos.
+    r = RevisionWeb(url="https://ejemplo.cl")
+    r.estado = "caida"
+    r.revisada = True
+    r.error = "home respondio 404"
+    assert r.es_oportunidad
+
+
+def test_los_otros_estados_no_dependen_de_revisada():
+    for estado in ("en_obra", "staging", "parqueada", "vacia"):
+        r = RevisionWeb(url="https://ejemplo.cl")
+        r.estado = estado
+        r.revisada = True
+        assert r.es_oportunidad, estado
+
+
+def test_una_web_viva_nunca_es_oportunidad():
+    r = RevisionWeb(url="https://ejemplo.cl")
+    r.estado = "viva"
+    r.revisada = True
+    assert not r.es_oportunidad
