@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Topbar } from '@/components/layout/topbar'
 import { BottomNav } from '@/components/layout/bottom-nav'
@@ -15,8 +15,14 @@ import { JornadasRepository } from '@/lib/repos/jornadas'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
+
+  // El fusible de siempre: fuera de desarrollo, `bypass` es false y nada de lo
+  // de abajo se activa.
+  const bypass =
+    process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true'
+
   let user = null
-  if (process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true') {
+  if (bypass) {
     user = { id: '1230b7c1-8086-4f14-b6b1-2afa9deb56ae', email: 'ignacio.andres.navarrete.silva@gmail.com' }
   } else {
     const res = await supabase.auth.getUser()
@@ -24,6 +30,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   if (!user) redirect('/login')
+
+  /*
+   * Con el atajo puesto, los datos se piden con el cliente de servicio.
+   *
+   * El usuario inventado no tiene sesión: `auth.uid()` es null y RLS niega
+   * `dim_integrantes`. El layout moría con "permission denied for table
+   * dim_integrantes" y con él se caía la app ENTERA — no la pantalla que uno
+   * quería mirar, toda. El middleware ya había previsto la mitad del problema
+   * (por eso no comprueba la fila del integrante, "comprobarlo convertiría el
+   * bypass en un candado"); faltaba esta otra mitad.
+   */
+  const datos = bypass ? createAdminClient() : supabase
 
   /*
    * Dos consultas en paralelo, no cuatro en fila.
@@ -36,10 +54,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * la vez en lugar de después.
    */
   const [permisos, { data: equipo }] = await Promise.all([
-    new PermisosRepository(supabase).misPermisos(user.id),
+    new PermisosRepository(datos).misPermisos(user.id),
     // El equipo se carga acá y no en el chat porque una llamada entrante tiene
     // que poder decir quién llama estando uno en leads, en finanzas o donde sea.
-    supabase
+    datos
       .from('dim_integrantes')
       .select('id, nombre, avatar_url, color')
       .eq('activo', true) as unknown as Promise<{
@@ -54,7 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // y se traga su propio error: sin este dato la app sigue, solo que sin freno
   // — preferible a una pantalla en blanco por un fallo de una consulta.
   const jornadaAbierta = permisos?.id
-    ? Boolean(await new JornadasRepository(supabase).getAbierta(permisos.id).catch(() => null))
+    ? Boolean(await new JornadasRepository(datos).getAbierta(permisos.id).catch(() => null))
     : true
 
   const nombre = permisos?.nombre ?? user.email ?? 'Usuario'
@@ -103,7 +121,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   )
 
   return (
-    <AuthProvider>
+    <AuthProvider bypass={bypass}>
       <ThemeProvider>
         {integrante ? (
           <ProveedorLlamadas miIntegranteId={integrante.id} equipo={equipo ?? []}>

@@ -196,6 +196,15 @@
 }
 
 /*
+  Acá vivieron `.cara-parpadeo` y `.cara-respira`, de la primera versión de las
+  caras de los agentes. Ya no existen: el avatar actual (`avatar-bot.tsx`) anima
+  con transiciones sobre `transform`, interpolando entre expresiones reales de
+  la definición, y el parpadeo lo gobierna la propia animación con intervalos
+  irregulares. Se quitan en vez de dejarlas "por si acaso": CSS muerto que nadie
+  puede rastrear es exactamente lo que después nadie se atreve a borrar.
+*/
+
+/*
   `.glass` es un velo blanco de 3.5% que se apoya ENTERAMENTE en el desenfoque:
   sin `backdrop-filter` no hay superficie, solo un vidrio limpio. Eso funciona
   en el monitor, pero se rompe en dos casos reales:
