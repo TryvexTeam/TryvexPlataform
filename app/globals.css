@@ -196,6 +196,31 @@
 }
 
 /*
+  ── La cara del agente (Tryvex Intelligence) ──
+
+  Un agente que está trabajando parpadea; el que no, no. Es toda la animación
+  que hay, y es deliberado: el estado se lee en la cara en vez de repartirse en
+  puntitos y semáforos alrededor.
+
+  Va acá y no en el componente porque es una animación con keyframes, y el
+  `style` en línea de React no las declara. Misma lección que `AppShell`: si la
+  regla no viaja con lo publicado, el componente se despliega sin ella.
+*/
+.cara-parpadeo {
+  transform-origin: center;
+  animation: cara-parpadeo 6s infinite;
+}
+
+@keyframes cara-parpadeo {
+  0%, 94%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cara-parpadeo { animation: none; }
+}
+
+/*
   `.glass` es un velo blanco de 3.5% que se apoya ENTERAMENTE en el desenfoque:
   sin `backdrop-filter` no hay superficie, solo un vidrio limpio. Eso funciona
   en el monitor, pero se rompe en dos casos reales:

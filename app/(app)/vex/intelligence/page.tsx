@@ -1,6 +1,5 @@
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ArrowLeft, Brain, ShieldAlert } from 'lucide-react'
+import { ShieldAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { obtenerAjustes, obtenerConversaciones, agenteConfigurado } from '@/lib/vex/agente'
@@ -8,6 +7,14 @@ import { obtenerEstadoQr } from '@/lib/wa/qr'
 import { PanelAjustes } from '@/components/vex/intelligence/panel-ajustes'
 import { PanelConversaciones } from '@/components/vex/intelligence/panel-conversaciones'
 import { EstadoAgente } from '@/components/vex/intelligence/estado-agente'
+import { PanelIntelligence } from '@/components/vex/intelligence/panel-intelligence'
+import {
+  AGENTES_EJEMPLO,
+  ENCARGOS_EJEMPLO,
+  HERRAMIENTAS_EJEMPLO,
+  HILO_EJEMPLO,
+  RUTINAS_EJEMPLO,
+} from '@/lib/vex/sala-ejemplo'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,14 +23,16 @@ export const metadata = {
 }
 
 /**
- * Tryvex Intelligence — el puesto de control del agente, dentro del CRM.
+ * Tryvex Intelligence — la sala donde trabajan los agentes del equipo.
  *
- * El agente tiene su propio panel, pero el equipo trabaja acá: es donde está la
- * ficha del lead, su historial y el pipeline. Una conversación de WhatsApp sin
- * ese contexto al lado vale la mitad.
+ * Qué cambió y por qué: antes esta pantalla era SOLO el puesto de control del
+ * agente de WhatsApp. Ese panel sigue vivo y sin tocar —el equipo lo usa en
+ * producción—, pero pasó a ser una de tres vistas. Las otras dos son la sala de
+ * agentes y el espacio de cada uno, que es a donde va a ir creciendo todo lo
+ * demás: rutinas, herramientas, base de conocimiento, campañas y costos.
  *
- * Todo se resuelve en el servidor para que la pantalla llegue con datos y no con
- * esqueletos: el token del agente no sale de acá.
+ * El panel de WhatsApp se resuelve acá, en el servidor, y baja como `children`:
+ * el token del agente no puede llegar al navegador.
  */
 export default async function TryvexIntelligencePage() {
   const supabase = await createClient()
@@ -40,20 +49,38 @@ export default async function TryvexIntelligencePage() {
       <Marco>
         <Aviso
           titulo="Solo para integrantes del equipo"
-          detalle="Operar el agente puede cambiar lo que se le responde a los leads, así que hace falta un perfil de integrante activo."
+          detalle="Operar a los agentes puede cambiar lo que se le responde a los leads, así que hace falta un perfil de integrante activo."
         />
       </Marco>
     )
   }
 
+  return (
+    <PanelIntelligence
+      agentes={AGENTES_EJEMPLO}
+      encargos={ENCARGOS_EJEMPLO}
+      hilo={HILO_EJEMPLO}
+      rutinas={RUTINAS_EJEMPLO}
+      herramientas={HERRAMIENTAS_EJEMPLO}
+      panelWhatsapp={await PanelDeWhatsapp()}
+    />
+  )
+}
+
+/**
+ * El panel de siempre: estado del número, conversaciones y ajustes.
+ *
+ * Devuelve el aviso correspondiente cuando el agente no está configurado o no
+ * responde, en vez de una pantalla vacía: un panel sin datos y sin explicación
+ * manda a revisar el lugar equivocado.
+ */
+async function PanelDeWhatsapp() {
   if (!agenteConfigurado()) {
     return (
-      <Marco>
-        <Aviso
-          titulo="El agente todavía no está conectado"
-          detalle="Faltan VEX_AGENT_URL y VEX_AGENT_TOKEN en el entorno del CRM. Mientras tanto, el equipo puede seguir escribiéndole a los leads desde su ficha."
-        />
-      </Marco>
+      <Aviso
+        titulo="El agente de WhatsApp todavía no está conectado"
+        detalle="Faltan VEX_AGENT_URL y VEX_AGENT_TOKEN en el entorno del CRM. Mientras tanto, el equipo puede seguir escribiéndole a los leads desde su ficha."
+      />
     )
   }
 
@@ -64,66 +91,35 @@ export default async function TryvexIntelligencePage() {
     obtenerEstadoQr(),
   ])
 
-  // Si el agente no responde, se dice qué pasó en vez de mostrar una pantalla
-  // vacía: un panel sin datos y sin explicación manda a revisar el lugar
-  // equivocado.
   if (ajustes.status === 'rejected') {
     return (
-      <Marco>
-        <Aviso
-          titulo="El agente no respondió"
-          detalle={
-            ajustes.reason instanceof Error
-              ? ajustes.reason.message
-              : 'No se pudo contactar al agente de WhatsApp.'
-          }
-        />
-      </Marco>
+      <Aviso
+        titulo="El agente no respondió"
+        detalle={
+          ajustes.reason instanceof Error
+            ? ajustes.reason.message
+            : 'No se pudo contactar al agente de WhatsApp.'
+        }
+      />
     )
   }
 
   return (
-    <Marco>
+    <div className="flex flex-col gap-4">
       <EstadoAgente
         qr={qr.status === 'fulfilled' ? qr.value : { estado: 'sin_respuesta' }}
         pausado={ajustes.value.settings.paused === '1'}
       />
-
       <PanelConversaciones
         inicial={conversaciones.status === 'fulfilled' ? conversaciones.value : []}
       />
-
       <PanelAjustes inicial={ajustes.value.settings} />
-    </Marco>
+    </div>
   )
 }
 
 function Marco({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 sm:p-6">
-      <header className="flex flex-col gap-2">
-        <Link
-          href="/vex"
-          className="inline-flex w-fit items-center gap-1.5 text-xs text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] transition-colors"
-        >
-          <ArrowLeft size={13} />
-          Volver a Vex
-        </Link>
-        <div className="flex items-center gap-2">
-          <Brain size={20} className="text-[var(--tx-accent)]" />
-          <h1 className="text-xl font-semibold text-[var(--tx-ink-primary)]">
-            Tryvex Intelligence
-          </h1>
-        </div>
-        <p className="text-sm text-[var(--tx-ink-secondary)] max-w-prose">
-          Cómo trabaja el agente cuando un lead responde. Los cambios tienen efecto en la
-          conversación siguiente, sin reiniciar nada.
-        </p>
-      </header>
-
-      {children}
-    </div>
-  )
+  return <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 sm:p-6">{children}</div>
 }
 
 function Aviso({ titulo, detalle }: { titulo: string; detalle: string }) {
@@ -135,7 +131,7 @@ function Aviso({ titulo, detalle }: { titulo: string; detalle: string }) {
       <ShieldAlert size={18} className="mt-0.5 shrink-0 text-[var(--tx-warning)]" />
       <div>
         <p className="text-sm font-medium text-[var(--tx-ink-primary)]">{titulo}</p>
-        <p className="mt-0.5 text-xs text-[var(--tx-ink-muted)] max-w-prose">{detalle}</p>
+        <p className="mt-0.5 max-w-prose text-xs text-[var(--tx-ink-muted)]">{detalle}</p>
       </div>
     </div>
   )
