@@ -10,6 +10,7 @@ import asyncio
 import logging
 import random
 import re
+import urllib.parse
 import os
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -620,6 +621,37 @@ async def cerro_para_siempre(page: Page) -> bool:
     return False
 
 
+def limpiar_url(href: str) -> str:
+    """Se queda con la direccion y tira lo que el dueño pego al lado.
+
+    🔴 El campo "sitio web" de Maps lo escribe el dueño a mano, y a veces mete
+    mas de una cosa. Caso real del 16-sep, en la corrida de prueba:
+
+        http://www.vets.cl/%20,%20atencioncliente@vets.cl
+
+    Es el sitio, una coma y el correo, todo en el mismo campo. Guardado asi da
+    404 -- y el scraper lo leia como "su web esta caida" cuando vets.cl
+    responde 200. El sitio estaba sano; lo roto era nuestro dato.
+
+    Se corta en el primer espacio (venga literal o como %20) y en la coma, y
+    se descarta lo que quede si trae arroba.
+    """
+    u = (href or "").strip()
+    if not u:
+        return u
+    u = urllib.parse.unquote(u)
+    # Cualquier espacio en blanco corta: el resto es lo que el dueño pego al lado.
+    u = u.split()[0] if u.split() else ""
+    for sep in (",", ";"):
+        if sep in u:
+            u = u.split(sep, 1)[0]
+    u = u.strip().rstrip(",;")
+    # Si lo que queda es un correo, no es una web.
+    if "@" in u.split("/")[-1]:
+        u = u.rsplit("/", 1)[0]
+    return u.strip()
+
+
 async def extraer_negocio(page: Page) -> Optional[dict]:
     nombre: Optional[str] = None
     for selector in ["h1.DUwDvf", "h1[data-attrid]", "h1"]:
@@ -647,7 +679,7 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
                     redes_desde_web = href
                 else:
                     tiene_web = True
-                    url_web = href
+                    url_web = limpiar_url(href)
     except Exception:
         pass
 
