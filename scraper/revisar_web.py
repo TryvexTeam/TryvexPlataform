@@ -69,6 +69,39 @@ SENALES: dict[str, tuple[str, ...]] = {
 }
 
 
+# Que ES ese sitio. Un dominio que responde 200 no es un negocio con web
+# andando: puede ser "volvemos pronto", un staging olvidado o un dominio en
+# venta. La diferencia importa porque cambia de lado el lead.
+#
+# ⭐ Este es el hallazgo de Jarvis (15-sep) que mas plata puede mover: el
+# scraper descartaba por igual al que tiene un sitio funcionando y al que lo
+# tiene a medio hacer. El segundo es el MEJOR lead que hay -- ya decidio que
+# necesita web, ya puso plata, y quedo botado. La venta ahi no es "hagamos un
+# sitio", es "terminemos lo que empezaste". Casos reales de su revision: Santo
+# Pan ("en mantencion"), La Tienda de Ruben (tienda en wpcomstaging.com),
+# Ivan Gonzalez (bucle 302, 16 s, 0 bytes), NRG (el dominio de su Facebook no
+# existe).
+EN_OBRA = (
+    r"en\s+mantenci[oó]n", r"under\s+construction", r"coming\s+soon",
+    r"pr[oó]ximamente", r"sitio\s+en\s+construcci[oó]n", r"volvemos\s+pronto",
+    r"estamos\s+trabajando\s+en", r"web\s+en\s+construcci[oó]n",
+)
+PARQUEADA = (
+    r"dominio\s+en\s+venta", r"buy\s+this\s+domain", r"this\s+domain\s+is\s+for\s+sale",
+    r"parked\s+(free\s+)?(at|by)", r"sedoparking", r"domain\s+broker",
+    r"hugedomains", r"afternic",
+    # ⭐ La firma mas comun y la mas silenciosa: 114 bytes de HTML que rebotan
+    # por JavaScript a "/lander". Es lo que sirven GoDaddy y compania para un
+    # dominio comprado y sin usar. Responde 200, asi que el scraper lo contaba
+    # como "tiene web". Encontrado el 15-sep en cafeforestal.com,
+    # centroferretero.com, zonafranka.com y tecnoferre.com -- todos dominios que
+    # `buscar_web_por_nombre` habia adivinado y dado por suyos.
+    r"location\.href\s*=\s*[\"']/lander", r"/lander[\"']",
+)
+# Dominios que delatan un sitio a medio publicar, sin mirar el contenido.
+HOSTS_STAGING = ("wpcomstaging.com", ".staging.", "staging.", "dev.", ".test.", "myshopify.com/password")
+
+
 @dataclass
 class RevisionWeb:
     url: str
@@ -77,6 +110,15 @@ class RevisionWeb:
     capacidades: list[str] = field(default_factory=list)
     paginas_leidas: int = 0
     error: Optional[str] = None
+    estado: str = "desconocido"
+    """viva · en_obra · staging · parqueada · vacia · caida · desconocido."""
+    url_final: Optional[str] = None
+    """Adonde termino despues de los redirects. Delata dominios revendidos."""
+
+    @property
+    def es_oportunidad(self) -> bool:
+        """¿Su web esta a medio hacer? Entonces es un lead MEJOR, no un descarte."""
+        return self.estado in ("en_obra", "staging", "parqueada", "vacia", "caida")
 
     def como_dict(self) -> dict:
         return {
@@ -85,7 +127,30 @@ class RevisionWeb:
             "capacidades": sorted(self.capacidades),
             "paginas_leidas": self.paginas_leidas,
             "error": self.error,
+            "estado": self.estado,
+            "url_final": self.url_final,
+            "es_oportunidad": self.es_oportunidad,
         }
+
+
+def clasificar_sitio(html: str, url_final: str = "", tamano: Optional[int] = None) -> str:
+    """En que estado esta el sitio. Solo con lo que entrega el servidor."""
+    if any(h in (url_final or "").lower() for h in HOSTS_STAGING):
+        return "staging"
+
+    texto = (html or "").lower()
+    if any(re.search(p, texto) for p in PARQUEADA):
+        return "parqueada"
+    if any(re.search(p, texto) for p in EN_OBRA):
+        return "en_obra"
+
+    # Una pagina casi sin texto no es un sitio: es un dominio con algo puesto.
+    sin_marcas = re.sub(r"<[^>]+>", " ", html or "")
+    palabras = len(sin_marcas.split())
+    if palabras < 40:
+        return "vacia"
+
+    return "viva"
 
 
 def senales_en(html: str) -> set[str]:
@@ -116,14 +181,29 @@ async def revisar_web(url: str, timeout: float = 8.0) -> RevisionWeb:
     ) as client:
         try:
             resp = await client.get(base)
+            r.url_final = str(resp.url)
             if resp.status_code >= 400:
+                # Un 404 o un 500 en la home tambien es una oportunidad: el
+                # negocio tiene dominio y no tiene sitio en pie.
                 r.error = f"home respondio {resp.status_code}"
+                r.estado = "caida"
                 return r
             r.revisada = True
             r.paginas_leidas = 1
+            r.estado = clasificar_sitio(resp.text, r.url_final)
             encontradas |= senales_en(resp.text)
         except Exception as e:  # noqa: BLE001 — el motivo se guarda, no se traga
             r.error = type(e).__name__
+            # No se pudo abrir: puede ser el dominio caido o un problema
+            # nuestro. Se marca como caida pero `revisada` queda en False, que
+            # es lo que dice "no lo pudimos comprobar".
+            r.estado = "caida"
+            return r
+
+        # Un sitio a medio hacer no necesita que le miremos las capacidades: no
+        # las tiene, y el gancho es otro.
+        if r.es_oportunidad:
+            r.capacidades = []
             return r
 
         # Muchos sitios responden 200 a CUALQUIER ruta y devuelven siempre la

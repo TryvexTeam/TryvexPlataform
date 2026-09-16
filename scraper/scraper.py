@@ -602,7 +602,28 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
     # SaaS e IA aplicada, y para eso tener web es BUENA senal. Se deja
     # configurable y se registra, porque antes se descartaba en silencio y
     # nadie sabia cuantos de los ~580 descartes diarios eran por esto.
-    if tiene_web:
+    # 🔴 Y antes de descartar por tener web, hay que MIRAR esa web. Un dominio
+    # que responde 200 no es un negocio con sitio andando: puede decir "volvemos
+    # pronto", ser un staging olvidado o un dominio en venta.
+    #
+    # Ese es justo el mejor lead que existe y lo estabamos botando todos los
+    # dias: ya decidio que necesita web, ya puso plata, y quedo a medias. La
+    # venta no es "hagamos un sitio", es "terminemos lo que empezaste". Casos
+    # reales del diagnostico del 15-sep: Santo Pan ("en mantencion"), La Tienda
+    # de Ruben (tienda en wpcomstaging.com), Ivan Gonzalez (bucle de redirects,
+    # 16 s y 0 bytes).
+    revision = None
+    if tiene_web and url_web:
+        try:
+            revision = await revisar_web(url_web)
+        except Exception as e:
+            log.info(f"  no se pudo revisar la web de {nombre}: {type(e).__name__}")
+
+    if tiene_web and revision is not None and revision.es_oportunidad:
+        DESCARTES["web_a_medias"] = DESCARTES.get("web_a_medias", 0) + 1
+        log.info(f"  ⭐ LEAD BUENO (web {revision.estado}): {nombre} -> {url_web}")
+        # No se descarta: sigue de largo y se guarda con el hallazgo.
+    elif tiene_web:
         DESCARTES["con_web"] += 1
         log.info(f"  descartado (ya tiene web): {nombre} -> {url_web}")
         if DESCARTAR_CON_WEB:
@@ -664,14 +685,11 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
     # Solo se revisa la web CONFIRMADA. Mirar lo que ofrece un sitio que quiza
     # no es suyo es peor que no mirar nada: le terminamos diciendo "ya tienes
     # agenda" por la agenda de otra empresa.
-    web_capacidades = None
-    if web_confirmada and url_web:
-        try:
-            web_capacidades = (await revisar_web(url_web)).como_dict()
-            if web_capacidades["capacidades"]:
-                log.info(f"  web de {nombre}: {', '.join(web_capacidades['capacidades'])}")
-        except Exception as e:
-            log.info(f"  no se pudo revisar la web de {nombre}: {type(e).__name__}")
+    # La revision ya se hizo mas arriba, al decidir si se descartaba. Se
+    # reutiliza en vez de pedir la pagina dos veces.
+    web_capacidades = revision.como_dict() if (web_confirmada and revision is not None) else None
+    if web_capacidades and web_capacidades["capacidades"]:
+        log.info(f"  web de {nombre}: {', '.join(web_capacidades['capacidades'])}")
 
     return {
         "nombre": nombre,

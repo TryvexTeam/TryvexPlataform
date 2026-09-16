@@ -63,3 +63,52 @@ def test_no_confunde_telefono_con_whatsapp():
 
 def test_las_mayusculas_no_esconden_una_senal():
     assert "reserva" in senales_en("<A HREF='HTTPS://RESERVO.CL/X'>RESERVAR</A>")
+
+
+# --- en que ESTADO esta el sitio -------------------------------------------
+# Un dominio que responde 200 no es un negocio con web andando. Y el que la
+# tiene a medias es el MEJOR lead: ya decidio que la necesita, ya puso plata y
+# quedo botado. Casos del diagnostico del 15-sep.
+
+from revisar_web import clasificar_sitio, RevisionWeb  # noqa: E402
+
+
+def test_en_mantencion_no_es_un_sitio_andando():
+    # Santo Pan: su dominio responde 200 y dice esto.
+    assert clasificar_sitio("<html><body><h1>Sitio en mantención</h1><p>Volvemos pronto</p></body></html>") == "en_obra"
+    assert clasificar_sitio("<h1>Under Construction</h1>") == "en_obra"
+    assert clasificar_sitio("<h1>Coming soon</h1>") == "en_obra"
+
+
+def test_staging_se_detecta_por_el_dominio():
+    # La Tienda de Ruben: su tienda vive en wpcomstaging.com.
+    assert clasificar_sitio("<html>" + "palabra " * 100 + "</html>",
+                            "https://latiendaderuben.wpcomstaging.com/") == "staging"
+
+
+def test_dominio_en_venta_no_es_del_negocio():
+    assert clasificar_sitio("<h1>This domain is for sale</h1>") == "parqueada"
+    assert clasificar_sitio("<p>Dominio en venta, contacte al broker</p>") == "parqueada"
+
+
+def test_una_pagina_casi_vacia_no_es_un_sitio():
+    assert clasificar_sitio("<html><body><p>Hola</p></body></html>") == "vacia"
+
+
+def test_un_sitio_de_verdad_se_reconoce_como_vivo():
+    html = "<html><body>" + "<p>Lentes oftalmicos y examen de la vista en Santiago</p>" * 20 + "</body></html>"
+    assert clasificar_sitio(html, "https://optica.cl/") == "viva"
+
+
+def test_el_sitio_a_medias_es_oportunidad_y_el_vivo_no():
+    for estado in ("en_obra", "staging", "parqueada", "vacia", "caida"):
+        assert RevisionWeb(url="x", estado=estado).es_oportunidad, estado
+    assert not RevisionWeb(url="x", estado="viva").es_oportunidad
+    assert not RevisionWeb(url="x", estado="desconocido").es_oportunidad
+
+
+def test_el_dominio_parqueado_que_rebota_a_lander():
+    # Caso real (cafeforestal.com, 15-sep): 114 bytes de HTML, responde 200, y
+    # rebota por JavaScript a /lander. El scraper lo contaba como "tiene web".
+    html = '<!DOCTYPE html><html><head><script>window.onload=function(){window.location.href="/lander"}</script></head></html>'
+    assert clasificar_sitio(html) == "parqueada"
