@@ -173,21 +173,75 @@ def calcular_score(
     info_texto: Optional[str],
     rating: Optional[float] = None,
     num_resenas: Optional[int] = None,
+    estado_web: Optional[str] = None,
 ) -> int:
+    """Que tan bueno es este lead, de 0 a 100.
+
+    🔴 Lo que media antes y por que estaba al reves (diagnostico del 15-sep):
+    sumaba +15 por tener nota bajo 4,0 y +10 por tener menos de 20 resenas. O
+    sea premiaba la MALA reputacion, con el razonamiento de "hay mas que
+    mejorar". En la practica ordenaba la cola al reves:
+
+        Madepan, sin ninguna huella digital        -> 10/10
+        Milano, fabricante con distribucion nacional -> 5/10
+        Pilar Adet, 4,8 con 294 resenas, cliente B2B -> 5/10
+
+    Un negocio con 4,8 y 294 resenas tiene clientes, tiene plata y le importa
+    su reputacion. Ese compra. Uno con 3,2 y 4 resenas puede que ni siga
+    abierto.
+
+    Ahora se mide lo que hace a un lead comprable:
+
+      - que se le pueda hablar (telefono, redes)
+      - que sea un negocio que funciona (buena nota CON volumen de resenas)
+      - que ya haya decidido invertir en su presencia y haya quedado a medias
+        (la web rota es la senal mas fuerte que tenemos)
+    """
     score = 0
+
+    # Poder contactarlo sigue siendo lo primero: sin canal no hay lead.
     if telefono:
-        score += 50
+        score += 40
     if redes:
-        score += 30
-    if info_texto and len(info_texto.strip()) > 10:
-        score += 20
-    # Rating bajo → oportunidad de mejora de reputación
-    if rating is not None and rating < 4.0:
         score += 15
-    # Pocas reseñas → oportunidad de marketing
-    if num_resenas is not None and num_resenas < 20:
-        score += 10
-    return score
+    if info_texto and len(info_texto.strip()) > 10:
+        score += 5
+
+    # Un negocio que funciona: buena nota, pero solo si hay volumen detras. Un
+    # 5,0 con una resena no dice nada -- y de hecho citarlo suena a burla.
+    if rating is not None and num_resenas is not None:
+        if rating >= 4.5 and num_resenas >= 100:
+            score += 25
+        elif rating >= 4.3 and num_resenas >= 40:
+            score += 18
+        elif rating >= 4.0 and num_resenas >= 20:
+            score += 10
+
+    # El VOLUMEN por si solo dice algo que la nota no: cuanta gente pasa por
+    # ahi. Un local con 2.556 resenas es un negocio establecido aunque su nota
+    # sea 4,1 — tiene clientes, tiene flujo y tiene con que pagar.
+    #
+    # Sin esto, Pizzeria Alleria (4,6 con 2.556) quedaba en el mismo escalon
+    # que un local con 20 resenas, y Le Cafe de la Vie (4,1 con 294) caia al
+    # fondo por no llegar al 4,3.
+    #
+    # ⚠️ Con un tope: arriba de ~3.000 resenas para un negocio de barrio la
+    # ficha suele estar mal categorizada y las resenas son de otra cosa (la
+    # importadora del Persa Bio Bio mostraba 10.657, que son del persa entero).
+    if num_resenas is not None and (rating is None or rating >= 3.5):
+        if 150 <= num_resenas <= 3000:
+            score += 10
+        elif 40 <= num_resenas < 150:
+            score += 5
+
+    # ⭐ La senal mas fuerte: ya decidio que necesita presencia digital, puso
+    # plata y quedo a medias. Es el lead que mas rapido cierra.
+    if estado_web in ("en_obra", "staging"):
+        score += 20
+    elif estado_web in ("caida", "vacia"):
+        score += 15
+
+    return min(score, 100)
 
 
 async def delay() -> None:
@@ -799,6 +853,9 @@ async def scrape_categoria(
                 datos["info_texto"],
                 datos.get("rating"),
                 datos.get("num_resenas"),
+                # El estado de su web pesa en el score: una a medio hacer es la
+                # senal mas fuerte de que ese negocio compra.
+                (datos.get("web_capacidades") or {}).get("estado"),
             )
 
             # ⚠️ Este dict se arma copiando campo por campo desde `datos`, asi
