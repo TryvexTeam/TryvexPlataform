@@ -10,6 +10,8 @@ import { EstadoAgente } from '@/components/vex/intelligence/estado-agente'
 import { PanelIntelligence } from '@/components/vex/intelligence/panel-intelligence'
 import {
   AGENTES_EJEMPLO,
+  CONVERSACIONES_EJEMPLO,
+  COSTOS_EJEMPLO,
   ENCARGOS_EJEMPLO,
   HERRAMIENTAS_EJEMPLO,
   HILO_EJEMPLO,
@@ -36,15 +38,23 @@ export const metadata = {
  */
 export default async function TryvexIntelligencePage() {
   const supabase = await createClient()
+
+  // Mismo atajo que el layout: en desarrollo con BYPASS_AUTH no hay sesión, y
+  // esta comprobación mandaba a /login. Como el middleware con el atajo ve un
+  // usuario válido, rebotaba al panel: la pantalla se expulsaba sola en bucle.
+  const bypass =
+    process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true'
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  if (!user && !bypass) redirect('/login')
 
-  const integrantes = new IntegrantesRepository(supabase)
-  const perfil = await integrantes.getByAuthUser(user.id)
+  const perfil = user
+    ? await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+    : null
 
-  if (!perfil) {
+  if (!perfil && !bypass) {
     return (
       <Marco>
         <Aviso
@@ -62,6 +72,8 @@ export default async function TryvexIntelligencePage() {
       hilo={HILO_EJEMPLO}
       rutinas={RUTINAS_EJEMPLO}
       herramientas={HERRAMIENTAS_EJEMPLO}
+      conversaciones={CONVERSACIONES_EJEMPLO}
+      costos={COSTOS_EJEMPLO}
       panelWhatsapp={await PanelDeWhatsapp()}
     />
   )

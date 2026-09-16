@@ -1,73 +1,107 @@
+'use client'
+
+import { AvatarBot, type DefinicionAvatar } from './avatar-bot'
+import strobi from '@/lib/vex/avatares/strobi.avatar.json'
+import nova from '@/lib/vex/avatares/nova.avatar.json'
+import freddy from '@/lib/vex/avatares/freddy.avatar.json'
+import cubee from '@/lib/vex/avatares/cubee.avatar.json'
+import cloudee from '@/lib/vex/avatares/cloudee.avatar.json'
+import grokBot from '@/lib/vex/avatares/grok-bot.avatar.json'
+import citrus from '@/lib/vex/avatares/citrus.avatar.json'
+import kirby from '@/lib/vex/avatares/kirby.avatar.json'
+import sunee from '@/lib/vex/avatares/sunee.avatar.json'
+import onee from '@/lib/vex/avatares/onee.avatar.json'
 import type { EstadoAgente } from '@/lib/types/sala-agentes'
 
 /**
- * La cara del agente: identidad y estado en la misma pieza.
+ * La cara de un agente: quién es y cómo está, en la misma pieza.
  *
- * Un agente que sigue existiendo mañana necesita que lo reconozcan de reojo,
- * y su estado no merece un semáforo aparte: la cara ya lo dice. Trabajando
- * parpadea; esperando firma mira fijo con la boca recta; en reposo está
- * tranquilo; sin latido tiene los ojos en equis.
+ * Cada agente tiene SU bot, no una variante de color del mismo: forma propia y
+ * paleta propia. Eso es lo que permite reconocerlos de reojo en una lista larga
+ * —o en la tabla de encargos, donde el avatar mide 20 píxeles— sin leer el
+ * nombre.
  *
- * Formas simples y ojos expresivos a propósito: así un equipo de cinco o de
- * veinte se distingue por color y gesto sin que ninguno parezca de otro mundo.
- *
- * El parpadeo respeta `prefers-reduced-motion` (ver `globals.css`).
+ * El estado no se cuenta con un semáforo al lado: se ve en la mirada. Cada
+ * estado corre una animación distinta de las 23 que trae la definición.
  */
+
+const BOTS = {
+  strobi,
+  nova,
+  freddy,
+  cubee,
+  cloudee,
+  'grok-bot': grokBot,
+  citrus,
+  kirby,
+  sunee,
+  onee,
+} as unknown as Record<string, DefinicionAvatar>
+
+/**
+ * Qué bot le toca a cada agente.
+ *
+ * Elegidos por carácter, no al azar: Vex es el rojo de la casa; Ariel, que
+ * sostiene la infraestructura, es la cápsula serena; Spike, que rastrea datos,
+ * es el redondo despierto; Emili recibe, y es el más amable del grupo. Jarvis
+ * es el oscuro — decisión del señor Ignacio, y le calza: es el que coordina a
+ * todos y el único que habla de igual a igual con él.
+ */
+const BOT_POR_AGENTE: Record<string, string> = {
+  vex: 'cubee',
+  ariel: 'nova',
+  spike: 'strobi',
+  emili: 'freddy',
+  jarvis: 'grok-bot',
+}
+
+/** Si un agente nuevo no tiene bot asignado, se le da uno estable por nombre. */
+const RESERVA = ['citrus', 'kirby', 'sunee', 'onee', 'cloudee']
+
+const ANIMACION_POR_ESTADO: Record<EstadoAgente, string> = {
+  trabajando: 'working',
+  esperando_firma: 'suspicious',
+  en_reposo: 'idle',
+  sin_latido: 'sleeping',
+}
 
 interface CaraAgenteProps {
   nombre: string
-  /** Token de color del CRM, por ejemplo `var(--tx-blue)`. */
+  /**
+   * Token de color del CRM. Solo se usa como respaldo: si el agente tiene bot
+   * propio, manda la paleta del bot — para eso se eligió.
+   */
   color: string
   estado: EstadoAgente
-  /** Lado del cuadrado, en píxeles. */
+  /** Identificador del agente, para saber qué bot le toca. */
+  agenteId?: string
+  /** Lado del cuadro, en píxeles. */
   tamano?: number
 }
 
-export function CaraAgente({ nombre, color, estado, tamano = 38 }: CaraAgenteProps) {
-  const radio = Math.round(tamano * 0.3)
-  const caido = estado === 'sin_latido'
-  const parpadea = estado === 'trabajando'
+export function CaraAgente({ nombre, color, estado, agenteId, tamano = 38 }: CaraAgenteProps) {
+  const clave = agenteId ?? nombre.toLowerCase()
+  const asignado = BOT_POR_AGENTE[clave] ?? reservaPara(clave)
+  const definicion = BOTS[asignado] ?? BOTS.strobi
 
   return (
-    <svg
-      width={tamano}
-      height={tamano}
-      viewBox="0 0 40 40"
-      role="img"
-      aria-label={`${nombre}: ${etiquetaEstado(estado)}`}
-      style={{ display: 'block', flex: 'none' }}
-    >
-      <rect width="40" height="40" rx={radio} fill={color} />
-
-      {caido ? (
-        <g stroke="#0d0d12" strokeWidth="2.2" strokeLinecap="round">
-          <path d="M11 16 L17 20 M17 16 L11 20" />
-          <path d="M23 16 L29 20 M29 16 L23 20" />
-        </g>
-      ) : (
-        <g fill="#0d0d12" className={parpadea ? 'cara-parpadeo' : undefined}>
-          <circle cx="14" cy={estado === 'en_reposo' ? 19 : 18} r="3.2" />
-          <circle cx="26" cy={estado === 'en_reposo' ? 19 : 18} r="3.2" />
-        </g>
-      )}
-
-      {/* La boca es el matiz: sonríe trabajando, recta esperando, plana caído. */}
-      {estado === 'esperando_firma' ? (
-        <rect x="14" y="26" width="12" height="2.4" rx="1.2" fill="#0d0d12" />
-      ) : (
-        <path
-          d={caido ? 'M14 29 Q20 26 26 29' : 'M14 27 Q20 30.5 26 27'}
-          stroke="#0d0d12"
-          strokeWidth="2"
-          fill="none"
-          strokeLinecap="round"
-        />
-      )}
-    </svg>
+    <AvatarBot
+      definicion={definicion}
+      animacion={ANIMACION_POR_ESTADO[estado]}
+      colorCuerpo={BOT_POR_AGENTE[clave] ? undefined : color}
+      tamano={tamano}
+      etiqueta={`${nombre}: ${etiqueta(estado)}`}
+    />
   )
 }
 
-function etiquetaEstado(estado: EstadoAgente): string {
+function reservaPara(clave: string): string {
+  let suma = 0
+  for (const letra of clave) suma += letra.charCodeAt(0)
+  return RESERVA[suma % RESERVA.length]
+}
+
+function etiqueta(estado: EstadoAgente): string {
   if (estado === 'trabajando') return 'trabajando'
   if (estado === 'esperando_firma') return 'esperando tu firma'
   if (estado === 'en_reposo') return 'en reposo'

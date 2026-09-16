@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { PenLine, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -28,8 +29,30 @@ interface SalaAgentesProps {
 }
 
 export function SalaAgentes({ agentes, encargos }: SalaAgentesProps) {
-  const porFirmar = encargos.filter((e) => e.requiereFirma && e.estado === 'bloqueada')
+  const [firmados, setFirmados] = useState<string[]>([])
+  const [firmando, setFirmando] = useState<string[]>([])
+  const temporizadoresFirma = useRef<ReturnType<typeof setTimeout>[]>([])
+  const porFirmar = encargos.filter(
+    (e) => e.requiereFirma && e.estado === 'bloqueada' && !firmados.includes(e.id),
+  )
   const porId = new Map(agentes.map((a) => [a.id, a]))
+
+  useEffect(() => {
+    const temporizadores = temporizadoresFirma.current
+    return () => temporizadores.forEach(clearTimeout)
+  }, [])
+
+  const firmar = (id: string) => {
+    if (firmando.includes(id) || firmados.includes(id)) return
+
+    setFirmando((actuales) => [...actuales, id])
+    temporizadoresFirma.current.push(
+      setTimeout(() => {
+        setFirmados((actuales) => [...actuales, id])
+        setFirmando((actuales) => actuales.filter((actual) => actual !== id))
+      }, 260),
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -37,13 +60,13 @@ export function SalaAgentes({ agentes, encargos }: SalaAgentesProps) {
         <section
           className="flex flex-col gap-3 rounded-2xl p-4"
           style={{
-            border: '1px solid color-mix(in oklab, var(--tx-accent) 45%, transparent)',
-            background: 'var(--tx-accent-subtle)',
+            border: '1px solid color-mix(in oklab, var(--tx-warning) 45%, transparent)',
+            background: 'color-mix(in oklab, var(--tx-warning) 10%, transparent)',
           }}
           aria-labelledby="titulo-firmas"
         >
           <header className="flex flex-wrap items-center gap-2">
-            <PenLine size={15} style={{ color: 'var(--tx-accent)' }} />
+            <PenLine size={15} style={{ color: 'var(--tx-warning)' }} />
             <h2 id="titulo-firmas" className="text-sm font-semibold text-[var(--tx-ink-primary)]">
               Esperan tu firma antes de ejecutar
             </h2>
@@ -54,11 +77,18 @@ export function SalaAgentes({ agentes, encargos }: SalaAgentesProps) {
 
           {porFirmar.map((encargo) => {
             const agente = porId.get(encargo.agenteId)
+            const estaFirmando = firmando.includes(encargo.id)
             return (
               <article
                 key={encargo.id}
-                className="flex flex-wrap items-center gap-3 rounded-xl p-3"
-                style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-1)' }}
+                className={`flex flex-wrap items-center gap-3 rounded-xl p-3 ${
+                  estaFirmando ? 'opacity-0 motion-safe:translate-x-3' : 'opacity-100'
+                }`}
+                style={{
+                  border: '1px solid var(--tx-border)',
+                  background: 'var(--tx-surface-1)',
+                  transition: 'opacity 260ms ease, transform 260ms ease',
+                }}
               >
                 {agente && (
                   <CaraAgente
@@ -79,7 +109,14 @@ export function SalaAgentes({ agentes, encargos }: SalaAgentesProps) {
                   <Button variant="outline" size="sm">
                     Ver evidencia
                   </Button>
-                  <Button size="sm">Firmar y soltar</Button>
+                  <Button
+                    size="sm"
+                    disabled={estaFirmando}
+                    onClick={() => firmar(encargo.id)}
+                    style={{ background: 'var(--tx-success)', color: 'var(--tx-accent-fg)' }}
+                  >
+                    {estaFirmando ? 'Firmando…' : 'Firmar y soltar'}
+                  </Button>
                 </div>
               </article>
             )
@@ -98,12 +135,18 @@ export function SalaAgentes({ agentes, encargos }: SalaAgentesProps) {
           </span>
         </header>
 
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(268px,1fr))]">
-          {agentes.map((agente) => (
+        <div className="grid items-stretch gap-3 [grid-template-columns:repeat(auto-fill,minmax(268px,1fr))]">
+          {agentes.map((agente, i) => (
             <article
               key={agente.id}
-              className="flex flex-col gap-2.5 rounded-2xl p-3.5"
-              style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-1)' }}
+              className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 flex h-full cursor-pointer flex-col gap-2.5 rounded-2xl p-3.5 hover:shadow-[0_10px_24px_rgba(0,0,0,.28)] motion-safe:hover:-translate-y-[3px] focus-visible:shadow-[0_10px_24px_rgba(0,0,0,.28)] motion-safe:focus-visible:-translate-y-[3px]"
+              style={{
+                border: '1px solid #d9d9e3',
+                background: '#f4f4f7',
+                transition: 'transform 220ms ease, box-shadow 220ms ease',
+                animationDelay: `${i * 60}ms`,
+              }}
+              tabIndex={0}
             >
               <div className="flex items-center gap-2.5">
                 <CaraAgente
@@ -113,25 +156,25 @@ export function SalaAgentes({ agentes, encargos }: SalaAgentesProps) {
                   tamano={38}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-[var(--tx-ink-primary)]">
+                  <p className="text-sm font-semibold text-[#14141b]">
                     {agente.nombre}
                   </p>
-                  <p className="truncate text-xs text-[var(--tx-ink-muted)]">{agente.oficio}</p>
+                  <p className="line-clamp-2 min-h-8 text-xs text-[#5c5c70]">{agente.oficio}</p>
                 </div>
                 <InsigniaEstado estado={agente.estado} />
               </div>
 
               <p
-                className="min-h-13 rounded-xl p-2.5 text-xs text-[var(--tx-ink-secondary)]"
-                style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-2)' }}
+                className="min-h-13 flex-1 rounded-xl p-2.5 text-xs text-[#3a3a48]"
+                style={{ border: '1px solid #dcdce6', background: '#e9e9f0' }}
               >
-                <span className="mb-1 block text-[10px] uppercase tracking-wider text-[var(--tx-ink-muted)]">
+                <span className="mb-1 block text-[10px] uppercase tracking-wider text-[#6b6b80]">
                   {agente.estado === 'en_reposo' ? 'Última vez' : 'Ahora mismo'}
                 </span>
                 {agente.haciendo}
               </p>
 
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--tx-ink-muted)]">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#6b6b80]">
                 <span>{agente.encargosHoy} encargos hoy</span>
                 {agente.proximaRutina && <span>· rutina {agente.proximaRutina}</span>}
                 {agente.humano && (
@@ -174,7 +217,14 @@ export function SalaAgentes({ agentes, encargos }: SalaAgentesProps) {
               {encargos.map((encargo) => {
                 const agente = porId.get(encargo.agenteId)
                 return (
-                  <tr key={encargo.id} style={{ borderTop: '1px solid var(--tx-border)' }}>
+                  <tr
+                    key={encargo.id}
+                    className="hover:bg-[var(--tx-surface-2)]"
+                    style={{
+                      borderTop: '1px solid var(--tx-border)',
+                      transition: 'background 160ms ease',
+                    }}
+                  >
                     <Td>
                       <span className="text-[var(--tx-ink-primary)]">{encargo.titulo}</span>
                     </Td>
@@ -245,22 +295,22 @@ function Td({ children }: { children: React.ReactNode }) {
 function InsigniaEstado({ estado }: { estado: EstadoAgente }) {
   if (estado === 'trabajando') {
     return (
-      <Badge variant="secondary" style={{ color: 'var(--tx-success)' }}>
+      <Badge variant="secondary" style={{ background: '#d8f3e3', color: '#0f6b3c' }}>
         trabajando
       </Badge>
     )
   }
   if (estado === 'esperando_firma') {
     return (
-      <Badge variant="secondary" style={{ color: 'var(--tx-accent)' }}>
+      <Badge variant="secondary" style={{ background: '#fdecd0', color: '#7a4a00' }}>
         espera firma
       </Badge>
     )
   }
   if (estado === 'sin_latido') {
-    return <Badge variant="destructive">sin latido</Badge>
+    return <Badge variant="destructive" style={{ background: '#fadcd9', color: '#93231c' }}>sin latido</Badge>
   }
-  return <Badge variant="outline">en reposo</Badge>
+  return <Badge variant="outline" style={{ background: '#e4e4ec', color: '#4a4a58' }}>en reposo</Badge>
 }
 
 function InsigniaEncargo({

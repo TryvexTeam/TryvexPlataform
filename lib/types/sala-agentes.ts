@@ -132,7 +132,19 @@ export type Paso = z.infer<typeof PasoSchema>
 
 /** Una entrada del hilo: lo que se dijo, lo que se hizo o cómo terminó. */
 export type EntradaHilo =
-  | { clase: 'mensaje'; de: 'persona' | 'agente'; autor: string; hora: string; texto: string }
+  | {
+      clase: 'mensaje'
+      /**
+       * `persona` es alguien del equipo encargándole algo al agente; `cliente`
+       * es quien escribe desde fuera. Se distinguen porque en la conversación
+       * con un lead los tres pueden aparecer: el cliente, el agente, y el
+       * humano que toma el control a mitad del hilo.
+       */
+      de: 'persona' | 'agente' | 'cliente'
+      autor: string
+      hora: string
+      texto: string
+    }
   | { clase: 'pasos'; pasos: Paso[] }
   | {
       clase: 'veredicto'
@@ -140,3 +152,39 @@ export type EntradaHilo =
       detalle: string
       evidencias: Evidencia[]
     }
+
+/**
+ * Una conversación con alguien de afuera: un lead, un cliente.
+ *
+ * Es lo que Forja llama `conversations`, con una diferencia: acá el hilo no
+ * trae solo lo que se dijo, sino lo que el agente HIZO entremedio — los pasos y
+ * el veredicto — porque revisar una conversación sin ver qué herramientas usó
+ * obliga a irse a buscar un registro a otra parte.
+ */
+export interface ConversacionCliente {
+  id: string
+  /** Quién escribe desde fuera. */
+  cliente: string
+  telefono: string
+  canal: 'whatsapp' | 'web' | 'instagram'
+  /** Qué agente la atiende. */
+  agenteId: string
+  /** `HUMANO` significa que alguien del equipo tomó el control de este hilo. */
+  modo: ModoHilo
+  ultimoMensaje: string
+  hace: string
+  sinLeer: number
+  hilo: EntradaHilo[]
+  /** La ficha, para no tener que abrir el CRM en otra pestaña. */
+  ficha: {
+    negocio: string
+    rubro: string
+    comuna: string
+    estado: string
+    /** Lo que su web ya resuelve, de `fact_leads.web_capacidades`. */
+    capacidadesWeb: string[]
+  }
+}
+
+export const MODOS_HILO = ['AI', 'HUMANO'] as const
+export type ModoHilo = (typeof MODOS_HILO)[number]

@@ -54,10 +54,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * la vez en lugar de después.
    */
   const [permisos, { data: equipo }] = await Promise.all([
-    new PermisosRepository(supabase).misPermisos(user.id),
+    new PermisosRepository(datos).misPermisos(user.id),
     // El equipo se carga acá y no en el chat porque una llamada entrante tiene
     // que poder decir quién llama estando uno en leads, en finanzas o donde sea.
-    supabase
+    datos
       .from('dim_integrantes')
       .select('id, nombre, avatar_url, color')
       .eq('activo', true) as unknown as Promise<{
@@ -72,7 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // y se traga su propio error: sin este dato la app sigue, solo que sin freno
   // — preferible a una pantalla en blanco por un fallo de una consulta.
   const jornadaAbierta = permisos?.id
-    ? Boolean(await new JornadasRepository(supabase).getAbierta(permisos.id).catch(() => null))
+    ? Boolean(await new JornadasRepository(datos).getAbierta(permisos.id).catch(() => null))
     : true
 
   const nombre = permisos?.nombre ?? user.email ?? 'Usuario'
@@ -121,7 +121,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   )
 
   return (
-    <AuthProvider>
+    <AuthProvider bypass={bypass}>
       <ThemeProvider>
         {integrante ? (
           <ProveedorLlamadas miIntegranteId={integrante.id} equipo={equipo ?? []}>

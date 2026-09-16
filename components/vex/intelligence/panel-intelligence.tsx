@@ -4,7 +4,16 @@ import { useState } from 'react'
 import { Brain } from 'lucide-react'
 import { SalaAgentes } from './sala-agentes'
 import { EspacioAgente } from './espacio-agente'
-import type { AgenteSala, Encargo, EntradaHilo, Herramienta, Rutina } from '@/lib/types/sala-agentes'
+import { PanelHilos } from './panel-hilos'
+import { PanelCostos, type CostoAgente } from './panel-costos'
+import type {
+  AgenteSala,
+  ConversacionCliente,
+  Encargo,
+  EntradaHilo,
+  Herramienta,
+  Rutina,
+} from '@/lib/types/sala-agentes'
 
 /**
  * El marco de Tryvex Intelligence.
@@ -24,11 +33,15 @@ interface PanelIntelligenceProps {
   hilo: EntradaHilo[]
   rutinas: Rutina[]
   herramientas: Herramienta[]
+  /** Conversaciones con gente de afuera: leads y clientes. */
+  conversaciones: ConversacionCliente[]
+  /** Lo que cuesta el trabajo de cada agente. */
+  costos: CostoAgente[]
   /** El panel de WhatsApp que ya existía (estado, conversaciones y ajustes). */
   panelWhatsapp: React.ReactNode
 }
 
-type Vista = 'sala' | 'espacio' | 'whatsapp'
+type Vista = 'sala' | 'conversaciones' | 'espacio' | 'costos' | 'whatsapp'
 
 export function PanelIntelligence({
   agentes,
@@ -36,10 +49,13 @@ export function PanelIntelligence({
   hilo,
   rutinas,
   herramientas,
+  conversaciones,
+  costos,
   panelWhatsapp,
 }: PanelIntelligenceProps) {
   const [vista, setVista] = useState<Vista>('sala')
   const esperandoFirma = encargos.filter((e) => e.requiereFirma && e.estado === 'bloqueada').length
+  const sinLeer = conversaciones.reduce((total, c) => total + c.sinLeer, 0)
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto p-3 sm:p-5">
@@ -69,8 +85,22 @@ export function PanelIntelligence({
               </span>
             )}
           </Opcion>
+          <Opcion activa={vista === 'conversaciones'} onClick={() => setVista('conversaciones')}>
+            Conversaciones
+            {sinLeer > 0 && (
+              <span
+                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
+                style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
+              >
+                {sinLeer}
+              </span>
+            )}
+          </Opcion>
           <Opcion activa={vista === 'espacio'} onClick={() => setVista('espacio')}>
             Espacio del agente
+          </Opcion>
+          <Opcion activa={vista === 'costos'} onClick={() => setVista('costos')}>
+            Costos
           </Opcion>
           <Opcion activa={vista === 'whatsapp'} onClick={() => setVista('whatsapp')}>
             Agente de WhatsApp
@@ -98,6 +128,10 @@ export function PanelIntelligence({
       )}
 
       {vista === 'sala' && <SalaAgentes agentes={agentes} encargos={encargos} />}
+      {vista === 'conversaciones' && (
+        <PanelHilos conversaciones={conversaciones} agentes={agentes} />
+      )}
+      {vista === 'costos' && <PanelCostos costos={costos} agentes={agentes} />}
       {vista === 'espacio' && (
         <EspacioAgente
           agentes={agentes}
