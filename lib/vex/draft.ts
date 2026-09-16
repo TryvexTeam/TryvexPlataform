@@ -55,6 +55,111 @@ function sabemosDeSuWeb(lead: LeadDraftInput): boolean {
   return estadoWeb(lead.tiene_web, lead.url_web) !== "no sabemos"
 }
 
+/**
+ * Umbral para citar la reputación de Google como logro. Antes el prompt decía
+ * "el mejor ángulo, úsalo siempre que esté", sin piso: el mensaje presentaba
+ * como algo bueno una nota de 3,3 (Florería Costanera, 16 reseñas), 3,7
+ * (Farmacia La Rebaja, 20) o 5,0 con 1 sola reseña (Centro Joyas) — al dueño
+ * le suena a burla, no a elogio.
+ */
+const REPUTACION_NOTA_MINIMA = 4.6;
+const REPUTACION_RESENAS_MINIMAS = 40;
+
+// Un negocio de barrio con miles de reseñas es un dato que no le pertenece: la
+// importadora del Persa Bío Bío mostraba 10.657 reseñas porque su ficha de
+// Google quedó categorizada como el centro comercial entero, no como su
+// local. Citarlas como si fueran suyas es mentirle en la cara al dueño.
+const REPUTACION_RESENAS_SOSPECHOSAS = 3000;
+
+/**
+ * Si la reputación es citable, la devuelve; si no, null — para que el
+ * prompt sepa que debe prohibir el tema en vez de invitarlo.
+ */
+function reputacionCitable(
+  reputacion: { calificacion: number; resenas: number } | null
+): { calificacion: number; resenas: number } | null {
+  if (!reputacion) return null;
+  if (reputacion.resenas > REPUTACION_RESENAS_SOSPECHOSAS) return null;
+  if (reputacion.calificacion < REPUTACION_NOTA_MINIMA) return null;
+  if (reputacion.resenas < REPUTACION_RESENAS_MINIMAS) return null;
+  return reputacion;
+}
+
+/**
+ * Rubros donde el trato de "tú" suena fuera de lugar: se le escribía "tienes,
+ * quieres, mira" a abogados, contadores y químicos farmacéuticos igual que a
+ * una pizzería, porque el prompt prohibía el "usted" siempre, sin excepción.
+ * Se compara contra `nicho` o `categoria_google` (lo que Google diga sobre el
+ * negocio manda, igual que en el resto del archivo).
+ */
+const RUBROS_DE_USTED = [
+  "abogad", "estudio jurídic", "estudio juridic", "notari",
+  "contador", "contabilidad", "auditor",
+  "clínica", "clinica", "dentista", "odontolog",
+  "kinesiólog", "kinesiolog", "psicólog", "psicolog",
+  "farmacia", "químico farmacéutico", "quimico farmaceutico",
+  "ingenier", "veterinari",
+];
+
+/** ¿Este negocio es de un rubro donde corresponde tratarlo de usted? */
+function tratoDeUsted(lead: Pick<LeadDraftInput, "nicho" | "categoria_google">): boolean {
+  const rubro = `${lead.categoria_google ?? ""} ${lead.nicho ?? ""}`.toLowerCase();
+  return RUBROS_DE_USTED.some((r) => rubro.includes(r));
+}
+
+// Formas jurídicas que Google arrastra en el nombre de la ficha y que nadie
+// dice en voz alta al hablar de su propio negocio.
+const FORMAS_JURIDICAS =
+  /\b(ltda\.?|limitada|s\.?p\.?a\.?|e\.?i\.?r\.?l\.?|s\.?a\.?|spa|comercial|importadora|distribuidora)\b/gi;
+
+// "local 34", "local N°12", etc: un dato de dirección, no del nombre.
+const NUMERO_DE_LOCAL = /\blocal\s*n?°?\s*\d+\b/gi;
+
+/**
+ * Limpia el nombre de Google para el saludo del primer mensaje.
+ *
+ * Nace de mensajes reales que sonaban raros o groseros apenas empezaban:
+ * "¿hablo con Miga S?" (es Pastelería Miga's — el posesivo cortado), "¿hablo
+ * con Peluquería Santiago Barbería, local 34?" (el numero de local no se
+ * pregunta), "¿hablo con Comercial Ferretería Lazaros Limitada?" (nadie dice
+ * su propia razón social al contestar el teléfono).
+ *
+ * Si al limpiar queda algo muy corto (un negocio real puede llamarse "Bio",
+ * por ejemplo) o vacío, es mejor arriesgarse con el nombre original que con
+ * un saludo roto.
+ */
+export function limpiarNombreParaSaludo(nombreCrudo: string): string {
+  const original = nombreCrudo.trim();
+  if (!original) return original;
+
+  let limpio = original
+    .replace(NUMERO_DE_LOCAL, " ")
+    .replace(FORMAS_JURIDICAS, " ")
+    .replace(/,\s*$/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^,|,$/g, "")
+    .trim();
+
+  // Relleno de palabras clave: nombres larguísimos ("Peluqueria Santiago
+  // Barberia Unisex Corte Y Color Estilo") o que repiten el rubro dos veces
+  // no son cómo el dueño llama a su propio local. Más de 6 palabras después
+  // de limpiar formas jurídicas es la señal que usamos.
+  const palabras = limpio.split(" ").filter(Boolean);
+  if (palabras.length > 6) {
+    // Se recorta a las primeras palabras: son las que suelen llevar el
+    // nombre propio, y lo que sigue tiende a ser descripción del rubro.
+    limpio = palabras.slice(0, 4).join(" ");
+  }
+
+  // Si quedó vacío, en blanco, o demasiado corto para sonar a un nombre (una
+  // sola letra suelta, por ejemplo un posesivo mal cortado), es mejor volver
+  // al original que arriesgar un saludo sin sentido.
+  if (limpio.length < 2) return original;
+
+  return limpio;
+}
+
 /** Cómo se le nombra a cada capacidad cuando se le prohíbe ofrecerla. */
 const COMO_SE_LLAMA: Record<string, string> = {
   reserva: "reservar hora / agendar online",
@@ -170,10 +275,15 @@ export function afirmacionesSinRespaldo(
   const reglas = [...NO_SE_PUEDE_AFIRMAR, ...prohibidoSegunSuWeb(estado)];
   const motivos = reglas.filter((r) => r.patron.test(texto)).map((r) => r.porque);
 
-  // Sin reputación en la ficha, no puede citar estrellas ni reseñas.
-  const sinReputacion = lead.google_rating == null && lead.google_resenas == null;
-  if (sinReputacion && /\b(estrellas?|rese[ñn]as?)\b/i.test(texto)) {
-    motivos.push('menciona estrellas o reseñas y no tenemos ese dato');
+  // Sin reputación citable (falta el dato, no llega al umbral de 4,6/40, o la
+  // ficha es sospechosa por tener demasiadas reseñas), no puede citar
+  // estrellas ni reseñas.
+  const reputacionDeEsteLead =
+    lead.google_rating != null && lead.google_resenas != null
+      ? reputacionCitable({ calificacion: Number(lead.google_rating), resenas: lead.google_resenas })
+      : null;
+  if (!reputacionDeEsteLead && /\b(estrellas?|rese[ñn]as?)\b/i.test(texto)) {
+    motivos.push('menciona estrellas o reseñas y no tenemos ese dato, o no alcanza el mínimo para citarlo');
   }
 
   // Sin horario, no puede afirmar a qué hora abre o cierra.
@@ -288,21 +398,29 @@ export async function generarDraftLead(
   const rubroGoogle = lead.categoria_google?.trim() || null;
   const nicho = rubroGoogle || (lead.nicho ? lead.nicho.toLowerCase() : "negocio");
   const comuna = leerComuna(lead.localidad);
+  const esUsted = tratoDeUsted(lead);
 
   // La columna manda (migracion 047); si falta, se lee del crudo. Los leads que
   // entren por el scraper antes de que `crm_map.py` llene las columnas nuevas
   // solo van a traer `info_texto`, y quedarse sin el mejor angulo por eso seria
   // una lastima.
-  const reputacion =
+  const reputacionCruda =
     lead.google_rating != null && lead.google_resenas != null
       ? { calificacion: Number(lead.google_rating), resenas: lead.google_resenas }
       : leerReputacion(lead.info_texto);
 
+  // Solo se entrega al modelo si pasa el umbral: nota ≥ 4,6 y ≥ 40 reseñas, y
+  // no si el número de reseñas es tan alto que no es creíble para un negocio
+  // de barrio (ficha compartida con un centro comercial u otra entidad).
+  const reputacion = reputacionCitable(reputacionCruda);
+
   // Cada dato se entrega ETIQUETADO y solo si existe. Un valor crudo sin
   // explicar es material para inventar: "4,8 (256)" se convirtio una vez en
   // "256 personas buscan barberias como la tuya cada semana".
+  const nombreParaSaludo = limpiarNombreParaSaludo(lead.nombre_negocio);
   const datos = [
     `- Nombre del negocio: ${lead.nombre_negocio}`,
+    `- Nombre para el saludo (usa ESTE, no el de arriba, al preguntar "¿hablo con...?"): ${nombreParaSaludo}`,
     rubroGoogle
       ? `- Rubro (asi lo clasifica Google): ${rubroGoogle}`
       : `- Rubro: ${nicho}`,
@@ -310,7 +428,7 @@ export async function generarDraftLead(
     `- ¿Tiene sitio web?: ${estadoWeb(lead.tiene_web, lead.url_web)}`,
     reputacion
       ? `- Reputación en Google Maps: ${String(reputacion.calificacion).replace(".", ",")} estrellas con ${reputacion.resenas} reseñas`
-      : "- Reputación en Google: no la tenemos (NO menciones estrellas ni reseñas)",
+      : "- Reputación en Google: NO CITABLE (no la tenemos, o no alcanza el mínimo, o la ficha es sospechosa). NO menciones estrellas ni reseñas.",
     lead.instagram
       ? `- Instagram del negocio: ${lead.instagram}`
       : "- Instagram: no sabemos si tiene (NO lo menciones)",
@@ -338,9 +456,14 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
 
 ## Como se habla (esto es tan importante como el contenido)
 
-- Espanol de CHILE, tuteo: "tienes", "quieres", "mira", "te encuentran".
+- Espanol de CHILE${esUsted ? ', de USTED: "tiene", "quiere", "mire", "lo encuentran".' : ', tuteo: "tienes", "quieres", "mira", "te encuentran".'}
+${esUsted
+      ? '- ⛔ ESTE RUBRO SE TRATA DE USTED, no de tú: es un negocio profesional (abogado, contador,\n  clinica, dentista, kinesiologo, psicologo, farmacia, ingenieria o veterinaria), y el tuteo\n  suena poco serio. Nunca "tienes", "quieres", "tu negocio": siempre "tiene", "quiere", "su negocio".'
+      : ''
+    }
 - ⛔ PROHIBIDO el voseo argentino: nunca "tenes", "queres", "mira" con acento final, "sos",
-  "vos", "podes", "fijate". Si te sale una, reescribe la frase completa.
+  "vos", "podes", "fijate". Si te sale una, reescribe la frase completa. Esto aplica siempre,
+  se le hable de tu o de usted.
 - Con respeto y calidez, como le escribes a alguien mayor que trabaja: cercano pero sin
   palmearle la espalda. Nada de "hola crack", "amigo", "bro", ni exceso de confianza.
 - Frases cortas, palabras simples. Como escribe una persona, no un aviso publicitario.
@@ -352,14 +475,16 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
   "presencia en linea", "presencia online", "presencia digital", "visibilidad online",
   "posicionamiento", "soluciones digitales", "transformacion digital",
   "espero que estes bien", "somos una empresa lider", "potenciar tu negocio".
-- ⛔ Le hablas AL DUENO, de tu: "no apareces", "tus resenas", "tu barberia". Nunca en tercera
-  persona sobre su negocio ("no aparecen", "sus resenas") ni de usted: suena a carta de banco.
+- ⛔ Le hablas AL DUENO directamente${esUsted ? ' (de usted)' : ', de tu'}: "${esUsted ? "no aparece, sus resenas, su negocio" : "no apareces, tus resenas, tu barberia"}".
+  Nunca en tercera persona sobre su negocio ("no aparecen", "sus resenas" hablando de el como
+  ausente)${esUsted ? '' : ' ni de usted: suena a carta de banco'}.
 - Maximo 1 emoji, y solo si cae natural.
 
 ## La estructura, en este orden y sin saltarte ninguna parte
 
-1. SALUDO: saluda y pregunta si hablas con el negocio, por su nombre. Tal cual:
-   "Hola, ¿hablo con <nombre del negocio>?". Es una pregunta, no un anuncio.
+1. SALUDO: saluda y pregunta si hablas con el negocio, usando el "Nombre para el saludo" de
+   abajo (no la razón social completa ni el número de local). Tal cual:
+   "Hola, ¿hablo con <nombre para el saludo>?". Es una pregunta, no un anuncio.
 2. QUIEN ERES: una linea. Que se entienda en el primer segundo quien escribe y a que.
    Sin esto eres un desconocido pidiendo algo, y nadie contesta eso.
    ⛔ NO te inventes un nombre de persona ("Soy Diego de Tryvex"). No sabes quien va a
@@ -375,9 +500,12 @@ Tu objetivo es una respuesta, no una venta. Que el dueno piense "esto me pasa a 
    Elige UN angulo, el mas fuerte que tengas. No los amontones: un mensaje que dice tres
    cosas a la vez no dice ninguna.
 
-   ⭐ SUS ESTRELLAS Y RESENAS (el mejor, uselo siempre que este). Nombralas con el numero
-   exacto. Es lo unico del mensaje que solo puede ser para el: reputacion que ya se gano
-   trabajando y que hoy NO le esta trayendo clientes, porque no aparece cuando lo buscan.
+   ⭐ SUS ESTRELLAS Y RESENAS (el mejor, uselo siempre que aparezca abajo como dato). Nombralas
+   con el numero exacto. Es lo unico del mensaje que solo puede ser para el: reputacion que ya
+   se gano trabajando y que hoy NO le esta trayendo clientes, porque no aparece cuando lo busca.
+   ⛔ Si mas abajo dice "NO CITABLE", este angulo NO EXISTE: no menciones estrellas ni resenas
+   bajo ninguna forma, ni para elogiar ni para lamentar. Una nota baja o pocas resenas no es un
+   logro que mostrarle — se lee como burla.
 
    📸 SU INSTAGRAM (fuerte, si lo tiene). Ya hace el esfuerzo de mostrar su trabajo, pero al
    que le gusta lo que ve no le queda donde reservar ni que precios hay: tiene que escribir
@@ -475,7 +603,7 @@ ${
       : "\n⛔ NO SABEMOS si tiene sitio web. PROHIBIDO nombrar paginas, sitios o landings" +
         " — ni para ofrecer ni para decir que le falta. Prohibido decir que no lo encuentran" +
         " o que no aparece en Google." +
-        (lead.google_rating != null || lead.google_resenas != null || lead.info_texto
+        (reputacion || lead.info_texto
           ? "\n✅ TU ANGULO ES SU REPUTACION: cita sus estrellas y resenas tal cual, y pregunta" +
             " como llegan hoy sus clientes o como piden hora. Un mensaje generico del tipo" +
             " 'ayudamos a negocios como el tuyo' no sirve: tienes un dato real y suyo, usalo."
