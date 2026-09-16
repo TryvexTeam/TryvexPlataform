@@ -153,3 +153,61 @@ def test_una_web_viva_nunca_es_oportunidad():
     r.estado = "viva"
     r.revisada = True
     assert not r.es_oportunidad
+
+
+# ── Un 403 no es una web rota, es una web que nos bloquea ────────────────────
+# Caso real del 16-sep, la corrida de prueba antes de encender el timer:
+# floristeriayregalos.cl dio 403 al bot desde el VPS y responde 200 desde otra
+# red. Quedo guardada como "caida" con score 9.
+
+
+def test_un_bloqueo_no_es_oportunidad():
+    for codigo in (401, 403, 429, 451):
+        r = RevisionWeb(url="x", estado="bloqueada", error=f"home respondio {codigo}")
+        assert not r.es_oportunidad, codigo
+        assert not r.revisada, "un bloqueo no es haber visto el sitio"
+
+
+def test_los_codigos_de_bloqueo_estan_declarados():
+    from revisar_web import BLOQUEO
+
+    assert 403 in BLOQUEO and 429 in BLOQUEO
+    # Un 404 y un 500 SI hablan del sitio: esos no van aca.
+    assert 404 not in BLOQUEO and 500 not in BLOQUEO
+
+
+def _respuesta_falsa(codigo: int, cuerpo: str = ""):
+    """Un servidor de mentira que siempre contesta lo mismo, sin salir a la red."""
+    import asyncio
+
+    import httpx
+
+    import revisar_web as rw
+
+    def handler(request):
+        return httpx.Response(codigo, text=cuerpo)
+
+    original = rw.httpx.AsyncClient
+
+    class ClienteFalso(original):
+        def __init__(self, **kw):
+            kw["transport"] = httpx.MockTransport(handler)
+            super().__init__(**kw)
+
+    rw.httpx.AsyncClient = ClienteFalso
+    try:
+        return asyncio.run(rw.revisar_web("https://ejemplo.cl"))
+    finally:
+        rw.httpx.AsyncClient = original
+
+
+def test_un_403_de_verdad_queda_como_bloqueada():
+    r = _respuesta_falsa(403)
+    assert r.estado == "bloqueada"
+    assert not r.es_oportunidad, "un 403 nos bloquea a nosotros; su sitio puede estar sano"
+
+
+def test_un_404_de_verdad_si_queda_como_caida():
+    r = _respuesta_falsa(404)
+    assert r.estado == "caida"
+    assert r.es_oportunidad
