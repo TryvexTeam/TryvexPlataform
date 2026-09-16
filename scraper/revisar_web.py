@@ -99,6 +99,10 @@ PARQUEADA = (
     r"location\.href\s*=\s*[\"']/lander", r"/lander[\"']",
 )
 # Dominios que delatan un sitio a medio publicar, sin mirar el contenido.
+# Codigos que hablan de NOSOTROS, no del sitio. Un 403 al bot desde un
+# datacenter es lo mas comun; el sitio suele estar impecable para una persona.
+BLOQUEO = (401, 403, 429, 451)
+
 HOSTS_STAGING = ("wpcomstaging.com", ".staging.", "staging.", "dev.", ".test.", "myshopify.com/password")
 
 
@@ -111,7 +115,11 @@ class RevisionWeb:
     paginas_leidas: int = 0
     error: Optional[str] = None
     estado: str = "desconocido"
-    """viva · en_obra · staging · parqueada · vacia · caida · desconocido."""
+    """viva · en_obra · staging · parqueada · vacia · caida · bloqueada · desconocido.
+
+    `bloqueada` = el servidor nos dijo que no (403, 401, 429). No sabemos nada
+    de su sitio: puede estar perfecto. Nunca es una oportunidad.
+    """
     url_final: Optional[str] = None
     """Adonde termino despues de los redirects. Delata dominios revendidos."""
 
@@ -196,13 +204,23 @@ async def revisar_web(url: str, timeout: float = 8.0) -> RevisionWeb:
         try:
             resp = await client.get(base)
             r.url_final = str(resp.url)
+            if resp.status_code in BLOQUEO:
+                # 🔴 El servidor contesto, pero contesto "no". Un 403 NO es un
+                # sitio roto: es un sitio que nos bloquea a NOSOTROS.
+                # Caso real del 16-sep: floristeriayregalos.cl dio 403 al bot
+                # desde el VPS y responde 200 desde otra red. Si eso pasa por
+                # "caida", le escribimos al dueño de un sitio sano diciendole
+                # que lo tiene botado.
+                r.error = f"home respondio {resp.status_code} (nos bloquea)"
+                r.estado = "bloqueada"
+                return r
             if resp.status_code >= 400:
-                # Un 404 o un 500 en la home tambien es una oportunidad: el
-                # negocio tiene dominio y no tiene sitio en pie.
+                # Un 404 o un 500 si dicen algo del sitio: el negocio tiene
+                # dominio y no tiene nada en pie detras.
                 r.error = f"home respondio {resp.status_code}"
                 r.estado = "caida"
-                # El servidor contesto: esto SI es una comprobacion. Se
-                # distingue del timeout, donde nunca supimos nada.
+                # El servidor contesto sobre el CONTENIDO: esto si es una
+                # comprobacion. Se distingue del timeout y del bloqueo.
                 r.revisada = True
                 return r
             r.revisada = True
