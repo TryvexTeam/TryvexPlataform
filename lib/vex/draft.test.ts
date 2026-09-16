@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { afirmacionesSinRespaldo, generarDraftLead } from './draft'
+import { afirmacionesSinRespaldo, generarDraftLead, limpiarNombreParaSaludo } from './draft'
 import { CuotaAgotada } from './llm'
 
 // `tiene_web: null` a propósito en el lead base: "no sabemos" es el caso más
@@ -385,19 +385,19 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     // filas (era la calificación por diez).
     const espia = llmEspia()
     await generarDraftLead(
-      { ...lead, info_texto: '4,3\n(43)', google_rating: 4.3, google_resenas: 7885 },
+      { ...lead, info_texto: '4,3\n(43)', google_rating: 4.8, google_resenas: 256 },
       undefined,
       espia.llm,
     )
-    expect(espia.prompt()).toMatch(/4,3 estrellas con 7885 reseñas/)
+    expect(espia.prompt()).toMatch(/4,8 estrellas con 256 reseñas/)
     expect(espia.prompt()).not.toMatch(/con 43 reseñas/)
   })
 
   it('sin columna, todavía se apoya en el texto crudo', async () => {
     // Un lead recién traído por el scraper no tiene las columnas llenas.
     const espia = llmEspia()
-    await generarDraftLead({ ...lead, info_texto: '4,9\n(35)' }, undefined, espia.llm)
-    expect(espia.prompt()).toMatch(/4,9 estrellas con 35 reseñas/)
+    await generarDraftLead({ ...lead, info_texto: '4,9\n(45)' }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/4,9 estrellas con 45 reseñas/)
   })
 
   it('el Instagram entra como ángulo cuando existe', async () => {
@@ -517,15 +517,15 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
 // El filtro de salida: lo que el prompt pide y el modelo igual se salta.
 // ---------------------------------------------------------------------------
 describe('afirmacionesSinRespaldo', () => {
-  const sinSaber = { tiene_web: null, url_web: 'https://x.cl', google_rating: 4.2, google_resenas: 21, horario: null }
-  const conWeb = { tiene_web: true, url_web: 'https://x.cl', google_rating: 4.2, google_resenas: 21, horario: null }
-  const sinWeb = { tiene_web: false, url_web: null, google_rating: 4.2, google_resenas: 21, horario: null }
+  const sinSaber = { tiene_web: null, url_web: 'https://x.cl', google_rating: 4.8, google_resenas: 256, horario: null }
+  const conWeb = { tiene_web: true, url_web: 'https://x.cl', google_rating: 4.8, google_resenas: 256, horario: null }
+  const sinWeb = { tiene_web: false, url_web: null, google_rating: 4.8, google_resenas: 256, horario: null }
 
   // Este es el mensaje REAL que Vex escribió para Ópticas Premium el 15-sep,
   // con el prompt que ya le decía "no menciones su web, ni Google, ni que no
-  // aparece". Lo encontramos AHÍ, en Google, con sus 21 reseñas.
+  // aparece". Lo encontramos AHÍ, en Google, con sus 256 reseñas.
   const mensajeReal =
-    'Hola, ¿hablo con Opticas Premium? Te escribimos de Tryvex. Veo que tienes 4,2 estrellas y 21 reseñas, ' +
+    'Hola, ¿hablo con Opticas Premium? Te escribimos de Tryvex. Veo que tienes 4,8 estrellas y 256 reseñas, ' +
     'pero cuando alguien busca ópticas en Santiago no aparecen tus datos, así pierdes clientes que ya están ' +
     'interesados. Podemos crear una página web de 1 a 2 semanas que muestre tus reseñas.'
 
@@ -558,7 +558,7 @@ describe('afirmacionesSinRespaldo', () => {
   })
 
   it('con reputación real, citarla no es problema', () => {
-    expect(afirmacionesSinRespaldo('Vi tus 21 reseñas con 4,2 estrellas.', sinWeb)).toEqual([])
+    expect(afirmacionesSinRespaldo('Vi tus 256 reseñas con 4,8 estrellas.', sinWeb)).toEqual([])
   })
 
   it('sin horario, no puede afirmar a qué hora cierra', () => {
@@ -568,7 +568,7 @@ describe('afirmacionesSinRespaldo', () => {
 
   it('un mensaje limpio no reporta nada', () => {
     const texto =
-      'Hola, ¿hablo con Ópticas Premium? Te escribimos de Tryvex. Vi que tienen 21 reseñas con 4,2 estrellas. ' +
+      'Hola, ¿hablo con Ópticas Premium? Te escribimos de Tryvex. Vi que tienen 256 reseñas con 4,8 estrellas. ' +
       '¿Cuando alguien quiere una hora para examen de vista, cómo la piden hoy?'
     expect(afirmacionesSinRespaldo(texto, sinSaber)).toEqual([])
   })
@@ -576,13 +576,13 @@ describe('afirmacionesSinRespaldo', () => {
 
 describe('generarDraftLead: no entrega lo que no puede sostener', () => {
   const malo =
-    'Veo que tienes 4,2 estrellas y 21 reseñas, pero cuando alguien busca ópticas en Santiago ' +
+    'Veo que tienes 4,8 estrellas y 256 reseñas, pero cuando alguien busca ópticas en Santiago ' +
     'no aparecen tus datos, así pierdes clientes. Podemos crear una página web.'
   const bueno =
-    'Hola, ¿hablo con Ópticas Premium? Vi tus 21 reseñas con 4,2 estrellas. ' +
+    'Hola, ¿hablo con Ópticas Premium? Vi tus 256 reseñas con 4,8 estrellas. ' +
     '¿Cómo pide hoy la gente su hora para examen de vista?'
   const premium = { ...lead, tiene_web: null, url_web: 'https://opticaspremium.com',
-    google_rating: 4.2, google_resenas: 21 }
+    google_rating: 4.8, google_resenas: 256 }
 
   it('si insiste con la invención, NO entrega mensaje y avisa por qué', async () => {
     const llm = async () => JSON.stringify({ whatsapp_text: malo })
@@ -627,9 +627,9 @@ describe('generarDraftLead: no entrega lo que no puede sostener', () => {
 // El segundo escape: el filtro enumeraba verbos y el modelo ofrecio la pagina
 // sin usar ninguno. Mensaje real del 15-sep, ya con el filtro puesto.
 describe('afirmacionesSinRespaldo: ofrecer una web sin decir "crear"', () => {
-  const sinSaber = { tiene_web: null, url_web: 'https://x.cl', google_rating: 4.2, google_resenas: 21, horario: null }
-  const conWeb = { tiene_web: true, url_web: 'https://x.cl', google_rating: 4.2, google_resenas: 21, horario: null }
-  const sinWeb = { tiene_web: false, url_web: null, google_rating: 4.2, google_resenas: 21, horario: null }
+  const sinSaber = { tiene_web: null, url_web: 'https://x.cl', google_rating: 4.8, google_resenas: 256, horario: null }
+  const conWeb = { tiene_web: true, url_web: 'https://x.cl', google_rating: 4.8, google_resenas: 256, horario: null }
+  const sinWeb = { tiene_web: false, url_web: null, google_rating: 4.8, google_resenas: 256, horario: null }
 
   const escape =
     'Hola 👋 ¿hablo con Opticas Premium? Somos Tryvex. Ayudamos a negocios como el tuyo a ' +
@@ -661,5 +661,173 @@ describe('afirmacionesSinRespaldo: ofrecer una web sin decir "crear"', () => {
     expect(afirmacionesSinRespaldo('Conectamos tu sitio con la agenda.', conWeb)).toEqual([])
     // Ofrecersela como si le faltara: no.
     expect(afirmacionesSinRespaldo(escape, conWeb).length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Reputación con piso: no toda nota es un logro que mostrarle al dueño.
+// Casos reales: Florería Costanera 3,3 (16), Farmacia La Rebaja 3,7 (20),
+// Centro Joyas 5,0 (1) — al dueño le suena a burla, no a elogio. Y una
+// importadora del Persa Bío Bío mostraba 10.657 reseñas porque su ficha de
+// Google está categorizada como el centro comercial entero, no como su local.
+// ---------------------------------------------------------------------------
+describe('reputación: solo se cita si pasa el umbral', () => {
+  it('una nota de 3,3 con 16 reseñas (Florería Costanera) no se cita', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 3.3, google_resenas: 16 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/3,3 estrellas/)
+    expect(espia.prompt()).toMatch(/NO menciones estrellas ni reseñas/i)
+  })
+
+  it('una nota de 3,7 con 20 reseñas (Farmacia La Rebaja) no se cita', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 3.7, google_resenas: 20 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/3,7 estrellas/)
+  })
+
+  it('un 5,0 con 1 sola reseña (Centro Joyas) no se cita: sobra nota, falta muestra', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 5.0, google_resenas: 1 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/estrellas con 1 reseñas?/)
+  })
+
+  it('10.657 reseñas (importadora del Persa Bío Bío) es sospechoso y no se cita', async () => {
+    // La ficha de Google de esta importadora quedó categorizada como el Persa
+    // Bío Bío entero: las reseñas son del centro comercial, no del negocio.
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 4.7, google_resenas: 10657 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/10657 reseñas/)
+    expect(espia.prompt()).toMatch(/NO menciones estrellas ni reseñas/i)
+  })
+
+  it('4,6 con 40 reseñas justo en el piso, sí se cita', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 4.6, google_resenas: 40 }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/4,6 estrellas con 40 reseñas/)
+  })
+
+  it('4,6 pero con solo 39 reseñas, no alcanza', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 4.6, google_resenas: 39 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/4,6 estrellas/)
+  })
+
+  it('4,8 con 256 reseñas (dentro del umbral) sí se cita, como antes', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 4.8, google_resenas: 256 }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/4,8 estrellas con 256 reseñas/)
+  })
+
+  it('afirmacionesSinRespaldo también rechaza citar una nota baja aunque el dato exista', () => {
+    const florida = { tiene_web: false, url_web: null, google_rating: 3.3, google_resenas: 16, horario: null }
+    const m = afirmacionesSinRespaldo('Vi que tienes 3,3 estrellas.', florida)
+    expect(m.join(' ')).toContain('estrellas')
+  })
+
+  it('afirmacionesSinRespaldo rechaza citar reseñas sospechosamente altas', () => {
+    const persa = { tiene_web: false, url_web: null, google_rating: 4.7, google_resenas: 10657, horario: null }
+    const m = afirmacionesSinRespaldo('Vi tus 10657 reseñas.', persa)
+    expect(m.join(' ')).toContain('estrellas')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Usted para rubros profesionales: se le tuteaba igual a un abogado que a una
+// pizzería.
+// ---------------------------------------------------------------------------
+describe('trato de tú o de usted según el rubro', () => {
+  it('a un abogado se le trata de usted', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, nicho: 'abogados', categoria_google: null }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/Espanol de CHILE, de USTED/i)
+    expect(espia.prompt()).not.toMatch(/Espanol de CHILE, tuteo/i)
+  })
+
+  it('a un contador se le trata de usted, por categoria_google', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nicho: null, categoria_google: 'Contador auditor' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/de USTED/i)
+  })
+
+  it('a un químico farmacéutico se le trata de usted', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nicho: null, categoria_google: 'Químico farmacéutico' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/de USTED/i)
+  })
+
+  it('a una panadería (el lead base) se le sigue tuteando', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/Espanol de CHILE, tuteo/i)
+  })
+
+  it('el voseo argentino sigue prohibido tanto de tú como de usted', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, nicho: 'abogados' }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/PROHIBIDO el voseo/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Limpiar el nombre de Google antes de saludar: "¿hablo con Miga S?" en vez de
+// "Pastelería Miga's", número de local, y razón social completa.
+// ---------------------------------------------------------------------------
+describe('limpiarNombreParaSaludo', () => {
+  it('saca "local 34" del saludo', () => {
+    expect(limpiarNombreParaSaludo('Peluquería Santiago Barbería, local 34'))
+      .not.toMatch(/local/i)
+  })
+
+  it('saca la razón social ("Limitada") del saludo', () => {
+    expect(limpiarNombreParaSaludo('Comercial Ferretería Lazaros Limitada'))
+      .not.toMatch(/limitada/i)
+  })
+
+  it('saca "Ltda" y "SpA"', () => {
+    expect(limpiarNombreParaSaludo('Panificadora Don José Ltda.')).not.toMatch(/ltda/i)
+    expect(limpiarNombreParaSaludo('Servicios Técnicos ABC SpA')).not.toMatch(/spa/i)
+  })
+
+  it('un nombre corto y normal no se toca', () => {
+    expect(limpiarNombreParaSaludo('Panadería San José')).toBe('Panadería San José')
+  })
+
+  it('un nombre con posesivo corto (Pastelería Miga\'s) se mantiene entero', () => {
+    // El caso real: "¿hablo con Miga S?" salió de tratar el nombre completo
+    // como si sobrara algo que recortar. Sin forma jurídica ni número de
+    // local ni más de 6 palabras, no hay nada que limpiar: se manda entero.
+    expect(limpiarNombreParaSaludo("Pastelería Miga's")).toBe("Pastelería Miga's")
+  })
+
+  it('un nombre larguísimo se recorta, no se manda entero', () => {
+    const largo = limpiarNombreParaSaludo(
+      'Peluqueria Santiago Barberia Unisex Corte Y Color Estilo Moderno'
+    )
+    expect(largo.split(' ').length).toBeLessThanOrEqual(4)
+  })
+
+  it('si al limpiar queda demasiado corto, se vuelve al original', () => {
+    // Un nombre real corto no debería quedar vacío ni reducido a nada por el
+    // limpiador de formas jurídicas.
+    expect(limpiarNombreParaSaludo('SA')).toBe('SA')
+  })
+
+  it('el prompt usa el nombre limpio para el saludo, no la razón social cruda', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nombre_negocio: 'Comercial Ferretería Lazaros Limitada' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/Nombre para el saludo.*Ferretería Lazaros/)
+    expect(espia.prompt()).not.toMatch(/Nombre para el saludo.*Limitada/)
   })
 })
