@@ -872,6 +872,12 @@ async def scrape_categoria(
                 "redes": datos["redes"],
                 "tiene_web": datos.get("tiene_web", False),
                 "url_web": datos.get("url_web"),
+                # Que ofrece su sitio y en que estado esta. Sin esta linea el
+                # scraper lo averigua, lo usa para el score, y lo pierde aca
+                # mismo -- que es exactamente lo que advierte el comentario de
+                # arriba y lo que paso en la primera corrida del 16-sep:
+                # Pasteleria Vienesa quedo guardada sin el hallazgo.
+                "web_capacidades": datos.get("web_capacidades"),
                 "nicho": categoria,
                 "score": score,
                 "estado": "nuevo",
