@@ -165,15 +165,18 @@ class RevisionWeb:
 # palabras. Para una persona el sitio funciona; para nosotros parecia un
 # dominio botado.
 MARCAS_SPA = (
-    r"""id=["']root["']""",
-    r"""id=["']app["']""",
+    # El div donde la app se monta. El id puede venir sin comillas.
+    r"""id=["']?(root|app|q-app|__nuxt|__next|main-app)["'\s>]""",
     r"__NEXT_DATA__",
+    r"__NUXT__",
     r"ng-app",
     r"data-reactroot",
-    r"__NUXT__",
     r"data-svelte",
     r"/_next/",
-    r"/assets/index-[a-z0-9]+\.js",
+    # Un bundle con hash: index-a1b2c3.js o index.a1b2c3.js, los dos existen.
+    r"/assets/[a-z]+[.-][a-z0-9]{6,}\.js",
+    # Un modulo ES en el head es senal de app moderna, no de pagina servida.
+    r"""<script[^>]+type=["']module["']""",
 )
 
 def marco_principal(html: str) -> str:
