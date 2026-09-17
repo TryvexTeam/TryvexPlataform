@@ -155,6 +155,27 @@ class RevisionWeb:
         }
 
 
+# Marcas de que la pagina la arma JavaScript en el navegador. El HTML que
+# entrega el servidor viene casi vacio A PROPOSITO: el contenido lo pone React,
+# Vue o Angular despues. Nosotros no ejecutamos JavaScript, asi que contarlo
+# como "vacia" es afirmar algo que no vimos.
+#
+# 🔴 Caso real del 16-sep, en la primera corrida completa con el timer
+# encendido: clinicaborealis.cl son 2.712 bytes con un <div id="root"> y 5
+# palabras. Para una persona el sitio funciona; para nosotros parecia un
+# dominio botado.
+MARCAS_SPA = (
+    r"""id=["']root["']""",
+    r"""id=["']app["']""",
+    r"__NEXT_DATA__",
+    r"ng-app",
+    r"data-reactroot",
+    r"__NUXT__",
+    r"data-svelte",
+    r"/_next/",
+    r"/assets/index-[a-z0-9]+\.js",
+)
+
 def marco_principal(html: str) -> str:
     """La URL del marco donde vive el sitio de verdad, si esto es un frameset.
 
@@ -188,6 +209,10 @@ def clasificar_sitio(html: str, url_final: str = "", tamano: Optional[int] = Non
     sin_marcas = re.sub(r"<[^>]+>", " ", html or "")
     palabras = len(sin_marcas.split())
     if palabras < 40:
+        # Antes de decir "vacia": ¿sera que el contenido lo pone JavaScript?
+        # Si hay marcas de SPA, no lo sabemos -- y no saber no es un lead.
+        if any(re.search(p, html or "", re.I) for p in MARCAS_SPA):
+            return "desconocido"
         return "vacia"
 
     return "viva"

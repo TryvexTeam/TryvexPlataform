@@ -242,3 +242,36 @@ def test_una_pagina_normal_no_tiene_marco():
 def test_el_frameset_solo_no_alcanza_para_decir_vacia():
     # La cascara sola SI parece vacia: por eso hay que seguir el marco.
     assert clasificar_sitio(FRAMESET, "https://ferreteria.cl") == "vacia"
+
+
+# ── Una SPA no es una web vacia: es una que no podemos leer ──────────────────
+# Caso real del 16-sep, primera corrida completa con el timer encendido:
+# clinicaborealis.cl son 2.712 bytes con <div id="root"> y 5 palabras. El
+# contenido lo arma React en el navegador. Para una persona funciona; para
+# nosotros parecia un dominio botado, y entro como oportunidad.
+
+SPA = """<!DOCTYPE html><html><head><title>Clinica Borealis | Medicina Estetica</title>
+<script type="module" crossorigin src="/assets/index-a1b2c3d4.js"></script></head>
+<body><div id="root"></div></body></html>"""
+
+# Y el contraste: esto SI esta vacio de verdad. Apache sirviendo el listado del
+# directorio porque no hay sitio montado (esteticae3.cl, misma corrida).
+INDEX_OF = """<html><head><title>Index of /</title></head><body>
+<h1>Index of /</h1><table><tr><th>Name</th><th>Last modified</th><th>Size</th></tr>
+<tr><td><a href="cgi-bin/">cgi-bin/</a></td><td>2026-05-12 20:46</td><td>-</td></tr>
+</table></body></html>"""
+
+
+def test_una_spa_no_se_declara_vacia():
+    assert clasificar_sitio(SPA, "https://clinicaborealis.cl/") == "desconocido"
+
+
+def test_una_spa_no_es_oportunidad():
+    r = RevisionWeb(url="https://clinicaborealis.cl/", revisada=True)
+    r.estado = clasificar_sitio(SPA, r.url)
+    assert not r.es_oportunidad
+
+
+def test_el_listado_de_apache_si_es_una_web_vacia():
+    assert clasificar_sitio(INDEX_OF, "http://www.esteticae3.cl/") == "vacia"
+    assert RevisionWeb(url="x", estado="vacia", revisada=True).es_oportunidad
