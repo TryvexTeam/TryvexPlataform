@@ -164,6 +164,13 @@ class RevisionWeb:
 # encendido: clinicaborealis.cl son 2.712 bytes con un <div id="root"> y 5
 # palabras. Para una persona el sitio funciona; para nosotros parecia un
 # dominio botado.
+# Cuantas palabras puede tener una pagina que dice estar en construccion.
+# Una portada de "volvemos pronto" trae un parrafo; un sitio andando trae
+# cientos. Los casos reales del 16-sep: inmotionkinesiologia.cl ("Estamos
+# trabajando en algo increible") tiene 28 palabras; kinecura.cl, que funciona
+# entero y solo tiene una seccion pendiente, tiene 1.807.
+TOPE_EN_OBRA = 250
+
 MARCAS_SPA = (
     # El div donde la app se monta. El id puede venir sin comillas.
     r"""id=["']?(root|app|q-app|__nuxt|__next|main-app)["'\s>]""",
@@ -225,7 +232,14 @@ def clasificar_sitio(html: str, url_final: str = "", tamano: Optional[int] = Non
     # traducciones de su widget dice
     #     'label.circle.comming_soon': "proximamente"
     # dentro de un <script>. El sitio tiene 842 palabras y funciona perfecto.
-    if any(re.search(p, texto_visible(crudo)) for p in EN_OBRA):
+    visible = texto_visible(crudo)
+    palabras_visibles = len(visible.split())
+    # 🔴 Y ademas tiene que ser un sitio CHICO. Caso real del 16-sep:
+    # kinecura.cl tiene 1.807 palabras y funciona entero; lo marcaba la frase
+    # "Proximamente: recepcion, boxes, sala de rehabilitacion" -- una seccion
+    # de galeria sin fotos todavia. Un sitio con ese contenido no esta en
+    # construccion, diga lo que diga una de sus secciones.
+    if palabras_visibles < TOPE_EN_OBRA and any(re.search(p, visible) for p in EN_OBRA):
         return "en_obra"
 
     # Una pagina casi sin texto no es un sitio: es un dominio con algo puesto.
