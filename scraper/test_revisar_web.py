@@ -211,3 +211,34 @@ def test_un_404_de_verdad_si_queda_como_caida():
     r = _respuesta_falsa(404)
     assert r.estado == "caida"
     assert r.es_oportunidad
+
+
+# ── Un frameset no es una web vacia, es una web vieja ────────────────────────
+# Caso real del 16-sep, cuarta corrida de prueba: ferreteriasantodomingo.cl
+# son 646 bytes de <frameset> apuntando a smartienda.cl. Contado por palabras
+# da "vacia", y adentro del marco hay una tienda con 115 palabras. Entro como
+# lead con score 85 por un vacio que no existia.
+
+FRAMESET = """<!DOCTYPE html><html><head><title>ferreteria</title></head>
+<frameset rows="*,0">
+<frame src="https://www.smartienda.cl/smartienda2004/finalizar.asp?php=4493" id="mainFrame" />
+<frame src="" name="bottomFrame" />
+</frameset></html>"""
+
+
+def test_encuentra_el_marco_principal():
+    from revisar_web import marco_principal
+
+    assert marco_principal(FRAMESET).startswith("https://www.smartienda.cl/")
+
+
+def test_una_pagina_normal_no_tiene_marco():
+    from revisar_web import marco_principal
+
+    assert marco_principal("<html><body><p>hola</p></body></html>") == ""
+    assert marco_principal("") == ""
+
+
+def test_el_frameset_solo_no_alcanza_para_decir_vacia():
+    # La cascara sola SI parece vacia: por eso hay que seguir el marco.
+    assert clasificar_sitio(FRAMESET, "https://ferreteria.cl") == "vacia"

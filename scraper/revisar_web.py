@@ -155,6 +155,24 @@ class RevisionWeb:
         }
 
 
+def marco_principal(html: str) -> str:
+    """La URL del marco donde vive el sitio de verdad, si esto es un frameset.
+
+    🔴 Caso real del 16-sep: ferreteriasantodomingo.cl son 646 bytes de
+    <frameset> apuntando a smartienda.cl. Contado por palabras da "vacia" --
+    y adentro del marco hay una tienda con 115 palabras. El sitio no esta
+    vacio, esta viejo. Decirle al dueño que su web esta vacia es falso.
+    """
+    texto = html or ""
+    if "<frameset" not in texto.lower():
+        return ""
+    for m in re.finditer(r"<frame[^>]*", texto, re.I):
+        src = re.search(r"src\s*=\s*[\"']([^\"']+)[\"']", m.group(0), re.I)
+        if src and src.group(1).strip():
+            return src.group(1).strip()
+    return ""
+
+
 def clasificar_sitio(html: str, url_final: str = "", tamano: Optional[int] = None) -> str:
     """En que estado esta el sitio. Solo con lo que entrega el servidor."""
     if any(h in (url_final or "").lower() for h in HOSTS_STAGING):
@@ -225,8 +243,19 @@ async def revisar_web(url: str, timeout: float = 8.0) -> RevisionWeb:
                 return r
             r.revisada = True
             r.paginas_leidas = 1
-            r.estado = clasificar_sitio(resp.text, r.url_final)
-            encontradas |= senales_en(resp.text)
+            cuerpo = resp.text
+            # Si es un frameset, el sitio de verdad esta un nivel mas adentro.
+            marco = marco_principal(cuerpo)
+            if marco:
+                try:
+                    dentro = await client.get(marco)
+                    if dentro.status_code < 400:
+                        cuerpo = dentro.text
+                        r.url_final = str(dentro.url)
+                except Exception:
+                    pass  # si no se puede, se juzga la cascara y queda revisada
+            r.estado = clasificar_sitio(cuerpo, r.url_final)
+            encontradas |= senales_en(cuerpo)
         except Exception as e:  # noqa: BLE001 — el motivo se guarda, no se traga
             r.error = type(e).__name__
             # No se pudo abrir. Puede ser el dominio caido, puede ser la red
