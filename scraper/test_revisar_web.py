@@ -311,3 +311,52 @@ def test_el_dominio_parqueado_se_sigue_buscando_en_el_javascript():
     lander = """<html><script>window.onload=function(){
         window.location.href="/lander"}</script></html>"""
     assert clasificar_sitio(lander, "http://cafeforestal.com/") == "parqueada"
+
+
+# Peumayen (16-sep, misma corrida) es una SPA de Vue/Quasar y se nos escapo:
+# el id va SIN comillas y el bundle usa punto, no guion.
+SPA_QUASAR = """<!DOCTYPE html><html><head><meta charset=utf-8>
+<script type="module" crossorigin src="/assets/index.38f23686.js"></script>
+<link rel="stylesheet" href="/assets/index.2b1e5abe.css">
+</head><body><div id=q-app></div></body></html>"""
+
+
+def test_una_spa_de_quasar_sin_comillas_tampoco_es_vacia():
+    assert clasificar_sitio(SPA_QUASAR, "https://www.peumayenchile.cl/") == "desconocido"
+
+
+def test_el_bundle_con_punto_cuenta_igual_que_con_guion():
+    from revisar_web import MARCAS_SPA
+    import re as _re
+
+    for src in ("/assets/index.38f23686.js", "/assets/index-a1b2c3d4.js"):
+        assert any(_re.search(p, f'<script src="{src}">', _re.I) for p in MARCAS_SPA), src
+
+
+# ── "En obra" pide ademas que el sitio sea CHICO ─────────────────────────────
+# kinecura.cl (16-sep) tiene 1.807 palabras y funciona entero. Lo marcaba una
+# seccion de galeria sin fotos: "Proximamente: recepcion, boxes, sala de
+# rehabilitacion". La frase esta a la vista, asi que sacar los <script> no
+# alcanzaba: falta mirar el tamaño.
+
+PORTADA_EN_OBRA = """<html><body><h1>Disculpa este desastre</h1>
+<p>Estamos trabajando en algo increible, vuelve pronto.</p>
+<p>Instagram Facebook</p></body></html>"""
+
+SITIO_GRANDE_CON_UNA_SECCION_PENDIENTE = (
+    "<html><body><h1>KineCura</h1><p>"
+    + ("kinesiologia rehabilitacion terapia manual evaluacion tratamiento "
+       "deportiva columna rodilla hombro ejercicio recuperacion lesiones ") * 30
+    + "</p><h2>Recorrido por KineCura</h2>"
+    + "<p>Proximamente: recepcion, boxes, sala de rehabilitacion.</p>"
+    + "</body></html>"
+)
+
+
+def test_una_portada_de_volvemos_pronto_si_esta_en_obra():
+    assert clasificar_sitio(PORTADA_EN_OBRA, "http://inmotion.cl/") == "en_obra"
+
+
+def test_un_sitio_grande_con_una_seccion_pendiente_esta_vivo():
+    assert len(SITIO_GRANDE_CON_UNA_SECCION_PENDIENTE.split()) > 250
+    assert clasificar_sitio(SITIO_GRANDE_CON_UNA_SECCION_PENDIENTE, "https://kinecura.cl/") == "viva"
