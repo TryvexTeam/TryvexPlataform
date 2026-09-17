@@ -194,20 +194,39 @@ def marco_principal(html: str) -> str:
     return ""
 
 
+def texto_visible(html: str) -> str:
+    """El texto sin lo que vive dentro de <script>, <style> y los comentarios.
+
+    Buscar una frase en el HTML crudo encuentra cosas que nadie lee: menus de
+    traducciones, plantillas de componentes, texto comentado.
+    """
+    t = html or ""
+    t = re.sub(r"<!--.*?-->", " ", t, flags=re.S)
+    t = re.sub(r"<(script|style|template|noscript)\b[^>]*>.*?</\1>", " ", t, flags=re.S | re.I)
+    return re.sub(r"<[^>]+>", " ", t)
+
+
 def clasificar_sitio(html: str, url_final: str = "", tamano: Optional[int] = None) -> str:
     """En que estado esta el sitio. Solo con lo que entrega el servidor."""
     if any(h in (url_final or "").lower() for h in HOSTS_STAGING):
         return "staging"
 
-    texto = (html or "").lower()
-    if any(re.search(p, texto) for p in PARQUEADA):
+    crudo = (html or "").lower()
+    # PARQUEADA se busca en el HTML entero A PROPOSITO: la firma mas comun de
+    # un dominio parqueado es justamente un redirect escrito en JavaScript.
+    if any(re.search(p, crudo) for p in PARQUEADA):
         return "parqueada"
-    if any(re.search(p, texto) for p in EN_OBRA):
+
+    # 🔴 EN_OBRA solo en lo que una persona VE. Caso real del 16-sep, primera
+    # corrida completa: maryblanca.cl quedo "en obra" porque un diccionario de
+    # traducciones de su widget dice
+    #     'label.circle.comming_soon': "proximamente"
+    # dentro de un <script>. El sitio tiene 842 palabras y funciona perfecto.
+    if any(re.search(p, texto_visible(crudo)) for p in EN_OBRA):
         return "en_obra"
 
     # Una pagina casi sin texto no es un sitio: es un dominio con algo puesto.
-    sin_marcas = re.sub(r"<[^>]+>", " ", html or "")
-    palabras = len(sin_marcas.split())
+    palabras = len(texto_visible(html or "").split())
     if palabras < 40:
         # Antes de decir "vacia": ¿sera que el contenido lo pone JavaScript?
         # Si hay marcas de SPA, no lo sabemos -- y no saber no es un lead.

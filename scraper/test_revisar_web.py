@@ -275,3 +275,39 @@ def test_una_spa_no_es_oportunidad():
 def test_el_listado_de_apache_si_es_una_web_vacia():
     assert clasificar_sitio(INDEX_OF, "http://www.esteticae3.cl/") == "vacia"
     assert RevisionWeb(url="x", estado="vacia", revisada=True).es_oportunidad
+
+
+# ── "En obra" solo si lo ve una persona ──────────────────────────────────────
+# Caso real del 16-sep, primera corrida completa: maryblanca.cl quedo "en obra"
+# porque el diccionario de traducciones de un widget dice, dentro de un
+# <script>:   'label.circle.comming_soon': "proximamente"
+# El sitio tiene 842 palabras y funciona perfecto.
+
+CON_PALABRA_EN_EL_SCRIPT = """<html><head><title>Salon de Belleza MaryBlanca</title>
+<script type="text/javascript">
+  webplatform.phrases = {'label.circle.comming_soon': "proximamente",
+                         'label.cancel': "cancelar"};
+</script></head><body>
+<h1>Salon de Belleza en Santiago Centro</h1>
+<p>Cortes, color, alisados y botox capilar. Depilacion facial y corporal.
+Tratamientos faciales, tratamientos corporales, cejas y pestanas, manicure,
+pedicure, masajes capilares, lavados, peinados y asesoria de imagen para
+novias, quinceaneras y eventos. Atencion de lunes a sabado en pleno centro.</p>
+</body></html>"""
+
+
+def test_una_palabra_dentro_de_un_script_no_pone_el_sitio_en_obra():
+    assert clasificar_sitio(CON_PALABRA_EN_EL_SCRIPT, "http://maryblanca.cl/") == "viva"
+
+
+def test_la_misma_frase_a_la_vista_si_cuenta():
+    visible = """<html><body><h1>Sitio en construccion</h1>
+    <p>Volvemos pronto con todo nuevo.</p></body></html>"""
+    assert clasificar_sitio(visible, "http://ejemplo.cl/") == "en_obra"
+
+
+def test_el_dominio_parqueado_se_sigue_buscando_en_el_javascript():
+    # PARQUEADA es la excepcion a proposito: su firma ES un redirect en JS.
+    lander = """<html><script>window.onload=function(){
+        window.location.href="/lander"}</script></html>"""
+    assert clasificar_sitio(lander, "http://cafeforestal.com/") == "parqueada"
