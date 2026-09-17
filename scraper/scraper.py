@@ -252,7 +252,8 @@ async def delay() -> None:
 # ── Supabase: insertar o actualizar (async) — escribe en el ESQUEMA DEL CRM ────
 async def insertar_o_actualizar(supabase: Client, lead: dict) -> str:
     """
-    Verifica si el lead ya existe por (nombre_negocio, nicho) EN EL CRM.
+    Verifica si el lead ya existe EN EL CRM: primero por google_place_id
+    (la llave unica de la tabla) y, si no hay, por (nombre_negocio, nicho).
     - Si existe: refresca contacto/score, preserva estado/origen/notas (que el
       equipo pudo tocar a mano).
     - Si no existe: inserta como nuevo (estado 'sin_contactar', origen 'scraper').
@@ -263,13 +264,35 @@ async def insertar_o_actualizar(supabase: Client, lead: dict) -> str:
     """
     payload = a_crm(lead)  # esquema del CRM
 
-    existing = await _in_thread(
-        lambda: supabase.table("fact_leads")
-        .select("id, estado")
-        .eq("nombre_negocio", payload["nombre_negocio"])
-        .eq("nicho", payload["nicho"])
-        .execute()
-    )
+    # 🔴 Primero por google_place_id, que es la llave UNICA en la base.
+    #
+    # Se buscaba solo por (nombre, nicho), y la base rechazaba el insert con
+    # un 23505. Paso 68 veces sin que nadie lo mirara. El nombre no sirve para
+    # preguntar "¿ya lo tengo?" porque cambia: una tilde (Chile Psicologos /
+    # Chile Psicólogos), un emoji ("SDS Clinicas Dentales💎🇨🇱") o que el dueño
+    # le edite la ficha, y el negocio entra de nuevo o revienta.
+    #
+    # Lo peor no era el error en el log: esos negocios NUNCA se actualizaban.
+    # Un telefono nuevo o una web recien hecha no llegaba jamas a su ficha.
+    place_id = payload.get("google_place_id")
+    existing = None
+    if place_id:
+        existing = await _in_thread(
+            lambda: supabase.table("fact_leads")
+            .select("id, estado")
+            .eq("google_place_id", place_id)
+            .execute()
+        )
+
+    # Sin place_id (o si no aparece), se cae al nombre como antes.
+    if not (existing and existing.data):
+        existing = await _in_thread(
+            lambda: supabase.table("fact_leads")
+            .select("id, estado")
+            .eq("nombre_negocio", payload["nombre_negocio"])
+            .eq("nicho", payload["nicho"])
+            .execute()
+        )
 
     if existing.data:
         record_id = existing.data[0]["id"]
