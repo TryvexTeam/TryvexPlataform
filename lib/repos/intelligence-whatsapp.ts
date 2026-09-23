@@ -255,6 +255,8 @@ export function construirCanales(
 export interface Insight {
   texto: string
   veces: number
+  /** Un mensaje real que lo pregunta. Vale más que el resumen de la IA. */
+  ejemplo?: string
   fuente: 'clientes' | 'equipo'
 }
 
@@ -269,11 +271,14 @@ export function construirInsights(
   analytics: AnalyticsAgente | null,
   dudasDelEquipo: Array<{ titulo: string }>,
 ): Insight[] {
-  const deClientes = (analytics?.dudas ?? []).map((d) => ({
-    texto: d.texto,
-    veces: d.veces,
-    fuente: 'clientes' as const,
-  }))
+  const deClientes = (analytics?.dudas ?? [])
+    .filter((d) => typeof d.tema === 'string' && typeof d.count === 'number')
+    .map((d) => ({
+      texto: d.tema,
+      veces: d.count,
+      ejemplo: d.ejemplo,
+      fuente: 'clientes' as const,
+    }))
 
   const conteo = new Map<string, number>()
   for (const d of dudasDelEquipo) conteo.set(d.titulo, (conteo.get(d.titulo) ?? 0) + 1)

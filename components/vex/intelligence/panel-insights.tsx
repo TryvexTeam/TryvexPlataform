@@ -99,6 +99,14 @@ export function PanelInsights({ insights, vpsDisponible, dias }: PanelInsightsPr
                     }}
                   />
                 </div>
+                {insight.ejemplo && (
+                  <p
+                    className="rounded-lg px-2.5 py-1.5 text-xs italic text-[var(--tx-ink-secondary)]"
+                    style={{ background: 'var(--tx-surface-2)' }}
+                  >
+                    &ldquo;{insight.ejemplo}&rdquo;
+                  </p>
+                )}
                 <p className="text-[11px] text-[var(--tx-ink-muted)]">
                   {insight.fuente === 'clientes'
                     ? 'Lo preguntaron clientes por WhatsApp.'
@@ -113,7 +121,7 @@ export function PanelInsights({ insights, vpsDisponible, dias }: PanelInsightsPr
       {deClientes > 0 && (
         <p className="text-[11px] text-[var(--tx-ink-muted)]">
           Las dudas de clientes las agrupa con IA el agente de WhatsApp a partir de los mensajes
-          reales; el texto es su resumen, no una cita literal.
+          reales: el título es su resumen, y el texto entre comillas es un mensaje real.
         </p>
       )}
     </section>
