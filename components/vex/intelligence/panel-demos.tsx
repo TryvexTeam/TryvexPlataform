@@ -3,6 +3,8 @@
 import { useId, useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { useReloj } from '@/lib/vex/usar-reloj'
+import { rubroDelGuion } from '@/lib/vex/simulacion-demo'
+import { TelefonoDemo } from './telefono-demo'
 import type { DemoAgente, leadsParaDemo } from '@/lib/repos/demos'
 import type { apagarDemo, crearDemo, sugerirGuionDemo, CrearDemoEntrada } from '@/app/(app)/vex/intelligence/acciones-demos'
 
@@ -37,6 +39,8 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
   const [aviso, setAviso] = useState('')
   const [apagadas, setApagadas] = useState<Set<string>>(new Set())
   const [pendiente, empezar] = useTransition()
+  // Qué muestra el teléfono: la demo que se está armando, o una ya activada.
+  const [vistaId, setVistaId] = useState<string | null>(null)
 
   const consulta = busqueda.trim().toLocaleLowerCase('es')
   const resultados = consulta ? leads.filter(l => l.nombre.toLocaleLowerCase('es').includes(consulta)).slice(0, 8) : []
@@ -50,6 +54,10 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
   }))
   const vigentes = actuales.filter(d => d.vigente)
   const historial = actuales.filter(d => !d.vigente)
+  const enVista = vistaId ? actuales.find(d => d.id === vistaId) : undefined
+  const telefono_ = enVista
+    ? { nombre: enVista.nombreNegocio, rubro: rubroDelGuion(enVista.guion) }
+    : { nombre: nombreNegocio, rubro: rubroDelGuion(guion) }
 
   function elegirLead(idLead: string) {
     setError(null)
@@ -97,8 +105,15 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
           </div>
           {/* Una vencida puede seguir activa en la base y reservar el número:
               también se permite apagarla desde el historial para liberarlo. */}
-          {d.activa && <Button type="button" variant="outline" size="sm" className="min-h-9"
-            disabled={pendiente} aria-label={`Apagar demo de ${d.nombreNegocio}`} onClick={() => apagar(d.id)}>Apagar</Button>}
+          <div className="flex flex-wrap gap-1.5">
+            <Button type="button" variant={vistaId === d.id ? 'secondary' : 'ghost'} size="sm" className="min-h-9"
+              aria-pressed={vistaId === d.id} aria-label={`Ver la demo de ${d.nombreNegocio} en el teléfono`}
+              onClick={() => setVistaId(vistaId === d.id ? null : d.id)}>
+              {vistaId === d.id ? 'En el teléfono' : 'Ver en el teléfono'}
+            </Button>
+            {d.activa && <Button type="button" variant="outline" size="sm" className="min-h-9"
+              disabled={pendiente} aria-label={`Apagar demo de ${d.nombreNegocio}`} onClick={() => apagar(d.id)}>Apagar</Button>}
+          </div>
         </div>
         <div className="flex min-w-0 flex-col gap-1 text-xs text-[var(--tx-ink-muted)]">
           <span>{d.mensajesUsados} / {d.limiteMensajes} mensajes</span>
@@ -124,6 +139,16 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
         <p className="mt-1 text-xs text-[var(--tx-ink-muted)]">Prepare el asistente de un negocio para que su dueño lo pruebe desde su teléfono.</p>
       </header>
 
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+      <aside aria-label="Vista previa en el teléfono" className="flex min-w-0 flex-col items-center gap-2 lg:sticky lg:top-4 lg:order-2">
+        <TelefonoDemo nombreNegocio={telefono_.nombre} rubro={telefono_.rubro} />
+        {enVista && (
+          <Button type="button" variant="ghost" size="sm" className="min-h-9" onClick={() => setVistaId(null)}>
+            Volver a la demo que está armando
+          </Button>
+        )}
+      </aside>
+      <div className="flex min-w-0 flex-col gap-4 lg:order-1">
       <form className="flex min-w-0 flex-col gap-3 rounded-2xl p-3.5"
         style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-1)' }}
         aria-busy={pendiente}
@@ -173,7 +198,7 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
           </div>}
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row">
             <label className={etiqueta}>Nombre del negocio
-              <input required maxLength={200} value={nombreNegocio} onChange={e => setNombreNegocio(e.target.value)} className={campo} style={estiloCampo} />
+              <input required maxLength={120} value={nombreNegocio} onChange={e => setNombreNegocio(e.target.value)} className={campo} style={estiloCampo} />
             </label>
             <label className={etiqueta}>Teléfono que probará la demo
               <input required type="tel" inputMode="tel" autoComplete="tel" placeholder="+56 9 8765 2232"
@@ -216,6 +241,8 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
         <summary className="cursor-pointer px-3.5 py-2.5 text-xs text-[var(--tx-ink-secondary)]">Historial · {historial.length}</summary>
         <ul className="flex min-w-0 flex-col gap-2 p-2.5">{historial.map(tarjeta)}</ul>
       </details>}
+      </div>
+      </div>
     </section>
   )
 }
