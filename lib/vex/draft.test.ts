@@ -862,3 +862,58 @@ describe('limpiarNombreParaSaludo', () => {
     expect(espia.prompt()).not.toMatch(/Nombre para el saludo.*Limitada/)
   })
 })
+
+// El revisor de webs ya sabia que 23 sitios estaban rotos o a medio hacer, y el
+// mensaje no lo usaba. Es el mejor gancho: suyo y comprobable.
+describe('generarDraftLead: el estado de su web como gancho', () => {
+  const web = (estado: 'en_obra' | 'viva' | 'caida') => ({
+    url: 'https://barberiagold.cl', revisada: true, capacidades: [], estado,
+  })
+
+  it('una web en obra es el angulo principal, y ya no le prohibe ofrecer terminarla', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, tiene_web: true, url_web: 'https://barberiagold.cl', web_capacidades: web('en_obra') },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/TU ANGULO PRINCIPAL PARA EL PUNTO 3/)
+    expect(espia.prompt()).toMatch(/en construccion cuando lo revisamos/)
+    expect(espia.prompt()).toContain('https://barberiagold.cl')
+    expect(espia.prompt()).not.toMatch(/ESTE NEGOCIO YA TIENE SITIO WEB/)
+  })
+
+  it('una web viva no da gancho: sigue la regla de "ya tiene web"', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, tiene_web: true, url_web: 'https://barberiagold.cl', web_capacidades: web('viva') },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).not.toMatch(/TU ANGULO PRINCIPAL/)
+    expect(espia.prompt()).toMatch(/ESTE NEGOCIO YA TIENE SITIO WEB/)
+  })
+
+  it('aunque la casilla diga "no sabemos", lo que vio el revisor manda', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, tiene_web: null, web_capacidades: web('caida') }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/no cargaba cuando lo revisamos/)
+    expect(espia.prompt()).not.toMatch(/NO SABEMOS si tiene sitio web/)
+  })
+})
+
+describe('generarDraftLead: la propuesta segun el rubro', () => {
+  it('una ferreteria recibe su oferta, y la prohibicion de ofrecer reservas', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, nicho: 'ferreterías', categoria_google: 'Ferretería' }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/GUIA PARA EL PUNTO 4/)
+    expect(espia.prompt()).toMatch(/cotizaciones y consultas de stock/)
+    expect(espia.prompt()).toMatch(/NO le ofrezcas reservar hora/)
+  })
+
+  it('un rubro que no esta en la tabla no recibe guia inventada', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, nicho: 'soluciones', categoria_google: null }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/GUIA PARA EL PUNTO 4/)
+  })
+})

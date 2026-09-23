@@ -79,6 +79,14 @@ export const WebCapacidadesSchema = z.object({
   ),
   paginas_leidas: z.number().optional(),
   error: z.string().nullable().optional(),
+  // En qué estado está el sitio, según `clasificar_sitio` del revisor de webs
+  // (scraper/revisar_web.py). La base ya lo tenía; faltaba en el tipo, y por eso
+  // el mensaje en frío nunca lo usaba: una web caída o a medio hacer es el mejor
+  // gancho que hay.
+  estado: z
+    .enum(['viva', 'vacia', 'caida', 'en_obra', 'parqueada', 'staging', 'desconocido', 'bloqueada'])
+    .optional(),
+  url_final: z.string().optional(),
 })
 export type WebCapacidades = z.infer<typeof WebCapacidadesSchema>
 
