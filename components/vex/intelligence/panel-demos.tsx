@@ -4,6 +4,7 @@ import { useId, useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { useReloj } from '@/lib/vex/usar-reloj'
 import { rubroDelGuion } from '@/lib/vex/simulacion-demo'
+import { PLANTILLAS_DEMO, guionDePlantilla, plantillaPorId, type PlantillaDemo } from '@/lib/vex/plantillas-demo'
 import { TelefonoDemo } from './telefono-demo'
 import type { DemoAgente, leadsParaDemo } from '@/lib/repos/demos'
 import type { apagarDemo, crearDemo, sugerirGuionDemo, CrearDemoEntrada } from '@/app/(app)/vex/intelligence/acciones-demos'
@@ -41,6 +42,7 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
   const [pendiente, empezar] = useTransition()
   // Qué muestra el teléfono: la demo que se está armando, o una ya activada.
   const [vistaId, setVistaId] = useState<string | null>(null)
+  const [plantillaId, setPlantillaId] = useState<string | null>(null)
 
   const consulta = busqueda.trim().toLocaleLowerCase('es')
   const resultados = consulta ? leads.filter(l => l.nombre.toLocaleLowerCase('es').includes(consulta)).slice(0, 8) : []
@@ -59,6 +61,28 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
     ? { nombre: enVista.nombreNegocio, rubro: rubroDelGuion(enVista.guion) }
     : { nombre: nombreNegocio, rubro: rubroDelGuion(guion) }
 
+  function elegirPlantilla(p: PlantillaDemo) {
+    setError(null)
+    setLeadId(undefined)
+    setBusqueda('')
+    setMostrarResultados(false)
+    setVistaId(null)
+    setPlantillaId(p.id)
+    setNombreNegocio(p.nombreEjemplo)
+    setGuion(guionDePlantilla(p))
+    setAviso(`Ejemplo de ${p.nicho.toLocaleLowerCase('es')} cargado. Si es para un negocio real, cambie el nombre y revise los servicios antes de activarlo.`)
+  }
+
+  /**
+   * Al cambiar el nombre, el guion de la plantilla lo sigue — salvo que ya lo
+   * hayan editado a mano: ahí no se pisa lo que escribió una persona.
+   */
+  function cambiarNombre(nuevo: string) {
+    const p = plantillaId ? plantillaPorId(plantillaId) : undefined
+    if (p && guion === guionDePlantilla(p, nombreNegocio)) setGuion(guionDePlantilla(p, nuevo))
+    setNombreNegocio(nuevo)
+  }
+
   function elegirLead(idLead: string) {
     setError(null)
     setAviso('')
@@ -67,6 +91,7 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
         const r = await alSugerir(idLead)
         if (!r.ok) { setError(r.error); return }
         setLeadId(idLead)
+        setPlantillaId(null)
         setNombreNegocio(r.nombreNegocio)
         setTelefono(r.telefono)
         setGuion(r.guion)
@@ -166,6 +191,7 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
               setNombreNegocio('')
               setTelefono('')
               setGuion('')
+              setPlantillaId(null)
               setAviso('Demo activada para ese número.')
             } catch {
               setError('No se pudo activar la demo. Intente nuevamente.')
@@ -176,6 +202,25 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
             tardía sobrescriba lo que la persona acaba de escribir. */}
         <fieldset disabled={pendiente} className="flex min-w-0 flex-col gap-3">
           <legend className="sr-only">Configurar demo</legend>
+          <div className="flex min-w-0 flex-col gap-2">
+            <span id={`${id}-ejemplos`} className="text-xs text-[var(--tx-ink-secondary)]">Empezar desde un ejemplo</span>
+            <div role="group" aria-labelledby={`${id}-ejemplos`} className="flex min-w-0 flex-wrap gap-1.5">
+              {PLANTILLAS_DEMO.map(p => {
+                const activa = plantillaId === p.id
+                return (
+                  <button key={p.id} type="button" aria-pressed={activa} onClick={() => elegirPlantilla(p)}
+                    className="min-h-9 rounded-full px-3 text-xs transition-[background-color,border-color,color,transform] duration-150 hover:text-[var(--tx-ink-primary)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={{
+                      border: `1px solid ${activa ? 'var(--tx-accent)' : 'var(--tx-border-strong)'}`,
+                      background: activa ? 'var(--tx-accent-subtle)' : 'transparent',
+                      color: activa ? 'var(--tx-ink-primary)' : 'var(--tx-ink-secondary)',
+                    }}>
+                    {p.nicho}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           <label className={etiqueta}>
             Buscar lead (opcional)
             <input type="search" value={busqueda} className={campo} style={estiloCampo}
@@ -198,7 +243,7 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
           </div>}
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row">
             <label className={etiqueta}>Nombre del negocio
-              <input required maxLength={120} value={nombreNegocio} onChange={e => setNombreNegocio(e.target.value)} className={campo} style={estiloCampo} />
+              <input required maxLength={120} value={nombreNegocio} onChange={e => cambiarNombre(e.target.value)} className={campo} style={estiloCampo} />
             </label>
             <label className={etiqueta}>Teléfono que probará la demo
               <input required type="tel" inputMode="tel" autoComplete="tel" placeholder="+56 9 8765 2232"

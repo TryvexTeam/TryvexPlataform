@@ -34,7 +34,13 @@ function rubro(lead: LeadParaDemo): string {
   return lead.categoria_google?.trim() || lead.nicho?.trim().toLowerCase() || 'negocio'
 }
 
-export function armarGuionDemo(lead: LeadParaDemo): string {
+/** Lo que se sabe del negocio además de su ficha (lo usan las plantillas por nicho). */
+export interface ExtrasGuion {
+  /** Servicios o productos que ofrece. Sin precios: el asistente no los tiene. */
+  servicios?: string[]
+}
+
+export function armarGuionDemo(lead: LeadParaDemo, extras: ExtrasGuion = {}): string {
   const nombre = lead.nombre_negocio.trim()
   const que = rubro(lead)
   const lugar = lead.localidad?.trim()
@@ -43,6 +49,9 @@ export function armarGuionDemo(lead: LeadParaDemo): string {
   const datos = [
     `- Nombre: ${nombre}`,
     `- Rubro: ${que}`,
+    extras.servicios?.length
+      ? `- Lo que ofrece (sin precios; si preguntan valores, lo confirma el equipo): ${extras.servicios.join(', ')}`
+      : null,
     lugar ? `- Dirección: ${lugar}` : '- Dirección: no la tienes. Si te la piden, di que se la confirmas.',
     lead.horario?.trim()
       ? `- Horario (según Google; si el cliente insiste en un detalle, di que lo confirmas): ${lead.horario.replace(/\s+/g, ' ').trim()}`
