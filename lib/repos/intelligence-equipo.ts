@@ -419,16 +419,22 @@ export async function obtenerHilos(
  * existen en este repositorio, y todas se abren con el mismo token.
  */
 export function herramientasDelCRM(): Herramienta[] {
+  // Debe calzar con app/api/agentes/*: si se agrega una ruta y no se anota
+  // acá, la ficha del agente dice que no puede hacer algo que sí puede.
   return [
+    { id: 'manual', nombre: 'Manual', ruta: '/api/agentes/manual', detalle: 'Quién es y todo lo que puede hacer. Lo primero que lee al arrancar.', concedida: true, exigeFirma: false },
     { id: 'encargos', nombre: 'Cola de encargos', ruta: '/api/agentes/encargos', detalle: 'Lee lo que tiene aprobado y responde. Lo que espera permiso lo ve, pero no puede tocarlo.', concedida: true, exigeFirma: true },
     { id: 'mensajes', nombre: 'Canal del equipo', ruta: '/api/agentes/mensajes', detalle: 'Escribe en el hilo "Equipo agéntico". Nunca en los mensajes directos del equipo.', concedida: true, exigeFirma: false },
     { id: 'wa-mensaje', nombre: 'Registrar WhatsApp', ruta: '/api/agentes/wa-mensaje', detalle: 'Deja constancia en el CRM de cada mensaje de WhatsApp que entra o sale.', concedida: true, exigeFirma: false },
+    { id: 'wa-estado', nombre: 'Estado de envío', ruta: '/api/agentes/wa-estado', detalle: 'Informa qué dijo WhatsApp de cada mensaje enviado, para que «enviado» signifique enviado de verdad.', concedida: true, exigeFirma: false },
     { id: 'lead', nombre: 'Leads', ruta: '/api/agentes/lead', detalle: 'Crea o actualiza un lead a partir de una conversación.', concedida: true, exigeFirma: false },
     { id: 'eventos', nombre: 'Agendar', ruta: '/api/agentes/eventos', detalle: 'Agenda una reunión en el CRM y en Google Calendar, y avisa al cliente por correo.', concedida: true, exigeFirma: false },
     { id: 'consumo', nombre: 'Reportar gasto', ruta: '/api/agentes/consumo', detalle: 'Informa tokens y costo de cada llamada a un modelo.', concedida: true, exigeFirma: false },
     { id: 'citas', nombre: 'Conocimiento', ruta: '/api/agentes/citas', detalle: 'Lee el Cerebro y deja constancia de qué documento usó.', concedida: true, exigeFirma: false },
     { id: 'rutinas', nombre: 'Rutinas', ruta: '/api/agentes/rutinas', detalle: 'Declara sus rutinas y reporta cada corrida.', concedida: true, exigeFirma: false },
     { id: 'mejoras', nombre: 'Proponer mejoras', ruta: '/api/agentes/mejoras', detalle: 'Propone un cambio con su evidencia. Aplicarlo requiere que una persona lo apruebe.', concedida: true, exigeFirma: true },
+    { id: 'directivas', nombre: 'Directivas del equipo', ruta: '/api/agentes/directivas', detalle: 'Lee las decisiones vigentes del equipo (promociones, cambios de tono) para aplicarlas en todo.', concedida: true, exigeFirma: false },
+    { id: 'demos', nombre: 'Demos', ruta: '/api/agentes/demos', detalle: 'Consulta si un número tiene una demo activa y gasta su cupo. Solo la usa el agente de WhatsApp.', concedida: true, exigeFirma: false },
   ]
 }
 
