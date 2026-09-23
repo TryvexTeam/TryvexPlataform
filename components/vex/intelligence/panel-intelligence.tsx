@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Brain, Radio } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { AlertTriangle, Brain, BriefcaseBusiness, Radio, Smartphone, TrendingUp, Users } from 'lucide-react'
+import { NavIntelligence, type SeccionNav } from './nav-intelligence'
 import { SalaAgentes } from './sala-agentes'
 import { EspacioAgente } from './espacio-agente'
 import { PanelHilos } from './panel-hilos'
@@ -116,23 +118,39 @@ type Vista =
   | 'costos'
   | 'whatsapp'
 
-type Tono = 'accent' | 'warning' | 'error'
+const VISTAS: readonly Vista[] = [
+  'cola', 'sala', 'espacio', 'directivas', 'conversaciones', 'traspasos', 'canales', 'campanas',
+  'demos', 'metricas', 'insights', 'mejoras', 'conocimiento', 'costos', 'whatsapp',
+]
 
-interface Pestana {
-  vista: Vista
-  nombre: string
-  contador?: number
-  tono?: Tono
+/** La vista va en la URL (?vista=demos): recargar o compartir el enlace no la pierde. */
+function vistaValida(v: string | null): Vista {
+  return VISTAS.includes(v as Vista) ? (v as Vista) : 'cola'
 }
 
 export function PanelIntelligence(props: PanelIntelligenceProps) {
   const { agentes, cola, avisos } = props
-  const [vista, setVista] = useState<Vista>('cola')
+  // useSearchParams y no window.location: da lo mismo en el servidor y en el
+  // navegador, así el primer render no choca al hidratar.
+  const parametros = useSearchParams()
+  const [vista, setVistaEstado] = useState<Vista>(() => vistaValida(parametros.get('vista')))
+
+  // replaceState y no el router: cambiar de vista no debe volver a pedirle la
+  // página entera al servidor, que junta más de diez fuentes.
+  function setVista(v: Vista) {
+    setVistaEstado(v)
+    const url = new URL(window.location.href)
+    url.searchParams.set('vista', v)
+    window.history.replaceState(null, '', url)
+  }
   const { enVivo } = useRefrescoEnVivo()
 
-  const grupos: Array<{ titulo: string; pestanas: Pestana[] }> = [
+  const grupos: SeccionNav<Vista>[] = [
     {
+      id: 'trabajo',
       titulo: 'Trabajo',
+      descripcion: 'Qué le pedimos a los agentes y qué están haciendo',
+      icono: BriefcaseBusiness,
       pestanas: [
         { vista: 'cola', nombre: 'Cola', contador: cola.filter((e) => e.estado === 'encolado').length, tono: 'warning' },
         { vista: 'sala', nombre: 'Sala' },
@@ -146,13 +164,16 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
       ],
     },
     {
+      id: 'clientes',
       titulo: 'Clientes',
+      descripcion: 'Qué pasa con la gente de afuera',
+      icono: Users,
       pestanas: [
         {
           vista: 'conversaciones',
           nombre: 'Conversaciones',
           contador: props.conversaciones.reduce((t, c) => t + c.sinLeer, 0),
-          tono: 'accent',
+          tono: 'warning',
         },
         {
           vista: 'traspasos',
@@ -176,7 +197,10 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
       ],
     },
     {
+      id: 'rendimiento',
       titulo: 'Rendimiento',
+      descripcion: 'Si sirve, cuánto cuesta y qué mejorar',
+      icono: TrendingUp,
       pestanas: [
         { vista: 'metricas', nombre: 'Métricas' },
         { vista: 'insights', nombre: 'Insights', contador: props.insights.length, tono: 'accent' },
@@ -195,14 +219,25 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
         { vista: 'costos', nombre: 'Costos' },
       ],
     },
-    { titulo: 'Número', pestanas: [{ vista: 'whatsapp', nombre: 'Agente de WhatsApp' }] },
+    {
+      id: 'numero',
+      titulo: 'Número',
+      descripcion: 'El agente de WhatsApp y su conexión',
+      icono: Smartphone,
+      pestanas: [{ vista: 'whatsapp', nombre: 'Agente de WhatsApp' }],
+    },
   ]
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-auto p-3 sm:p-5">
-      <header className="flex flex-wrap items-center gap-3">
-        <Brain size={20} style={{ color: 'var(--tx-accent)' }} />
-        <div className="mr-auto min-w-0">
+    <div className="h-full overflow-auto p-3 sm:p-5">
+      {/* Ancho máximo: en pantallas grandes las tablas y formularios estirados a
+          todo el ancho se leen peor, no mejor. */}
+      <div className="mx-auto flex w-full max-w-[1320px] flex-col gap-4">
+      {/* Sin flex-wrap: en el celular el ícono, el título y "en vivo" quedaban
+          cada uno en su renglón. Ahora comparten fila y la descripción se ajusta. */}
+      <header className="flex items-start gap-3">
+        <Brain size={20} className="mt-1 shrink-0" style={{ color: 'var(--tx-accent)' }} />
+        <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold text-[var(--tx-ink-primary)]">Tryvex Intelligence</h1>
           <p className="text-xs text-[var(--tx-ink-muted)]">
             Dónde el equipo reparte trabajo a los agentes, da permiso para lo que se ejecuta y revisa
@@ -210,7 +245,7 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
           </p>
         </div>
         <span
-          className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
+          className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
           style={{
             border: '1px solid var(--tx-border)',
             background: 'var(--tx-surface-1)',
@@ -227,53 +262,7 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
         </span>
       </header>
 
-      {/* En el celular, un selector nativo: trece botones no caben y el del sistema es el más cómodo con el pulgar. */}
-      <label className="flex flex-col gap-1 sm:hidden">
-        <span className="text-[11px] text-[var(--tx-ink-muted)]">Vista</span>
-        <select
-          value={vista}
-          onChange={(e) => setVista(e.target.value as Vista)}
-          className="w-full rounded-xl px-3 py-2.5 text-sm"
-          style={{
-            border: '1px solid var(--tx-border)',
-            background: 'var(--tx-surface-1)',
-            color: 'var(--tx-ink-primary)',
-          }}
-        >
-          {grupos.map((g) => (
-            <optgroup key={g.titulo} label={g.titulo}>
-              {g.pestanas.map((p) => (
-                <option key={p.vista} value={p.vista}>
-                  {p.nombre}
-                  {p.contador ? ` (${p.contador})` : ''}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
-
-      <nav aria-label="Vistas de Intelligence" className="hidden flex-wrap gap-2 sm:flex">
-        {grupos.map((g) => (
-          <div
-            key={g.titulo}
-            className="flex items-center gap-0.5 rounded-xl p-1"
-            style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-2)' }}
-            role="group"
-            aria-label={g.titulo}
-          >
-            <span className="px-2 text-[10px] uppercase tracking-wider text-[var(--tx-ink-muted)]">
-              {g.titulo}
-            </span>
-            {g.pestanas.map((p) => (
-              <Opcion key={p.vista} activa={vista === p.vista} onClick={() => setVista(p.vista)}>
-                {p.nombre}
-                {p.contador ? <Contador valor={p.contador} tono={p.tono ?? 'accent'} /> : null}
-              </Opcion>
-            ))}
-          </div>
-        ))}
-      </nav>
+      <NavIntelligence secciones={grupos} vista={vista} alCambiar={setVista} />
 
       {avisos.length > 0 && (
         <div
@@ -360,47 +349,7 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
         />
       )}
       {vista === 'whatsapp' && <div className="mx-auto w-full max-w-3xl">{props.panelWhatsapp}</div>}
+      </div>
     </div>
-  )
-}
-
-function Contador({ valor, tono }: { valor: number; tono: Tono }) {
-  // Cada fondo con SU color de texto. El acento cambia según el tema (en el
-  // oscuro es claro): con texto blanco fijo, el número quedaba invisible.
-  const fondo = { accent: 'var(--tx-accent)', warning: 'var(--tx-warning)', error: 'var(--tx-error)' }[tono]
-  const texto = { accent: 'var(--tx-accent-fg)', warning: '#14141b', error: '#fff' }[tono]
-  return (
-    <span
-      className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
-      style={{ background: fondo, color: texto }}
-    >
-      {valor}
-    </span>
-  )
-}
-
-function Opcion({
-  activa,
-  onClick,
-  children,
-}: {
-  activa: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={activa}
-      className="rounded-lg px-3 py-1.5 text-xs transition-colors"
-      style={{
-        background: activa ? 'var(--tx-surface-0)' : 'transparent',
-        color: activa ? 'var(--tx-ink-primary)' : 'var(--tx-ink-muted)',
-        fontWeight: activa ? 600 : 400,
-      }}
-    >
-      {children}
-    </button>
   )
 }

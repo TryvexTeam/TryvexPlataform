@@ -25,6 +25,23 @@ const estiloCampo = {
 }
 const etiqueta = 'flex min-w-0 flex-1 flex-col gap-1 text-xs text-[var(--tx-ink-secondary)]'
 
+/** Encabezado de cada paso del formulario: ordena la lectura de arriba abajo. */
+function Paso({ n, titulo, ayuda }: { n: number; titulo: string; ayuda: string }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className="grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold tabular-nums"
+        style={{ background: 'var(--tx-accent-subtle)', color: 'var(--tx-ink-primary)', boxShadow: '0 0 0 1px var(--tx-border-strong) inset' }}>
+        {n}
+      </span>
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-[var(--tx-ink-primary)]">{titulo}</h3>
+        <p className="text-[11px] text-[var(--tx-ink-muted)]">{ayuda}</p>
+      </div>
+    </div>
+  )
+}
+const separador = <div className="h-px w-full" style={{ background: 'var(--tx-border)' }} aria-hidden="true" />
+
 export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: PanelDemosProps) {
   const id = useId()
   const ahora = useReloj()
@@ -202,6 +219,7 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
             tardía sobrescriba lo que la persona acaba de escribir. */}
         <fieldset disabled={pendiente} className="flex min-w-0 flex-col gap-3">
           <legend className="sr-only">Configurar demo</legend>
+          <Paso n={1} titulo="El negocio" ayuda="Parta de un ejemplo o de un lead de la cartera." />
           <div className="flex min-w-0 flex-col gap-2">
             <span id={`${id}-ejemplos`} className="text-xs text-[var(--tx-ink-secondary)]">Empezar desde un ejemplo</span>
             <div role="group" aria-labelledby={`${id}-ejemplos`} className="flex min-w-0 flex-wrap gap-1.5">
@@ -250,6 +268,8 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
                 value={telefono} onChange={e => setTelefono(e.target.value)} className={campo} style={estiloCampo} />
             </label>
           </div>
+          {separador}
+          <Paso n={2} titulo="Los límites" ayuda="La demo se apaga sola al vencer o al agotar los mensajes." />
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row">
             <label className={etiqueta}>Duración
               <select value={horas} onChange={e => setHoras(Number(e.target.value) as CrearDemoEntrada['horas'])} className={campo} style={estiloCampo}>
@@ -261,6 +281,8 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
                 value={limite} onChange={e => setLimite(e.target.value)} className={campo} style={estiloCampo} />
             </label>
           </div>
+          {separador}
+          <Paso n={3} titulo="Lo que sabe el asistente" ayuda="Solo sabe lo que está aquí. Si falta un dato, dirá que lo confirma el equipo." />
           <label className={etiqueta}>Guion del asistente
             <textarea required rows={8} minLength={50} maxLength={8000} value={guion} onChange={e => setGuion(e.target.value)}
               aria-describedby={`${id}-largo`} className={`${campo} resize-y`} style={estiloCampo} />
