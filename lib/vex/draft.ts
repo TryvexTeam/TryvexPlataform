@@ -371,11 +371,37 @@ function canalesDisponibles(lead: LeadDraftInput): Canal[] {
  * No envía nada: solo redacta. Copy de venta nivel experto con framework PAS:
  * (1) problema/gancho, (2) agitar el dolor, (3) solución (Tryvex), (4) CTA a agendar.
  */
+/**
+ * Lo que el equipo decidió desde Intelligence y que vale para todos los
+ * mensajes: "este mes hay 20 % de descuento en landings", "no ofrecer IA hasta
+ * octubre". Va al final del prompt y MANDA sobre lo de arriba, porque es la
+ * decisión más reciente del equipo.
+ *
+ * Los textos los escribe una persona del equipo, no un lead: son instrucciones
+ * legítimas. Igual se delimitan, para que se lean como un bloque aparte.
+ */
+function bloqueDirectivas(directivas: string[]): string {
+  const limpias = directivas.map((d) => d.trim()).filter(Boolean)
+  if (limpias.length === 0) return ""
+  return [
+    "",
+    "## Directivas vigentes del equipo de Tryvex (mandan sobre todo lo anterior)",
+    "",
+    "Las decidio el equipo hace poco. Si chocan con algo de arriba, gana esto. Mencionalas",
+    "solo si le sirven a ESTE negocio: una promocion que no le aplica no se nombra.",
+    "",
+    ...limpias.map((d) => `- ${d}`),
+    "",
+  ].join("\n")
+}
+
 export async function generarDraftLead(
   lead: LeadDraftInput,
   customPrompt?: string,
   llm: (prompt: string) => Promise<string> = llmJSON,
-  historial: TurnoWa[] = []
+  historial: TurnoWa[] = [],
+  /** Lo que el equipo decidió desde Intelligence (descuentos del mes, cambios de oferta…). */
+  directivas: string[] = []
 ): Promise<DraftLead> {
   const disponibles = canalesDisponibles(lead);
 
@@ -485,11 +511,12 @@ ${esUsted
 1. SALUDO: saluda y pregunta si hablas con el negocio, usando el "Nombre para el saludo" de
    abajo (no la razón social completa ni el número de local). Tal cual:
    "Hola, ¿hablo con <nombre para el saludo>?". Es una pregunta, no un anuncio.
-2. QUIEN ERES: una linea. Que se entienda en el primer segundo quien escribe y a que.
-   Sin esto eres un desconocido pidiendo algo, y nadie contesta eso.
-   ⛔ NO te inventes un nombre de persona ("Soy Diego de Tryvex"). No sabes quien va a
-   mandar el mensaje, y firmar con un nombre falso es mentir en la primera linea. Escribe
-   siempre en plural: "Te escribimos de Tryvex", "Somos Tryvex".
+2. QUIEN ERES: una linea, tal cual: "Soy Vex, de https://tryvex.tech." Que se entienda
+   en el primer segundo quien escribe, y que pueda ver quienes somos con un toque.
+   ⛔ La direccion va COMPLETA (https://tryvex.tech), no solo "Tryvex": un nombre suelto de
+   empresa no le dice nada a alguien que no nos conoce.
+   ⛔ NO te inventes un nombre de persona ("Soy Diego de Tryvex"). Vex es el agente que
+   sigue la conversacion cuando el dueno responda: por eso firma Vex, y nadie mas.
 3. LO QUE ESTA PERDIENDO HOY, CON SU DATO REAL: usa lo que sabemos de ESTE negocio (abajo).
 
    ⚠️ Encuadre de PERDIDA, no de ganancia. Perder pesa mas o menos el doble que ganar lo
@@ -515,13 +542,25 @@ ${esUsted
    gente igual lo busca, y a esa hora no hay nadie que conteste — esos se van al de al lado.
    ⛔ NO afirmes su horario como un hecho ("cierras a las 7"): lo miramos un dia y pudo
    cambiar. Hablalo en general ("cuando cierras", "fuera del horario de atencion").
+   ⛔ Con este angulo NO SABES si pierde clientes: no lo afirmes como un hecho ("lo que le
+   esta haciendo perder ventas"). Preguntalo: "¿le pasa que le escriben cuando ya cerro?".
+   Afirmar una perdida que no conocemos es inventar, y el dueno lo nota.
 
-4. QUE LE ENTREGAMOS: elige del catalogo de abajo **lo que le sirve a ESTE negocio segun su
-   rubro**, no lo primero de la lista. Un restaurante y un contador no necesitan lo mismo.
-   Nombra DOS o TRES cosas concretas, en resultado y no en jerga: "que puedan pedir hora sin
-   escribirte", "que las boletas salgan solas". NUNCA "convertir", "captar trafico",
-   "optimizar" ni palabras de marketing — el dueno de una barberia no habla asi.
+4. LA PROPUESTA: si lo que sabemos de ESTE negocio permite ver que le serviria, ideale UNA
+   propuesta pensada para el, no una lista del catalogo: que hariamos, en su negocio, y que
+   le cambia en el dia a dia. Ejemplo del tipo: "que sus clientas pidan hora por WhatsApp a
+   cualquier hora y la agenda se llene sola, sin que nadie del salon tenga que contestar".
+   Que salga del catalogo de abajo y calce con su rubro. Un restaurante y un contador no
+   necesitan lo mismo.
+   Si NO hay datos para saber que le serviria, no adivines ni amontones servicios: nombra
+   UNA sola cosa que calce con su rubro, sin afirmar que la necesita.
+   En resultado y no en jerga. NUNCA "convertir", "captar trafico", "optimizar" ni palabras
+   de marketing — el dueno de una barberia no habla asi.
    Cierra esta parte con el plazo real del servicio que elegiste.
+   ⛔ Nada de promesas que la ley no deja cumplir en su rubro: a una farmacia, nada de
+   vender o despachar medicamentos en linea (lo regula el ISP); a una clinica o profesional
+   de la salud, nada de diagnosticar ni recetar por WhatsApp; a un abogado, nada que suene
+   a captar clientes con promesas de resultado.
 
 5. EL CIERRE: una PREGUNTA de si o no sobre si eso es un problema para el hoy.
 
@@ -534,8 +573,9 @@ ${esUsted
    / "¿te interesaria verlo, o por ahora estan bien asi?"
 
    ⛔ NO pidas una llamada, una reunion ni un horario en este primer mensaje.
-   ⛔ NO pongas ningun enlace todavia. El link de agendar va DESPUES, cuando conteste
-      — y si mas abajo dice que este negocio ya contesto, entonces SI va.
+   ⛔ El UNICO enlace del primer mensaje es https://tryvex.tech, en la firma. El link de
+      agendar va DESPUES, cuando conteste — y si mas abajo dice que este negocio ya
+      contesto, entonces SI va.
    ⛔ NO ofrezcas "una demo", "un ejemplo" ni "mostrarle algo".
 
 ## Como se pide, y como NO
@@ -616,6 +656,7 @@ ${
   }${loQueSuWebYaHace(lead)}
 ${bloqueHistorial(historial)}
 
+${bloqueDirectivas(directivas)}
 ${customPrompt ? `\nInstrucciones adicionales del usuario (priorizalas): ${customPrompt}\n` : ""}
 Devuelve un objeto JSON con ${disponibles.length === 1 ? "esta unica clave" : "estas claves"}:
 ${disponibles.includes("whatsapp") ? '- "whatsapp_text": el mensaje completo con las 5 partes, listo para enviar por WhatsApp.\n' : ""}${disponibles.includes("social") ? '- "social_text": el mensaje completo con las 5 partes, adaptado a un mensaje directo de red social.\n' : ""}

@@ -296,7 +296,7 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).toMatch(/1\. SALUDO/)
     expect(espia.prompt()).toMatch(/2\. QUIEN ERES/)
     expect(espia.prompt()).toMatch(/3\. LO QUE ESTA PERDIENDO/)
-    expect(espia.prompt()).toMatch(/4\. QUE LE ENTREGAMOS/)
+    expect(espia.prompt()).toMatch(/4\. LA PROPUESTA/)
     expect(espia.prompt()).toMatch(/5\. EL CIERRE/)
     expect(espia.prompt()).not.toMatch(/gancho\+CTA/)
   })
@@ -347,7 +347,9 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     await generarDraftLead(lead, undefined, espia.llm)
 
     expect(espia.prompt()).toMatch(/NO pidas una llamada, una reunion ni un horario/i)
-    expect(espia.prompt()).toMatch(/NO pongas ningun enlace todavia/i)
+    // El único enlace permitido es la firma; el de agendar sigue prohibido.
+    expect(espia.prompt()).toMatch(/UNICO enlace del primer mensaje es https:\/\/tryvex\.tech/)
+    expect(espia.prompt()).toMatch(/link de\s+agendar va DESPUES/i)
     expect(espia.prompt()).toMatch(/NO ofrezcas "una demo"/)
     expect(espia.prompt()).not.toMatch(/15 minutos/)
   })
@@ -376,7 +378,36 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).toMatch(/Automatizacion/i)
     expect(espia.prompt()).toMatch(/Sistema a medida/i)
     expect(espia.prompt()).toMatch(/Inteligencia aplicada/i)
-    expect(espia.prompt()).toMatch(/elige.*lo que le sirve a ESTE negocio segun su/i)
+    expect(espia.prompt()).toMatch(/Que salga del catalogo de abajo y calce con su rubro/)
+  })
+
+  it('se presenta como Vex, con la dirección completa de Tryvex', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/Soy Vex, de https:\/\/tryvex\.tech/)
+    expect(espia.prompt()).not.toMatch(/Te escribimos de Tryvex/)
+  })
+
+  it('con el horario como único ángulo, pregunta la pérdida en vez de afirmarla', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/NO SABES si pierde clientes: no lo afirmes/)
+  })
+
+  it('las directivas del equipo llegan al final y mandan sobre lo anterior', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [], ['Este mes hay 20 % de descuento en landings.'])
+    const prompt = espia.prompt()
+    expect(prompt).toMatch(/Directivas vigentes del equipo de Tryvex \(mandan sobre todo lo anterior\)/)
+    expect(prompt).toMatch(/- Este mes hay 20 % de descuento en landings\./)
+    // Una promoción que no le sirve a este negocio no se nombra.
+    expect(prompt).toMatch(/una promocion que no le aplica no se nombra/i)
+  })
+
+  it('sin directivas, no aparece el bloque', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [], [])
+    expect(espia.prompt()).not.toMatch(/Directivas vigentes/)
   })
 
   it('la columna manda sobre el texto crudo', async () => {

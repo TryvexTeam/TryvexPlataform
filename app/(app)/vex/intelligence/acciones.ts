@@ -250,3 +250,69 @@ export async function descartarMejora(mejoraId: string, motivo: string): Promise
     return { ok: false, error: e instanceof Error ? e.message : 'No se pudo descartar.' }
   }
 }
+
+// ─── Directivas ──────────────────────────────────────────────────────────
+
+const DirectivaSchema = z.object({
+  texto: z
+    .string()
+    .trim()
+    .min(5, 'Escriba la directiva: qué tienen que tener en cuenta los agentes.')
+    .max(500, 'Máximo 500 caracteres: si es más largo, probablemente son varias directivas.'),
+  alcance: z.enum(['todos', 'primer_mensaje', 'conversacion']),
+  // Opcional: sin fecha, vale hasta que alguien la apague.
+  vigenteHasta: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida.')
+    .optional()
+    .or(z.literal('')),
+})
+
+/**
+ * Una decisión del equipo que todos los agentes tienen que tener en cuenta:
+ * "este mes 20 % de descuento en landings", "no ofrecer IA hasta octubre".
+ * La leen el generador del mensaje en frío y el agente de WhatsApp.
+ */
+export async function crearDirectiva(entrada: z.input<typeof DirectivaSchema>): Promise<Resultado> {
+  const datos = DirectivaSchema.safeParse(entrada)
+  if (!datos.success) return { ok: false, error: datos.error.issues[0]?.message ?? 'Datos inválidos.' }
+
+  try {
+    const { supabase, perfil } = await integranteActual()
+    const { error } = await (supabase as unknown as ClienteSinTipos).from('directivas').insert({
+      texto: datos.data.texto,
+      alcance: datos.data.alcance,
+      vigente_hasta: datos.data.vigenteHasta || null,
+      creado_por: perfil.id,
+    })
+    if (error) {
+      // La base rechaza una fecha de término anterior a la de inicio.
+      return {
+        ok: false,
+        error: error.message.includes('vigencia_en_orden')
+          ? 'La fecha de término no puede ser anterior a hoy.'
+          : error.message,
+      }
+    }
+    revalidatePath('/vex/intelligence')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo guardar la directiva.' }
+  }
+}
+
+/** Apagarla: los agentes dejan de leerla desde la próxima respuesta. No se borra. */
+export async function desactivarDirectiva(id: string): Promise<Resultado> {
+  try {
+    const { supabase } = await integranteActual()
+    const { error } = await (supabase as unknown as ClienteSinTipos)
+      .from('directivas')
+      .update({ activa: false })
+      .eq('id', id)
+    if (error) return { ok: false, error: error.message }
+    revalidatePath('/vex/intelligence')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo apagar la directiva.' }
+  }
+}

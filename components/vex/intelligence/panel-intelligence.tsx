@@ -14,6 +14,8 @@ import { PanelCampanas, type Campana } from './panel-campanas'
 import { PanelConocimiento, type DocumentoConocimiento } from './panel-conocimiento'
 import { PanelInsights } from './panel-insights'
 import { PanelMejoras } from './panel-mejoras'
+import { PanelDirectivas } from './panel-directivas'
+import type { AlcanceDirectiva, Directiva } from '@/lib/repos/directivas'
 import { useRefrescoEnVivo } from '@/lib/vex/usar-refresco-en-vivo'
 import type { EncargoReal } from '@/lib/repos/intelligence-real'
 import type { Insight } from '@/lib/repos/intelligence-whatsapp'
@@ -83,6 +85,10 @@ interface PanelIntelligenceProps {
   alAprobarMejora: (id: string) => Promise<Resultado>
   alAplicarMejora: (id: string) => Promise<Resultado>
   alDescartarMejora: (id: string, motivo: string) => Promise<Resultado>
+  /** Decisiones del equipo que todos los agentes leen. */
+  directivas: Directiva[]
+  alCrearDirectiva: (datos: { texto: string; alcance: AlcanceDirectiva; vigenteHasta?: string }) => Promise<Resultado>
+  alDesactivarDirectiva: (id: string) => Promise<Resultado>
   panelWhatsapp: React.ReactNode
 }
 
@@ -90,6 +96,7 @@ type Vista =
   | 'cola'
   | 'sala'
   | 'espacio'
+  | 'directivas'
   | 'conversaciones'
   | 'traspasos'
   | 'canales'
@@ -122,6 +129,12 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
         { vista: 'cola', nombre: 'Cola', contador: cola.filter((e) => e.estado === 'encolado').length, tono: 'warning' },
         { vista: 'sala', nombre: 'Sala' },
         { vista: 'espacio', nombre: 'Espacio del agente' },
+        {
+          vista: 'directivas',
+          nombre: 'Directivas',
+          contador: props.directivas.filter((d) => d.vigente).length,
+          tono: 'accent',
+        },
       ],
     },
     {
@@ -287,6 +300,13 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
           fichas={props.fichas}
           alEncolar={props.alEncolar}
           alCambiarRutina={props.alCambiarRutina}
+        />
+      )}
+      {vista === 'directivas' && (
+        <PanelDirectivas
+          directivas={props.directivas}
+          alCrear={props.alCrearDirectiva}
+          alDesactivar={props.alDesactivarDirectiva}
         />
       )}
       {vista === 'conversaciones' && <PanelHilos conversaciones={props.conversaciones} agentes={agentes} />}

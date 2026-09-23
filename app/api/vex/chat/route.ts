@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { directivasVigentes } from "@/lib/repos/directivas";
 import { clasificarIntencion, type Accion, type Turno } from "@/lib/vex/intenciones";
 import {
   reporteCartera,
@@ -99,8 +100,12 @@ async function ejecutarAccion(
         yaPropuestos.length > 0 &&
         (await recomendarLeads(sb, filtros)).length > 0;
 
+      // Una sola lectura para todo el lote: son las mismas para cada lead.
+      const directivas = await directivasVigentes(sb, "primer_mensaje");
       const borradores = await Promise.all(
-        leads.map((lead) => generarDraftLead(lead, a.instrucciones).catch(marcarErrorLLM))
+        leads.map((lead) =>
+          generarDraftLead(lead, a.instrucciones, undefined, [], directivas).catch(marcarErrorLLM)
+        )
       );
       return {
         tipo: a.tipo,
