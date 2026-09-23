@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { ShieldAlert } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { obtenerAjustes, obtenerConversaciones, agenteConfigurado } from '@/lib/vex/agente'
 import { obtenerEstadoQr } from '@/lib/wa/qr'
@@ -8,14 +8,14 @@ import { PanelAjustes } from '@/components/vex/intelligence/panel-ajustes'
 import { PanelConversaciones } from '@/components/vex/intelligence/panel-conversaciones'
 import { EstadoAgente } from '@/components/vex/intelligence/estado-agente'
 import { PanelIntelligence } from '@/components/vex/intelligence/panel-intelligence'
+import { obtenerAgentesReales, obtenerEncargosReales } from '@/lib/repos/intelligence-real'
+import { encolarEncargo, aprobarEncargo, rechazarEncargo, archivarEncargo } from './acciones'
 import {
-  AGENTES_EJEMPLO,
   CAMPANAS_EJEMPLO,
   CANALES_EJEMPLO,
   CONVERSACIONES_EJEMPLO,
   COSTOS_EJEMPLO,
   DOCUMENTOS_EJEMPLO,
-  ENCARGOS_EJEMPLO,
   HERRAMIENTAS_EJEMPLO,
   HILO_EJEMPLO,
   METRICAS_EJEMPLO,
@@ -70,10 +70,29 @@ export default async function TryvexIntelligencePage() {
     )
   }
 
+  // Los agentes y su cola salen de la base. El resto de las pantallas todavía
+  // no tiene tabla, y se sigue marcando como vista de diseño para que nadie
+  // confunda una maqueta con su cartera real.
+  // Mismo fusible que el layout: en desarrollo con BYPASS_AUTH no hay sesión, y
+  // sin sesión las políticas de la base no dejan leer nada. Fuera de desarrollo
+  // `bypass` es false y esto es exactamente el cliente de siempre.
+  const datos = bypass ? createAdminClient() : supabase
+  const { agentes, encargos: colaReal } = await obtenerAgentesReales(datos)
+
   return (
     <PanelIntelligence
-      agentes={AGENTES_EJEMPLO}
-      encargos={ENCARGOS_EJEMPLO}
+      agentes={agentes}
+      cola={colaReal}
+      recargarCola={async () => {
+        'use server'
+        const cliente = bypass ? createAdminClient() : await createClient()
+        return obtenerEncargosReales(cliente)
+      }}
+      alEncolar={encolarEncargo}
+      alAprobar={aprobarEncargo}
+      alRechazar={rechazarEncargo}
+      alArchivar={archivarEncargo}
+      encargos={[]}
       hilo={HILO_EJEMPLO}
       rutinas={RUTINAS_EJEMPLO}
       herramientas={HERRAMIENTAS_EJEMPLO}

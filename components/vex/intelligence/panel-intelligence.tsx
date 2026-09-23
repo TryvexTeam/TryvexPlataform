@@ -7,6 +7,8 @@ import { EspacioAgente } from './espacio-agente'
 import { PanelHilos } from './panel-hilos'
 import { PanelCostos, type CostoAgente } from './panel-costos'
 import { PanelCanales } from './panel-canales'
+import { PanelCola } from './panel-cola'
+import type { EncargoReal } from '@/lib/repos/intelligence-real'
 import { PanelTraspasos } from './panel-traspasos'
 import { PanelMetricas, type MetricasSala } from './panel-metricas'
 import { PanelCampanas, type Campana } from './panel-campanas'
@@ -54,11 +56,20 @@ interface PanelIntelligenceProps {
   metricas: MetricasSala
   /** Salir a buscar, en vez de esperar. */
   campanas: Campana[]
+  /** La cola REAL de encargos, desde `agente_encargos`. */
+  cola: EncargoReal[]
+  /** Vuelve a pedir la cola entera. La usa el tiempo real. */
+  recargarCola: () => Promise<EncargoReal[]>
+  alEncolar: React.ComponentProps<typeof PanelCola>['alEncolar']
+  alAprobar: React.ComponentProps<typeof PanelCola>['alAprobar']
+  alRechazar: React.ComponentProps<typeof PanelCola>['alRechazar']
+  alArchivar: React.ComponentProps<typeof PanelCola>['alArchivar']
   /** El panel de WhatsApp que ya existía (estado, conversaciones y ajustes). */
   panelWhatsapp: React.ReactNode
 }
 
 type Vista =
+  | 'cola'
   | 'sala'
   | 'conversaciones'
   | 'espacio'
@@ -83,10 +94,18 @@ export function PanelIntelligence({
   traspasos,
   metricas,
   campanas,
+  cola,
+  recargarCola,
+  alEncolar,
+  alAprobar,
+  alRechazar,
+  alArchivar,
   panelWhatsapp,
 }: PanelIntelligenceProps) {
-  const [vista, setVista] = useState<Vista>('sala')
+  const [vista, setVista] = useState<Vista>('cola')
   const esperandoFirma = encargos.filter((e) => e.requiereFirma && e.estado === 'bloqueada').length
+  // Lo único detenido por falta de una decisión humana.
+  const esperandoPermiso = cola.filter((e) => e.estado === 'encolado').length
   const sinLeer = conversaciones.reduce((total, c) => total + c.sinLeer, 0)
   // Canales con un plazo corriendo o caídos: son los que hay que mirar hoy.
   const canalesEnRiesgo = canales.filter(
@@ -124,6 +143,17 @@ export function PanelIntelligence({
           role="group"
           aria-label="Vista"
         >
+          <Opcion activa={vista === 'cola'} onClick={() => setVista('cola')}>
+            Cola
+            {esperandoPermiso > 0 && (
+              <span
+                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
+                style={{ background: 'var(--tx-warning)', color: '#14141b' }}
+              >
+                {esperandoPermiso}
+              </span>
+            )}
+          </Opcion>
           <Opcion activa={vista === 'sala'} onClick={() => setVista('sala')}>
             Sala
             {esperandoFirma > 0 && (
@@ -202,7 +232,7 @@ export function PanelIntelligence({
         que esos números no son de su cartera. Se borra el día que se conecte a
         `agentes`, `tareas` y `tarea_evidencias`.
       */}
-      {vista !== 'whatsapp' && (
+      {vista !== 'whatsapp' && vista !== 'cola' && vista !== 'sala' && (
         <p
           className="rounded-r-xl py-2 pl-3 pr-3 text-xs text-[var(--tx-ink-secondary)]"
           style={{
@@ -216,6 +246,17 @@ export function PanelIntelligence({
         </p>
       )}
 
+      {vista === 'cola' && (
+        <PanelCola
+          agentes={agentes}
+          inicial={cola}
+          recargar={recargarCola}
+          alEncolar={alEncolar}
+          alAprobar={alAprobar}
+          alRechazar={alRechazar}
+          alArchivar={alArchivar}
+        />
+      )}
       {vista === 'sala' && <SalaAgentes agentes={agentes} encargos={encargos} />}
       {vista === 'conversaciones' && (
         <PanelHilos conversaciones={conversaciones} agentes={agentes} />
