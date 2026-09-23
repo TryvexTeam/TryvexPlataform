@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { autenticarAgente, datosInvalidos, leerJson } from '@/lib/agentes/autenticar'
@@ -53,6 +54,14 @@ export async function GET(req: Request) {
     (a, b) => peso[a.prioridad] - peso[b.prioridad],
   )
 
+  // Los puentes consultan esto cada pocos segundos. Si nada cambió desde la
+  // última vez, se contesta 304 sin cuerpo: la consulta sigue, pero el agente
+  // no descarga ni procesa nada, y su máquina no despierta al modelo.
+  const etag = `W/"${createHash('sha1').update(JSON.stringify([incluirEsperando, encargos])).digest('base64url')}"`
+  if (req.headers.get('if-none-match') === etag) {
+    return new NextResponse(null, { status: 304, headers: { ETag: etag } })
+  }
+
   return NextResponse.json({
     success: true,
     agente: agente.nombre,
@@ -62,7 +71,7 @@ export async function GET(req: Request) {
     nota: incluirEsperando
       ? 'Los encargos en estado "encolado" esperan permiso humano: no los ejecute.'
       : undefined,
-  })
+  }, { headers: { ETag: etag } })
 }
 
 const AccionSchema = z.discriminatedUnion('accion', [

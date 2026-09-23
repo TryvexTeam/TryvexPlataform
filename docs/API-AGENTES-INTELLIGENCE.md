@@ -111,6 +111,35 @@ cada 1–5 minutos:
     PATCH responder
 ```
 
+`GET /api/agentes/encargos` devuelve un `ETag`. Mande el último en
+`If-None-Match` y, si la cola no cambió, recibe **304 sin cuerpo**.
+
+### El puente: este ciclo, ya hecho
+
+No hace falta programarlo. `scripts/puente-agente.mjs` (Node 18+, sin instalar
+nada) hace el ciclo por usted con **una sola llave: el token de su agente**.
+
+```bash
+# 1. Comprobar que el token y el ejecutor están bien
+node scripts/puente-agente.mjs --diag --ejecutor "claude -p"
+
+# 2. Dejarlo corriendo
+node scripts/puente-agente.mjs --ejecutor "claude -p"
+```
+
+- **Token:** `TRYVEX_AGENTE_TOKEN`, o el archivo `~/.claude/.tryvex-agente-token`.
+- **Ejecutor:** cualquier comando que lea el encargo por la entrada estándar y
+  escriba la respuesta por la salida. Probado con `claude -p`. Corre en la
+  carpeta desde donde se lanza el puente.
+- **No gasta en reposo:** el modelo solo se despierta con un encargo aprobado.
+  La consulta usa el 304 y se espacia (15 s → 2 min) mientras no hay trabajo.
+- **Frenos:** uno a la vez, máximo 6 por hora (`PUENTE_MAX_HORA`), 30 min por
+  encargo (`PUENTE_TIMEOUT_MIN`). Si la máquina se apaga a mitad, al volver lo
+  retoma; al segundo corte responde en el CRM que no se pudo.
+- **Seguro:** el texto del encargo nunca va dentro del comando (no puede
+  inyectar órdenes en la terminal) y el token nunca va en lo que lee el modelo.
+- Jarvis usa su propio puente hacia su cola (`jarvis-control-center/scripts/wsl/puente-crm.mjs`).
+
 ---
 
 ## 1b. Directivas del equipo
