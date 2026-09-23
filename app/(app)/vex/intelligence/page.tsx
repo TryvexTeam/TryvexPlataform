@@ -2,8 +2,14 @@ import { redirect } from 'next/navigation'
 import { ShieldAlert } from 'lucide-react'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
-import { obtenerAjustes, obtenerConversaciones, agenteConfigurado } from '@/lib/vex/agente'
-import { obtenerEstadoQr } from '@/lib/wa/qr'
+import {
+  obtenerAjustes,
+  obtenerAnalytics,
+  obtenerConversaciones,
+  agenteConfigurado,
+  type AnalyticsAgente,
+} from '@/lib/vex/agente'
+import { obtenerEstadoQr, type ResultadoQr } from '@/lib/wa/qr'
 import { PanelAjustes } from '@/components/vex/intelligence/panel-ajustes'
 import { PanelConversaciones } from '@/components/vex/intelligence/panel-conversaciones'
 import { EstadoAgente } from '@/components/vex/intelligence/estado-agente'
@@ -13,19 +19,32 @@ import {
   obtenerAgentesReales,
   obtenerEncargosReales,
 } from '@/lib/repos/intelligence-real'
-import { encolarEncargo, aprobarEncargo, rechazarEncargo, archivarEncargo } from './acciones'
 import {
-  CAMPANAS_EJEMPLO,
-  CANALES_EJEMPLO,
-  CONVERSACIONES_EJEMPLO,
-  COSTOS_EJEMPLO,
-  DOCUMENTOS_EJEMPLO,
-  HERRAMIENTAS_EJEMPLO,
-  HILO_EJEMPLO,
-  METRICAS_EJEMPLO,
-  RUTINAS_EJEMPLO,
-  TRASPASOS_EJEMPLO,
-} from '@/lib/vex/sala-ejemplo'
+  construirCanales,
+  construirInsights,
+  obtenerDatosWhatsapp,
+  obtenerMetricas,
+} from '@/lib/repos/intelligence-whatsapp'
+import {
+  herramientasDelCRM,
+  obtenerCampanas,
+  obtenerCostos,
+  obtenerDocumentos,
+  obtenerHilos,
+  obtenerMejoras,
+  obtenerRutinas,
+  obtenerTasaCLP,
+} from '@/lib/repos/intelligence-equipo'
+import {
+  aprobarEncargo,
+  aprobarMejora,
+  aplicarMejora,
+  archivarEncargo,
+  cambiarRutina,
+  descartarMejora,
+  encolarEncargo,
+  rechazarEncargo,
+} from './acciones'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,24 +52,35 @@ export const metadata = {
   title: 'Tryvex Intelligence',
 }
 
+/** Ventana de Métricas. */
+const DIAS_METRICAS = 14
+
+/**
+ * Ventana de la analítica del VPS: una sola llamada que sirve a Costos (el mes
+ * calendario completo) y a Insights. Pedirla dos veces con ventanas distintas
+ * serían dos clasificaciones con IA por día en el VPS.
+ */
+const DIAS_ANALITICA = 31
+
 /**
  * Tryvex Intelligence — la sala donde trabajan los agentes del equipo.
  *
- * Qué cambió y por qué: antes esta pantalla era SOLO el puesto de control del
- * agente de WhatsApp. Ese panel sigue vivo y sin tocar —el equipo lo usa en
- * producción—, pero pasó a ser una de tres vistas. Las otras dos son la sala de
- * agentes y el espacio de cada uno, que es a donde va a ir creciendo todo lo
- * demás: rutinas, herramientas, base de conocimiento, campañas y costos.
+ * Todo sale de fuentes reales: la base (agentes, cola, mensajes de WhatsApp,
+ * consumo, rutinas, conocimiento, campañas, mejoras) y el agente de WhatsApp en
+ * el VPS (estado del número, gasto del bot, dudas de clientes).
  *
- * El panel de WhatsApp se resuelve acá, en el servidor, y baja como `children`:
- * el token del agente no puede llegar al navegador.
+ * Cada fuente se pide en paralelo y se aísla: si el VPS está caído, las
+ * pantallas que dependen de la base siguen funcionando, y lo que falta se
+ * anuncia en `avisos` en vez de mostrarse vacío sin explicación. Una pantalla
+ * en blanco manda a buscar el problema en el lugar equivocado.
+ *
+ * El token del agente de WhatsApp se usa solo acá, en el servidor.
  */
 export default async function TryvexIntelligencePage() {
   const supabase = await createClient()
 
-  // Mismo atajo que el layout: en desarrollo con BYPASS_AUTH no hay sesión, y
-  // esta comprobación mandaba a /login. Como el middleware con el atajo ve un
-  // usuario válido, rebotaba al panel: la pantalla se expulsaba sola en bucle.
+  // Mismo fusible que el layout: en desarrollo con BYPASS_AUTH no hay sesión.
+  // Fuera de desarrollo `bypass` es false y todo pasa por la sesión de siempre.
   const bypass =
     process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true'
 
@@ -74,52 +104,138 @@ export default async function TryvexIntelligencePage() {
     )
   }
 
-  // Los agentes y su cola salen de la base. El resto de las pantallas todavía
-  // no tiene tabla, y se sigue marcando como vista de diseño para que nadie
-  // confunda una maqueta con su cartera real.
-  // Mismo fusible que el layout: en desarrollo con BYPASS_AUTH no hay sesión, y
-  // sin sesión las políticas de la base no dejan leer nada. Fuera de desarrollo
-  // `bypass` es false y esto es exactamente el cliente de siempre.
+  // Sin sesión (solo en desarrollo con el atajo) las políticas no dejan leer.
   const datos = bypass ? createAdminClient() : supabase
-  const { agentes, encargos: colaReal } = await obtenerAgentesReales(datos)
+  const avisos: string[] = []
+
+  // Primero los agentes: casi todo lo demás se cruza con ellos.
+  const { agentes, encargos: cola, fichas } = await obtenerAgentesReales(datos)
+
+  // Lo que viene del VPS se pide una sola vez y se comparte. `null` = no
+  // respondió; las pantallas lo tratan como "sin dato", nunca como cero.
+  const [qr, analytics, tasa] = await Promise.all([
+    agenteConfigurado()
+      ? obtenerEstadoQr()
+      : Promise.resolve<ResultadoQr>({ estado: 'no_configurado' }),
+    agenteConfigurado()
+      ? obtenerAnalytics(DIAS_ANALITICA).catch((): AnalyticsAgente | null => null)
+      : Promise.resolve(null),
+    obtenerTasaCLP(),
+  ])
+  if (agenteConfigurado() && !analytics) {
+    avisos.push(
+      'El agente de WhatsApp no entregó su analítica: faltan el gasto del bot, los leads captados y las dudas de clientes.',
+    )
+  }
+
+  const whatsapp = await obtenerDatosWhatsapp(datos, agentes).catch((e: unknown) => {
+    avisos.push(`No se pudieron leer los mensajes de WhatsApp: ${mensaje(e)}`)
+    return { conversaciones: [], traspasos: [], mensajesHoy: 0, agenteBotId: null }
+  })
+
+  const [metricas, costos, documentos, rutinas, hilos, campanas, mejoras] = await Promise.all([
+    obtenerMetricas(datos, DIAS_METRICAS, analytics, whatsapp.traspasos).catch((e: unknown) => {
+      avisos.push(`No se pudieron calcular las métricas: ${mensaje(e)}`)
+      return null
+    }),
+    obtenerCostos(datos, agentes, analytics, whatsapp.agenteBotId, tasa).catch((e: unknown) => {
+      avisos.push(`No se pudieron leer los costos: ${mensaje(e)}`)
+      return { costos: [], sinReporte: [], aviso: undefined }
+    }),
+    conRespaldo(obtenerDocumentos(datos), [], 'el conocimiento', avisos),
+    conRespaldo(obtenerRutinas(datos), [], 'las rutinas', avisos),
+    conRespaldo(obtenerHilos(datos, agentes), {}, 'el historial de encargos', avisos),
+    conRespaldo(obtenerCampanas(datos), [], 'las campañas', avisos),
+    conRespaldo(obtenerMejoras(datos), [], 'las mejoras', avisos),
+  ])
+
+  const dudasDelEquipo = cola.filter((e) => e.tipo === 'duda' && e.estado !== 'respondido')
 
   return (
     <PanelIntelligence
       agentes={agentes}
-      cola={colaReal}
+      cola={cola}
       recargarCola={async () => {
         'use server'
         const cliente = bypass ? createAdminClient() : await createClient()
         return obtenerEncargosReales(cliente)
       }}
+      encargosSala={comoEncargosDeSala(cola)}
+      hilos={hilos}
+      rutinas={rutinas}
+      herramientas={herramientasDelCRM()}
+      fichas={fichas}
+      conversaciones={whatsapp.conversaciones}
+      traspasos={whatsapp.traspasos}
+      canales={construirCanales(
+        qr,
+        whatsapp.mensajesHoy,
+        whatsapp.agenteBotId,
+        metricas?.sinRespuesta ?? 0,
+      )}
+      campanas={campanas}
+      metricas={metricas ?? metricasVacias()}
+      diasMetricas={DIAS_METRICAS}
+      diasInsights={DIAS_ANALITICA}
+      insights={construirInsights(analytics, dudasDelEquipo)}
+      vpsDisponible={analytics !== null}
+      mejoras={mejoras}
+      documentos={documentos}
+      costos={costos.costos}
+      costosSinReporte={costos.sinReporte}
+      costosAviso={costos.aviso}
+      tasaCLP={tasa}
+      avisos={avisos}
       alEncolar={encolarEncargo}
       alAprobar={aprobarEncargo}
       alRechazar={rechazarEncargo}
       alArchivar={archivarEncargo}
-      encargos={comoEncargosDeSala(colaReal)}
-      hilo={HILO_EJEMPLO}
-      rutinas={RUTINAS_EJEMPLO}
-      herramientas={HERRAMIENTAS_EJEMPLO}
-      conversaciones={CONVERSACIONES_EJEMPLO}
-      costos={COSTOS_EJEMPLO}
-      canales={CANALES_EJEMPLO}
-      documentos={DOCUMENTOS_EJEMPLO}
-      traspasos={TRASPASOS_EJEMPLO}
-      metricas={METRICAS_EJEMPLO}
-      campanas={CAMPANAS_EJEMPLO}
-      panelWhatsapp={await PanelDeWhatsapp()}
+      alCambiarRutina={cambiarRutina}
+      alAprobarMejora={aprobarMejora}
+      alAplicarMejora={aplicarMejora}
+      alDescartarMejora={descartarMejora}
+      panelWhatsapp={await PanelDeWhatsapp(qr)}
     />
   )
+}
+
+function mensaje(e: unknown): string {
+  return e instanceof Error ? e.message : 'error desconocido'
+}
+
+/** Una fuente que falla no tumba la página: se anuncia y se sigue. */
+async function conRespaldo<T>(promesa: Promise<T>, respaldo: T, que: string, avisos: string[]): Promise<T> {
+  try {
+    return await promesa
+  } catch (e) {
+    avisos.push(`No se pudo leer ${que}: ${mensaje(e)}`)
+    return respaldo
+  }
+}
+
+/** Si las métricas fallan, se muestran vacías y el aviso explica por qué. */
+function metricasVacias() {
+  return {
+    conversaciones: 0,
+    resueltasSinHumano: 0,
+    traspasos: 0,
+    leadsCaptados: null,
+    reuniones: null,
+    segundosPrimeraRespuesta: null,
+    frenosAplicados: null,
+    serieConversaciones: [],
+    serieResueltas: [],
+    motivosTraspaso: [],
+  }
 }
 
 /**
  * El panel de siempre: estado del número, conversaciones y ajustes.
  *
- * Devuelve el aviso correspondiente cuando el agente no está configurado o no
- * responde, en vez de una pantalla vacía: un panel sin datos y sin explicación
- * manda a revisar el lugar equivocado.
+ * Recibe el estado del QR ya consultado para no pedírselo dos veces al VPS: la
+ * pantalla de Canales usa el mismo.
  */
-async function PanelDeWhatsapp() {
+async function PanelDeWhatsapp(qr: ResultadoQr) {
   if (!agenteConfigurado()) {
     return (
       <Aviso
@@ -129,11 +245,10 @@ async function PanelDeWhatsapp() {
     )
   }
 
-  // En paralelo: son tres viajes al agente y no dependen entre sí.
-  const [ajustes, conversaciones, qr] = await Promise.allSettled([
+  // En paralelo: son dos viajes al agente y no dependen entre sí.
+  const [ajustes, conversaciones] = await Promise.allSettled([
     obtenerAjustes(),
     obtenerConversaciones(),
-    obtenerEstadoQr(),
   ])
 
   if (ajustes.status === 'rejected') {
@@ -151,10 +266,7 @@ async function PanelDeWhatsapp() {
 
   return (
     <div className="flex flex-col gap-4">
-      <EstadoAgente
-        qr={qr.status === 'fulfilled' ? qr.value : { estado: 'sin_respuesta' }}
-        pausado={ajustes.value.settings.paused === '1'}
-      />
+      <EstadoAgente qr={qr} pausado={ajustes.value.settings.paused === '1'} />
       <PanelConversaciones
         inicial={conversaciones.status === 'fulfilled' ? conversaciones.value : []}
       />

@@ -5,6 +5,11 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { tablaEncargos } from '@/lib/repos/tabla-encargos'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+// Las tablas nuevas de Intelligence todavía no están en los tipos generados.
+// Mismo desvío que `tabla-encargos.ts`, acotado a este archivo.
+type ClienteSinTipos = SupabaseClient
 
 /**
  * Lo que el equipo puede hacerle a la cola de encargos.
@@ -158,5 +163,90 @@ export async function archivarEncargo(encargoId: string): Promise<Resultado> {
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No se pudo archivar.' }
+  }
+}
+
+// ─── Rutinas ─────────────────────────────────────────────────────────────
+
+/**
+ * Prender o apagar una rutina de un agente.
+ *
+ * El agente sigue siendo quien la ejecuta; esto es la perilla del equipo para
+ * pausarla sin tener que entrar a su máquina. El agente la ve apagada la
+ * próxima vez que declara sus rutinas.
+ */
+export async function cambiarRutina(rutinaId: string, activa: boolean): Promise<Resultado> {
+  try {
+    const { supabase } = await integranteActual()
+    const { error } = await (supabase as unknown as ClienteSinTipos)
+      .from('agente_rutinas')
+      .update({ activa })
+      .eq('id', rutinaId)
+    if (error) return { ok: false, error: error.message }
+    revalidatePath('/vex/intelligence')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo cambiar la rutina.' }
+  }
+}
+
+// ─── Mejoras ─────────────────────────────────────────────────────────────
+
+/**
+ * Aprobar una mejora que propuso un agente.
+ *
+ * Mismo principio que la cola: el agente propone, una persona decide. Queda la
+ * firma de quién la aprobó; la base impide aprobar sin ella.
+ */
+export async function aprobarMejora(mejoraId: string): Promise<Resultado> {
+  try {
+    const { supabase, perfil } = await integranteActual()
+    const { error } = await (supabase as unknown as ClienteSinTipos)
+      .from('mejoras')
+      .update({ estado: 'aprobada', aprobado_por: perfil.id, aprobado_at: new Date().toISOString() })
+      .eq('id', mejoraId)
+      .eq('estado', 'propuesta')
+    if (error) return { ok: false, error: error.message }
+    revalidatePath('/vex/intelligence')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo aprobar.' }
+  }
+}
+
+/** Marcar como aplicada una mejora ya aprobada: el cambio está hecho. */
+export async function aplicarMejora(mejoraId: string): Promise<Resultado> {
+  try {
+    const { supabase } = await integranteActual()
+    const { error } = await (supabase as unknown as ClienteSinTipos)
+      .from('mejoras')
+      .update({ estado: 'aplicada', aplicada_at: new Date().toISOString() })
+      .eq('id', mejoraId)
+      // Solo lo aprobado se aplica: saltarse la aprobación no es posible ni acá.
+      .eq('estado', 'aprobada')
+    if (error) return { ok: false, error: error.message }
+    revalidatePath('/vex/intelligence')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo marcar como aplicada.' }
+  }
+}
+
+/** Descartar una mejora, diciendo por qué. Un descarte mudo no le enseña nada al agente. */
+export async function descartarMejora(mejoraId: string, motivo: string): Promise<Resultado> {
+  const limpio = motivo.trim()
+  if (limpio.length < 3) return { ok: false, error: 'Hay que decir por qué se descarta.' }
+  try {
+    const { supabase } = await integranteActual()
+    const { error } = await (supabase as unknown as ClienteSinTipos)
+      .from('mejoras')
+      .update({ estado: 'descartada', motivo_descarte: limpio })
+      .eq('id', mejoraId)
+      .in('estado', ['propuesta', 'aprobada'])
+    if (error) return { ok: false, error: error.message }
+    revalidatePath('/vex/intelligence')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo descartar.' }
   }
 }

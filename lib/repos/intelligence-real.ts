@@ -7,7 +7,7 @@ import { tablaEncargos } from '@/lib/repos/tabla-encargos'
 /**
  * Los datos REALES de Tryvex Intelligence.
  *
- * Hasta ahora la sección leía `lib/vex/sala-ejemplo.ts`: números inventados en
+ * Hasta el 22-sep la sección leía un archivo de ejemplos: números inventados en
  * el código, que no cambiaban pasara lo que pasara en la empresa. Esto lo
  * reemplaza por lo que hay en la base.
  *
@@ -37,6 +37,17 @@ interface FilaAgente {
   color: string | null
   activo: boolean
   ultimo_uso_at: string | null
+  expira_at: string | null
+  // Supabase devuelve el join como objeto o como arreglo según la relación.
+  dueno: { nombre: string } | { nombre: string }[] | null
+}
+
+/** Lo que muestra la columna lateral del Espacio: datos propios de cada agente. */
+export interface FichaAgente {
+  /** Cuándo vence su llave. `null` = llave antigua, sin fecha. */
+  expiraAt: string | null
+  /** Lo último que dejó registrado en el Cerebro. Vacío si nunca escribió. */
+  memoria: string[]
 }
 
 /** Un encargo de la cola, tal como viene de `agente_encargos`. */
@@ -121,13 +132,22 @@ function colorDeToken(hex: string | null): string {
  */
 export async function obtenerAgentesReales(
   supabase: SupabaseClient,
-): Promise<{ agentes: AgenteSala[]; encargos: EncargoReal[] }> {
-  const [resAgentes, resEncargos] = await Promise.all([
+): Promise<{ agentes: AgenteSala[]; encargos: EncargoReal[]; fichas: Record<string, FichaAgente> }> {
+  const [resAgentes, resEncargos, resMemoria] = await Promise.all([
     supabase
       .from('agentes')
-      .select('id, nombre, descripcion, color, activo, ultimo_uso_at')
+      .select('id, nombre, descripcion, color, activo, ultimo_uso_at, expira_at, dueno:creado_por (nombre)')
       .order('nombre'),
     obtenerEncargosReales(supabase),
+    // Lo que los agentes escribieron en el Cerebro. Son pocas entradas hoy, y
+    // así se muestran: pocas. Antes esta columna tenía tres frases inventadas,
+    // iguales para todos los agentes.
+    supabase
+      .from('cerebro_entradas')
+      .select('titulo, autor_externo, created_at')
+      .not('autor_externo', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(300),
   ])
 
   if (resAgentes.error) throw new Error(`No se pudieron leer los agentes: ${resAgentes.error.message}`)
@@ -151,16 +171,36 @@ export async function obtenerAgentesReales(
       color: colorDeToken(fila.color),
       estado,
       haciendo: describirQueHace(estado, enCurso, ultimoRespondido, fila, ahora),
-      // La base no registra a nombre de quién trabaja hoy. Antes esto decía un
-      // nombre inventado; ahora dice la verdad: no se sabe.
-      humano: null,
+      // El integrante que dio de alta al agente: es a nombre de quien trabaja,
+      // y a quien se le atribuyen sus reuniones y sus mensajes.
+      humano: unNombreDueno(fila.dueno),
       encargosHoy: suyos.filter((e) => esDeHoy(e.creadoAt, ahora)).length,
       // Todavía no existe tabla `rutinas`: no hay de dónde sacarlo.
       proximaRutina: null,
     }
   })
 
-  return { agentes, encargos }
+  type Entrada = { titulo: string | null; autor_externo: string | null }
+  const entradas = (resMemoria.data ?? []) as Entrada[]
+  const fichas: Record<string, FichaAgente> = {}
+  for (const fila of filas) {
+    const nombre = fila.nombre.toLowerCase()
+    fichas[fila.id] = {
+      expiraAt: fila.expira_at,
+      memoria: entradas
+        .filter((e) => (e.autor_externo ?? '').toLowerCase().includes(nombre))
+        .map((e) => e.titulo?.trim())
+        .filter((t): t is string => Boolean(t))
+        .slice(0, 3),
+    }
+  }
+
+  return { agentes, encargos, fichas }
+}
+
+function unNombreDueno(v: FilaAgente['dueno']): string | null {
+  if (!v) return null
+  return Array.isArray(v) ? (v[0]?.nombre ?? null) : v.nombre
 }
 
 /** Qué mostrar en la línea de "ahora mismo" de cada tarjeta. */

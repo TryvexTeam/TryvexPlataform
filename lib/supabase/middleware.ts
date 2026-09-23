@@ -169,7 +169,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (user && isPublicRoute) {
+  // Solo las PÁGINAS públicas (login, signup…) mandan al panel a quien ya tiene
+  // sesión. Una ruta de API nunca: redirigir una llamada de API a una página HTML
+  // le devuelve a quien llama un documento que no puede leer. Pasaba con
+  // /api/agentes/* y /api/publico/* cuando se llamaban desde un navegador con la
+  // sesión abierta (y siempre en desarrollo con BYPASS_AUTH).
+  if (user && isPublicRoute && !esRutaApi) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)

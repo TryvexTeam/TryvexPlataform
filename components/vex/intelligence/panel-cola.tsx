@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Check, Clock, Hand, HelpCircle, Inbox, Radio, Send, X } from 'lucide-react'
+import { Check, Clock, Hand, HelpCircle, Inbox, Send, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CaraAgente } from './cara-agente'
@@ -61,7 +61,7 @@ export function PanelCola({
   alRechazar,
   alArchivar,
 }: PanelColaProps) {
-  const { encargos, enVivo } = useEncargosEnVivo({ inicial, recargar })
+  const { encargos } = useEncargosEnVivo({ inicial, recargar })
   const [aviso, setAviso] = useState<string | null>(null)
   const [pendiente, empezar] = useTransition()
 
@@ -88,7 +88,6 @@ export function PanelCola({
             Lo que el equipo le pidió a los agentes. Nada se ejecuta sin que una persona lo apruebe.
           </p>
         </div>
-        <EnVivo activo={enVivo} />
       </header>
 
       <FormularioEncargo agentes={agentes} alEncolar={alEncolar} pendiente={pendiente} />
@@ -154,28 +153,6 @@ export function PanelCola({
   )
 }
 
-/** Dice si lo que se ve está al día. Callar esto sería aparentar frescura. */
-function EnVivo({ activo }: { activo: boolean }) {
-  return (
-    <span
-      className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
-      style={{
-        border: '1px solid var(--tx-border)',
-        background: 'var(--tx-surface-1)',
-        color: activo ? 'var(--tx-success)' : 'var(--tx-ink-muted)',
-      }}
-      title={
-        activo
-          ? 'Escuchando cambios: la pantalla se actualiza sola.'
-          : 'Sin conexión en vivo: puede que esto no esté al día. Recargue.'
-      }
-    >
-      <Radio size={12} className={activo ? 'motion-safe:animate-pulse' : undefined} />
-      {activo ? 'en vivo' : 'sin conexión'}
-    </span>
-  )
-}
-
 function FormularioEncargo({
   agentes,
   alEncolar,
@@ -191,6 +168,7 @@ function FormularioEncargo({
   const [titulo, setTitulo] = useState('')
   const [detalle, setDetalle] = useState('')
   const [prioridad, setPrioridad] = useState<'baja' | 'media' | 'alta'>('media')
+  const [error, setError] = useState<string | null>(null)
 
   if (!abierto) {
     return (
@@ -211,7 +189,11 @@ function FormularioEncargo({
         if (r.ok) {
           setTitulo('')
           setDetalle('')
+          setError(null)
           setAbierto(false)
+        } else {
+          // Nunca un rechazo mudo: si no se encoló, se dice por qué.
+          setError(r.error)
         }
       }}
     >
@@ -303,6 +285,12 @@ function FormularioEncargo({
           color: 'var(--tx-ink-primary)',
         }}
       />
+
+      {error && (
+        <p className="text-xs" role="alert" style={{ color: 'var(--tx-error)' }}>
+          {error}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <p className="mr-auto text-[11px] text-[var(--tx-ink-muted)]">

@@ -1,18 +1,23 @@
 'use client'
 
 import { useState } from 'react'
-import { Brain } from 'lucide-react'
+import { AlertTriangle, Brain, Radio } from 'lucide-react'
 import { SalaAgentes } from './sala-agentes'
 import { EspacioAgente } from './espacio-agente'
 import { PanelHilos } from './panel-hilos'
 import { PanelCostos, type CostoAgente } from './panel-costos'
 import { PanelCanales } from './panel-canales'
 import { PanelCola } from './panel-cola'
-import type { EncargoReal } from '@/lib/repos/intelligence-real'
 import { PanelTraspasos } from './panel-traspasos'
 import { PanelMetricas, type MetricasSala } from './panel-metricas'
 import { PanelCampanas, type Campana } from './panel-campanas'
 import { PanelConocimiento, type DocumentoConocimiento } from './panel-conocimiento'
+import { PanelInsights } from './panel-insights'
+import { PanelMejoras } from './panel-mejoras'
+import { useRefrescoEnVivo } from '@/lib/vex/usar-refresco-en-vivo'
+import type { EncargoReal } from '@/lib/repos/intelligence-real'
+import type { Insight } from '@/lib/repos/intelligence-whatsapp'
+import type { Mejora, TasaCLP } from '@/lib/repos/intelligence-equipo'
 import type {
   AgenteSala,
   Canal,
@@ -27,258 +32,307 @@ import type {
 /**
  * El marco de Tryvex Intelligence.
  *
- * Tres vistas, y el orden importa: primero la SALA (qué está pasando con todos),
- * después el ESPACIO de un agente (su hilo, sus rutinas, sus llaves) y al final
- * el AGENTE DE WHATSAPP, que es el panel que ya existía y sigue vivo.
+ * Todo lo que llega acá sale de la base o del agente de WhatsApp: no queda
+ * ningún dato escrito en el código. Si una fuente falla, la página lo dice en
+ * `avisos` y el resto sigue funcionando.
  *
- * Ese último se recibe como `children` en vez de reimplementarse: lo arma la
- * página en el servidor porque necesita el token del agente, que no puede
- * llegar al navegador.
+ * Las vistas se agrupan por la pregunta que responden, no por orden de
+ * construcción:
+ *   · Trabajo      — qué le pedimos a los agentes y qué están haciendo
+ *   · Clientes     — qué pasa con la gente de afuera
+ *   · Rendimiento  — si sirve, cuánto cuesta y qué mejorar
+ *
+ * El panel de WhatsApp de siempre llega como `panelWhatsapp`: lo arma el
+ * servidor porque usa el token del agente, que no puede llegar al navegador.
  */
+
+type Resultado = { ok: true } | { ok: false; error: string }
 
 interface PanelIntelligenceProps {
   agentes: AgenteSala[]
-  encargos: Encargo[]
-  hilo: EntradaHilo[]
+  cola: EncargoReal[]
+  recargarCola: () => Promise<EncargoReal[]>
+  encargosSala: Encargo[]
+  hilos: Record<string, EntradaHilo[]>
   rutinas: Rutina[]
   herramientas: Herramienta[]
-  /** Conversaciones con gente de afuera: leads y clientes. */
+  fichas: Record<string, { expiraAt: string | null; memoria: string[] }>
   conversaciones: ConversacionCliente[]
-  /** Lo que cuesta el trabajo de cada agente. */
-  costos: CostoAgente[]
-  /** Por dónde entra y sale el trabajo. */
-  canales: Canal[]
-  /** Lo que los agentes saben, y de dónde lo sacaron. */
-  documentos: DocumentoConocimiento[]
-  /** Lo que soltaron y espera a una persona. */
   traspasos: Traspaso[]
-  /** Si el trabajo de los agentes sirve o no. */
-  metricas: MetricasSala
-  /** Salir a buscar, en vez de esperar. */
+  canales: Canal[]
   campanas: Campana[]
-  /** La cola REAL de encargos, desde `agente_encargos`. */
-  cola: EncargoReal[]
-  /** Vuelve a pedir la cola entera. La usa el tiempo real. */
-  recargarCola: () => Promise<EncargoReal[]>
+  metricas: MetricasSala
+  diasMetricas: number
+  /** Ventana de las dudas del VPS; no es la misma que la de Métricas. */
+  diasInsights: number
+  insights: Insight[]
+  vpsDisponible: boolean
+  mejoras: Mejora[]
+  documentos: DocumentoConocimiento[]
+  costos: CostoAgente[]
+  costosSinReporte: string[]
+  costosAviso?: string
+  tasaCLP: TasaCLP | null
+  /** Fuentes que fallaron al cargar, explicadas. Vacío si todo respondió. */
+  avisos: string[]
   alEncolar: React.ComponentProps<typeof PanelCola>['alEncolar']
-  alAprobar: React.ComponentProps<typeof PanelCola>['alAprobar']
-  alRechazar: React.ComponentProps<typeof PanelCola>['alRechazar']
-  alArchivar: React.ComponentProps<typeof PanelCola>['alArchivar']
-  /** El panel de WhatsApp que ya existía (estado, conversaciones y ajustes). */
+  alAprobar: (id: string) => Promise<Resultado>
+  alRechazar: (id: string, motivo: string) => Promise<Resultado>
+  alArchivar: (id: string) => Promise<Resultado>
+  alCambiarRutina: (id: string, activa: boolean) => Promise<Resultado>
+  alAprobarMejora: (id: string) => Promise<Resultado>
+  alAplicarMejora: (id: string) => Promise<Resultado>
+  alDescartarMejora: (id: string, motivo: string) => Promise<Resultado>
   panelWhatsapp: React.ReactNode
 }
 
 type Vista =
   | 'cola'
   | 'sala'
-  | 'conversaciones'
   | 'espacio'
-  | 'canales'
+  | 'conversaciones'
   | 'traspasos'
-  | 'conocimiento'
+  | 'canales'
   | 'campanas'
   | 'metricas'
+  | 'insights'
+  | 'mejoras'
+  | 'conocimiento'
   | 'costos'
   | 'whatsapp'
 
-export function PanelIntelligence({
-  agentes,
-  encargos,
-  hilo,
-  rutinas,
-  herramientas,
-  conversaciones,
-  costos,
-  canales,
-  documentos,
-  traspasos,
-  metricas,
-  campanas,
-  cola,
-  recargarCola,
-  alEncolar,
-  alAprobar,
-  alRechazar,
-  alArchivar,
-  panelWhatsapp,
-}: PanelIntelligenceProps) {
-  const [vista, setVista] = useState<Vista>('cola')
-  const esperandoFirma = encargos.filter((e) => e.requiereFirma && e.estado === 'bloqueada').length
-  // Lo único detenido por falta de una decisión humana.
-  const esperandoPermiso = cola.filter((e) => e.estado === 'encolado').length
-  const sinLeer = conversaciones.reduce((total, c) => total + c.sinLeer, 0)
-  // Canales con un plazo corriendo o caídos: son los que hay que mirar hoy.
-  const canalesEnRiesgo = canales.filter(
-    (c) => c.estado === 'sin_latido' || c.estado === 'bloqueado' || (c.aviso && c.aviso.severidad !== 'info'),
-  ).length
+type Tono = 'accent' | 'warning' | 'error'
 
-  // Un documento sin citas es peso muerto: o está mal indexado o nadie pregunta
-  // por eso. Se avisa en la pestaña para que alguien lo revise o lo archive.
-  // El que tiene a alguien esperando del otro lado manda sobre todo lo demás.
-  const traspasosUrgentes = traspasos.filter(
-    (t) => t.estado !== 'cerrado' && (t.clienteEsperando || t.estado === 'devuelto'),
-  ).length
-  const sinCitar = documentos.filter((d) => d.citasMes === 0).length
+interface Pestana {
+  vista: Vista
+  nombre: string
+  contador?: number
+  tono?: Tono
+}
+
+export function PanelIntelligence(props: PanelIntelligenceProps) {
+  const { agentes, cola, avisos } = props
+  const [vista, setVista] = useState<Vista>('cola')
+  const { enVivo } = useRefrescoEnVivo()
+
+  const grupos: Array<{ titulo: string; pestanas: Pestana[] }> = [
+    {
+      titulo: 'Trabajo',
+      pestanas: [
+        { vista: 'cola', nombre: 'Cola', contador: cola.filter((e) => e.estado === 'encolado').length, tono: 'warning' },
+        { vista: 'sala', nombre: 'Sala' },
+        { vista: 'espacio', nombre: 'Espacio del agente' },
+      ],
+    },
+    {
+      titulo: 'Clientes',
+      pestanas: [
+        {
+          vista: 'conversaciones',
+          nombre: 'Conversaciones',
+          contador: props.conversaciones.reduce((t, c) => t + c.sinLeer, 0),
+          tono: 'accent',
+        },
+        {
+          vista: 'traspasos',
+          nombre: 'Traspasos',
+          contador: props.traspasos.filter((t) => t.clienteEsperando).length,
+          tono: 'error',
+        },
+        {
+          vista: 'canales',
+          nombre: 'Canales',
+          contador: props.canales.filter((c) => c.aviso && c.aviso.severidad !== 'info').length,
+          tono: 'warning',
+        },
+        { vista: 'campanas', nombre: 'Campañas' },
+      ],
+    },
+    {
+      titulo: 'Rendimiento',
+      pestanas: [
+        { vista: 'metricas', nombre: 'Métricas' },
+        { vista: 'insights', nombre: 'Insights', contador: props.insights.length, tono: 'accent' },
+        {
+          vista: 'mejoras',
+          nombre: 'Mejoras',
+          contador: props.mejoras.filter((m) => m.estado === 'propuesta').length,
+          tono: 'warning',
+        },
+        {
+          vista: 'conocimiento',
+          nombre: 'Conocimiento',
+          contador: props.documentos.filter((d) => d.citasMes === 0).length,
+          tono: 'warning',
+        },
+        { vista: 'costos', nombre: 'Costos' },
+      ],
+    },
+    { titulo: 'Número', pestanas: [{ vista: 'whatsapp', nombre: 'Agente de WhatsApp' }] },
+  ]
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto p-3 sm:p-5">
       <header className="flex flex-wrap items-center gap-3">
         <Brain size={20} style={{ color: 'var(--tx-accent)' }} />
-        <div className="mr-auto">
+        <div className="mr-auto min-w-0">
           <h1 className="text-lg font-semibold text-[var(--tx-ink-primary)]">Tryvex Intelligence</h1>
           <p className="text-xs text-[var(--tx-ink-muted)]">
-            Dónde el equipo reparte trabajo a los agentes, firma lo irreversible y revisa lo entregado.
+            Dónde el equipo reparte trabajo a los agentes, da permiso para lo que se ejecuta y revisa
+            lo entregado.
           </p>
         </div>
-
-        {/*
-          En el celular no caben siete pestañas en una línea: sin `flex-wrap`
-          las últimas quedan fuera de la pantalla y son inalcanzables. El equipo
-          trabaja desde el móvil, así que se envuelven y ocupan el ancho
-          completo, en vez de empujar el borde derecho fuera de la vista.
-        */}
-        <div
-          className="flex w-full flex-wrap gap-0.5 rounded-xl p-1 sm:w-auto"
-          style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-2)' }}
-          role="group"
-          aria-label="Vista"
+        <span
+          className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
+          style={{
+            border: '1px solid var(--tx-border)',
+            background: 'var(--tx-surface-1)',
+            color: enVivo ? 'var(--tx-success)' : 'var(--tx-ink-muted)',
+          }}
+          title={
+            enVivo
+              ? 'Escuchando cambios: la pantalla se actualiza sola.'
+              : 'Sin conexión en vivo: lo que ve puede no estar al día. Recargue la página.'
+          }
         >
-          <Opcion activa={vista === 'cola'} onClick={() => setVista('cola')}>
-            Cola
-            {esperandoPermiso > 0 && (
-              <span
-                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
-                style={{ background: 'var(--tx-warning)', color: '#14141b' }}
-              >
-                {esperandoPermiso}
-              </span>
-            )}
-          </Opcion>
-          <Opcion activa={vista === 'sala'} onClick={() => setVista('sala')}>
-            Sala
-            {esperandoFirma > 0 && (
-              <span
-                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
-                style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
-              >
-                {esperandoFirma}
-              </span>
-            )}
-          </Opcion>
-          <Opcion activa={vista === 'conversaciones'} onClick={() => setVista('conversaciones')}>
-            Conversaciones
-            {sinLeer > 0 && (
-              <span
-                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
-                style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
-              >
-                {sinLeer}
-              </span>
-            )}
-          </Opcion>
-          <Opcion activa={vista === 'espacio'} onClick={() => setVista('espacio')}>
-            Espacio del agente
-          </Opcion>
-          <Opcion activa={vista === 'canales'} onClick={() => setVista('canales')}>
-            Canales
-            {canalesEnRiesgo > 0 && (
-              <span
-                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
-                style={{ background: 'var(--tx-warning)', color: '#14141b' }}
-              >
-                {canalesEnRiesgo}
-              </span>
-            )}
-          </Opcion>
-          <Opcion activa={vista === 'traspasos'} onClick={() => setVista('traspasos')}>
-            Traspasos
-            {traspasosUrgentes > 0 && (
-              <span
-                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
-                style={{ background: 'var(--tx-error)', color: '#fff' }}
-              >
-                {traspasosUrgentes}
-              </span>
-            )}
-          </Opcion>
-          <Opcion activa={vista === 'conocimiento'} onClick={() => setVista('conocimiento')}>
-            Conocimiento
-            {sinCitar > 0 && (
-              <span
-                className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
-                style={{ background: 'var(--tx-warning)', color: '#14141b' }}
-              >
-                {sinCitar}
-              </span>
-            )}
-          </Opcion>
-          <Opcion activa={vista === 'campanas'} onClick={() => setVista('campanas')}>
-            Campañas
-          </Opcion>
-          <Opcion activa={vista === 'metricas'} onClick={() => setVista('metricas')}>
-            Métricas
-          </Opcion>
-          <Opcion activa={vista === 'costos'} onClick={() => setVista('costos')}>
-            Costos
-          </Opcion>
-          <Opcion activa={vista === 'whatsapp'} onClick={() => setVista('whatsapp')}>
-            Agente de WhatsApp
-          </Opcion>
-        </div>
+          <Radio size={12} className={enVivo ? 'motion-safe:animate-pulse' : undefined} />
+          {enVivo ? 'en vivo' : 'sin conexión'}
+        </span>
       </header>
 
-      {/*
-        Aviso honesto mientras la sala sea maqueta: quien la vea tiene que saber
-        que esos números no son de su cartera. Se borra el día que se conecte a
-        `agentes`, `tareas` y `tarea_evidencias`.
-      */}
-      {vista !== 'whatsapp' && vista !== 'cola' && vista !== 'sala' && (
-        <p
-          className="rounded-r-xl py-2 pl-3 pr-3 text-xs text-[var(--tx-ink-secondary)]"
+      {/* En el celular, un selector nativo: trece botones no caben y el del sistema es el más cómodo con el pulgar. */}
+      <label className="flex flex-col gap-1 sm:hidden">
+        <span className="text-[11px] text-[var(--tx-ink-muted)]">Vista</span>
+        <select
+          value={vista}
+          onChange={(e) => setVista(e.target.value as Vista)}
+          className="w-full rounded-xl px-3 py-2.5 text-sm"
           style={{
-            borderLeft: '3px solid var(--tx-warning)',
+            border: '1px solid var(--tx-border)',
             background: 'var(--tx-surface-1)',
+            color: 'var(--tx-ink-primary)',
           }}
         >
-          <b className="text-[var(--tx-ink-primary)]">Vista de diseño.</b> Los agentes son los reales
-          del equipo, pero los encargos, tiempos y evidencias son de ejemplo: todavía no está
-          conectada a la base.
-        </p>
+          {grupos.map((g) => (
+            <optgroup key={g.titulo} label={g.titulo}>
+              {g.pestanas.map((p) => (
+                <option key={p.vista} value={p.vista}>
+                  {p.nombre}
+                  {p.contador ? ` (${p.contador})` : ''}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+
+      <nav aria-label="Vistas de Intelligence" className="hidden flex-wrap gap-2 sm:flex">
+        {grupos.map((g) => (
+          <div
+            key={g.titulo}
+            className="flex items-center gap-0.5 rounded-xl p-1"
+            style={{ border: '1px solid var(--tx-border)', background: 'var(--tx-surface-2)' }}
+            role="group"
+            aria-label={g.titulo}
+          >
+            <span className="px-2 text-[10px] uppercase tracking-wider text-[var(--tx-ink-muted)]">
+              {g.titulo}
+            </span>
+            {g.pestanas.map((p) => (
+              <Opcion key={p.vista} activa={vista === p.vista} onClick={() => setVista(p.vista)}>
+                {p.nombre}
+                {p.contador ? <Contador valor={p.contador} tono={p.tono ?? 'accent'} /> : null}
+              </Opcion>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      {avisos.length > 0 && (
+        <div
+          className="flex flex-col gap-1 rounded-xl px-3 py-2"
+          role="status"
+          style={{
+            border: '1px solid color-mix(in oklab, var(--tx-warning) 45%, transparent)',
+            background: 'color-mix(in oklab, var(--tx-warning) 10%, transparent)',
+          }}
+        >
+          {avisos.map((a) => (
+            <p key={a} className="flex items-start gap-2 text-xs text-[var(--tx-ink-secondary)]">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--tx-warning)' }} />
+              {a}
+            </p>
+          ))}
+        </div>
       )}
 
       {vista === 'cola' && (
         <PanelCola
           agentes={agentes}
           inicial={cola}
-          recargar={recargarCola}
-          alEncolar={alEncolar}
-          alAprobar={alAprobar}
-          alRechazar={alRechazar}
-          alArchivar={alArchivar}
+          recargar={props.recargarCola}
+          alEncolar={props.alEncolar}
+          alAprobar={props.alAprobar}
+          alRechazar={props.alRechazar}
+          alArchivar={props.alArchivar}
         />
       )}
-      {vista === 'sala' && <SalaAgentes agentes={agentes} encargos={encargos} />}
-      {vista === 'conversaciones' && (
-        <PanelHilos conversaciones={conversaciones} agentes={agentes} />
-      )}
-      {vista === 'canales' && <PanelCanales canales={canales} agentes={agentes} />}
-      {vista === 'traspasos' && <PanelTraspasos traspasos={traspasos} agentes={agentes} />}
-      {vista === 'conocimiento' && (
-        <PanelConocimiento documentos={documentos} agentes={agentes} />
-      )}
-      {vista === 'campanas' && <PanelCampanas campanas={campanas} agentes={agentes} />}
-      {vista === 'metricas' && <PanelMetricas metricas={metricas} />}
-      {vista === 'costos' && <PanelCostos costos={costos} agentes={agentes} />}
+      {vista === 'sala' && <SalaAgentes agentes={agentes} encargos={props.encargosSala} />}
       {vista === 'espacio' && (
         <EspacioAgente
           agentes={agentes}
-          hilo={hilo}
-          rutinas={rutinas}
-          herramientas={herramientas}
+          hilos={props.hilos}
+          rutinas={props.rutinas}
+          herramientas={props.herramientas}
+          fichas={props.fichas}
+          alEncolar={props.alEncolar}
+          alCambiarRutina={props.alCambiarRutina}
         />
       )}
-      {vista === 'whatsapp' && <div className="mx-auto w-full max-w-3xl">{panelWhatsapp}</div>}
+      {vista === 'conversaciones' && <PanelHilos conversaciones={props.conversaciones} agentes={agentes} />}
+      {vista === 'traspasos' && <PanelTraspasos traspasos={props.traspasos} agentes={agentes} />}
+      {vista === 'canales' && <PanelCanales canales={props.canales} agentes={agentes} />}
+      {vista === 'campanas' && <PanelCampanas campanas={props.campanas} agentes={agentes} />}
+      {vista === 'metricas' && <PanelMetricas metricas={props.metricas} dias={props.diasMetricas} />}
+      {vista === 'insights' && (
+        <PanelInsights insights={props.insights} vpsDisponible={props.vpsDisponible} dias={props.diasInsights} />
+      )}
+      {vista === 'mejoras' && (
+        <PanelMejoras
+          mejoras={props.mejoras}
+          agentes={agentes}
+          alAprobar={props.alAprobarMejora}
+          alAplicar={props.alAplicarMejora}
+          alDescartar={props.alDescartarMejora}
+        />
+      )}
+      {vista === 'conocimiento' && <PanelConocimiento documentos={props.documentos} agentes={agentes} />}
+      {vista === 'costos' && (
+        <PanelCostos
+          costos={props.costos}
+          agentes={agentes}
+          tasaCLP={props.tasaCLP}
+          sinReporte={props.costosSinReporte}
+          aviso={props.costosAviso}
+        />
+      )}
+      {vista === 'whatsapp' && <div className="mx-auto w-full max-w-3xl">{props.panelWhatsapp}</div>}
     </div>
+  )
+}
+
+function Contador({ valor, tono }: { valor: number; tono: Tono }) {
+  // Cada fondo con SU color de texto. El acento cambia según el tema (en el
+  // oscuro es claro): con texto blanco fijo, el número quedaba invisible.
+  const fondo = { accent: 'var(--tx-accent)', warning: 'var(--tx-warning)', error: 'var(--tx-error)' }[tono]
+  const texto = { accent: 'var(--tx-accent-fg)', warning: '#14141b', error: '#fff' }[tono]
+  return (
+    <span
+      className="ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums"
+      style={{ background: fondo, color: texto }}
+    >
+      {valor}
+    </span>
   )
 }
 
