@@ -34,12 +34,13 @@
 //   PUENTE_MAX_HORA       encargos por hora como máximo (por defecto 6)
 //   PUENTE_TIMEOUT_MIN    minutos por encargo antes de cortarlo (por defecto 30)
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   armarPrompt, armarRespuesta, decidir, respuestaRendida, siguienteEspera,
 } from './puente-agente/reglas.mjs'
+import { leerToken, urlCrm } from './puente-agente/llave.mjs'
 
 const args = process.argv.slice(2)
 const arg = (nombre) => {
@@ -49,21 +50,15 @@ const arg = (nombre) => {
 const UNA_VEZ = args.includes('--una-vez')
 const DIAG = args.includes('--diag')
 const EJECUTOR = arg('--ejecutor') || process.env.PUENTE_EJECUTOR || ''
-const CRM = (process.env.TRYVEX_CRM_URL || 'https://tryvexplataform.vercel.app').replace(/\/+$/, '')
+const CRM = urlCrm()
 const MAX_HORA = Number(process.env.PUENTE_MAX_HORA || 6)
 const TIMEOUT_MIN = Number(process.env.PUENTE_TIMEOUT_MIN || 30)
 const TOPE_SALIDA = 256 * 1024
 
 const log = (...a) => console.log(`[puente ${new Date().toISOString()}]`, ...a)
 
-function leerToken() {
-  if (process.env.TRYVEX_AGENTE_TOKEN?.trim()) return { token: process.env.TRYVEX_AGENTE_TOKEN.trim(), archivo: null }
-  const archivo = process.env.TRYVEX_TOKEN_FILE || join(homedir(), '.claude', '.tryvex-agente-token')
-  if (!existsSync(archivo)) return { token: null, archivo }
-  return { token: readFileSync(archivo, 'utf8').trim() || null, archivo }
-}
-
-const { token: TOKEN, archivo: ARCHIVO_TOKEN } = leerToken()
+const { token: TOKEN, archivo: ARCHIVO_TOKEN, aviso: AVISO_TOKEN } = leerToken()
+if (AVISO_TOKEN) console.error(`[puente] ojo: ${AVISO_TOKEN}`)
 
 /** Llama a la API de agentes. Nunca lanza. */
 async function crm(metodo, ruta, { cuerpo, etag } = {}) {

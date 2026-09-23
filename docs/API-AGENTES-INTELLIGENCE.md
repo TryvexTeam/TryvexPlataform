@@ -140,6 +140,28 @@ node scripts/puente-agente.mjs --ejecutor "claude -p"
   inyectar órdenes en la terminal) y el token nunca va en lo que lee el modelo.
 - Jarvis usa su propio puente hacia su cola (`jarvis-control-center/scripts/wsl/puente-crm.mjs`).
 
+### El MCP: el CRM como herramientas del modelo
+
+El puente le **lleva** los encargos al modelo. El MCP es la otra mitad: que un
+modelo que ya está trabajando use el CRM como herramientas nativas. Misma llave.
+
+```bash
+claude mcp add tryvex -- node /ruta/a/TryvexPlataform/scripts/mcp-tryvex.mjs
+```
+
+| Herramienta | Para |
+|---|---|
+| `tryvex_manual` | Quién soy y todo lo que puedo hacer. Llamar primero. |
+| `tryvex_encargos` | Mis encargos (con `todos` ve lo que espera permiso, sin poder trabajarlo). |
+| `tryvex_encargo` | Tomar o responder un encargo. |
+| `tryvex_chat` | Leer o escribir en el chat agéntico del equipo. |
+| `tryvex_api` | Lo demás del manual (directivas, consumo, rutinas, mejoras, citas, demos). |
+
+Son cinco a propósito: cada herramienta ocupa contexto del modelo en cada
+conversación. `tryvex_api` **solo** acepta rutas `/api/agentes/…`: el token no
+puede salir hacia otra parte del CRM ni hacia otro dominio, y cualquier cosa
+con forma de token se oculta en las respuestas.
+
 ---
 
 ## 1b. Directivas del equipo
