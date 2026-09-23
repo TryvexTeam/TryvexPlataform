@@ -36,6 +36,8 @@ import {
   obtenerTasaCLP,
 } from '@/lib/repos/intelligence-equipo'
 import { listarDirectivas } from '@/lib/repos/directivas'
+import { leadsParaDemo, listarDemos } from '@/lib/repos/demos'
+import { apagarDemo, crearDemo, sugerirGuionDemo } from './acciones-demos'
 import {
   aprobarEncargo,
   aprobarMejora,
@@ -136,7 +138,7 @@ export default async function TryvexIntelligencePage() {
     return { conversaciones: [], traspasos: [], mensajesHoy: 0, agenteBotId: null }
   })
 
-  const [metricas, costos, documentos, rutinas, hilos, campanas, mejoras, directivas] = await Promise.all([
+  const [metricas, costos, documentos, rutinas, hilos, campanas, mejoras, directivas, demos, leadsDemo] = await Promise.all([
     obtenerMetricas(datos, DIAS_METRICAS, analytics, whatsapp.traspasos).catch((e: unknown) => {
       avisos.push(`No se pudieron calcular las métricas: ${mensaje(e)}`)
       return null
@@ -151,6 +153,8 @@ export default async function TryvexIntelligencePage() {
     conRespaldo(obtenerCampanas(datos), [], 'las campañas', avisos),
     conRespaldo(obtenerMejoras(datos), [], 'las mejoras', avisos),
     conRespaldo(listarDirectivas(datos), [], 'las directivas', avisos),
+    conRespaldo(listarDemos(datos), [], 'las demos', avisos),
+    conRespaldo(leadsParaDemo(datos), [], 'los leads para las demos', avisos),
   ])
 
   const dudasDelEquipo = cola.filter((e) => e.tipo === 'duda' && e.estado !== 'respondido')
@@ -201,6 +205,11 @@ export default async function TryvexIntelligencePage() {
       directivas={directivas}
       alCrearDirectiva={crearDirectiva}
       alDesactivarDirectiva={desactivarDirectiva}
+      demos={demos}
+      leadsParaDemo={leadsDemo}
+      alSugerirDemo={sugerirGuionDemo}
+      alCrearDemo={crearDemo}
+      alApagarDemo={apagarDemo}
       panelWhatsapp={await PanelDeWhatsapp(qr)}
     />
   )

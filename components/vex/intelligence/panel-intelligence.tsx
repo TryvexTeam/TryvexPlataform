@@ -15,6 +15,7 @@ import { PanelConocimiento, type DocumentoConocimiento } from './panel-conocimie
 import { PanelInsights } from './panel-insights'
 import { PanelMejoras } from './panel-mejoras'
 import { PanelDirectivas } from './panel-directivas'
+import { PanelDemos } from './panel-demos'
 import type { AlcanceDirectiva, Directiva } from '@/lib/repos/directivas'
 import { useRefrescoEnVivo } from '@/lib/vex/usar-refresco-en-vivo'
 import type { EncargoReal } from '@/lib/repos/intelligence-real'
@@ -89,6 +90,12 @@ interface PanelIntelligenceProps {
   directivas: Directiva[]
   alCrearDirectiva: (datos: { texto: string; alcance: AlcanceDirectiva; vigenteHasta?: string }) => Promise<Resultado>
   alDesactivarDirectiva: (id: string) => Promise<Resultado>
+  /** Demos de agente por número, y los leads para armarlas. */
+  demos: React.ComponentProps<typeof PanelDemos>['demos']
+  leadsParaDemo: React.ComponentProps<typeof PanelDemos>['leads']
+  alSugerirDemo: React.ComponentProps<typeof PanelDemos>['alSugerir']
+  alCrearDemo: React.ComponentProps<typeof PanelDemos>['alCrear']
+  alApagarDemo: React.ComponentProps<typeof PanelDemos>['alApagar']
   panelWhatsapp: React.ReactNode
 }
 
@@ -101,6 +108,7 @@ type Vista =
   | 'traspasos'
   | 'canales'
   | 'campanas'
+  | 'demos'
   | 'metricas'
   | 'insights'
   | 'mejoras'
@@ -159,6 +167,12 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
           tono: 'warning',
         },
         { vista: 'campanas', nombre: 'Campañas' },
+        {
+          vista: 'demos',
+          nombre: 'Demos',
+          contador: props.demos.filter((d) => d.vigente).length,
+          tono: 'accent',
+        },
       ],
     },
     {
@@ -313,6 +327,15 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
       {vista === 'traspasos' && <PanelTraspasos traspasos={props.traspasos} agentes={agentes} />}
       {vista === 'canales' && <PanelCanales canales={props.canales} agentes={agentes} />}
       {vista === 'campanas' && <PanelCampanas campanas={props.campanas} agentes={agentes} />}
+      {vista === 'demos' && (
+        <PanelDemos
+          demos={props.demos}
+          leads={props.leadsParaDemo}
+          alSugerir={props.alSugerirDemo}
+          alCrear={props.alCrearDemo}
+          alApagar={props.alApagarDemo}
+        />
+      )}
       {vista === 'metricas' && <PanelMetricas metricas={props.metricas} dias={props.diasMetricas} />}
       {vista === 'insights' && (
         <PanelInsights insights={props.insights} vpsDisponible={props.vpsDisponible} dias={props.diasInsights} />

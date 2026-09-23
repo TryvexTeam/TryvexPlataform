@@ -32,6 +32,7 @@ const TABLAS = [
   'campanas',
   'mejoras',
   'directivas',
+  'demos_agente',
 ] as const
 
 const REBOTE_MS = 800
