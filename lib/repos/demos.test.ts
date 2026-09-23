@@ -151,7 +151,7 @@ describe('acciones de demos', () => {
     expect((await apagarDemo(ID)).ok).toBe(false)
   })
 
-  it('sugiere el guion desde la ficha existente y revalida', async () => {
+  it('sugiere el guion desde la ficha existente, sin revalidar: solo lee', async () => {
     autenticar(clienteCon(() => json({
       nombre_negocio: 'Kairos', categoria_google: null, nicho: 'óptica', localidad: 'Santiago',
       horario: null, url_web: null, instagram: null, web_capacidades: null, telefono: '987652232',
@@ -163,7 +163,8 @@ describe('acciones de demos', () => {
       expect(r.guion.length).toBeGreaterThanOrEqual(50)
       expect(r.telefono).toBe('56987652232')
     }
-    expect(sesion.revalidar).toHaveBeenCalledWith('/vex/intelligence')
+    // Sugerir no cambia nada en la base: refrescar la página sería trabajo de más.
+    expect(sesion.revalidar).not.toHaveBeenCalled()
   })
 
   it('apaga mediante PATCH sin borrar el historial', async () => {
