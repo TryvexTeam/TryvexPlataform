@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { estadoEnOficina, type EstadoDeclarable } from '@/lib/agentes/estado-oficina'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AgenteSala, Encargo, EstadoAgente, EstadoEncargo } from '@/lib/types/sala-agentes'
 import { tablaEncargos } from '@/lib/repos/tabla-encargos'
@@ -38,6 +39,9 @@ interface FilaAgente {
   activo: boolean
   ultimo_uso_at: string | null
   expira_at: string | null
+  estado_declarado: EstadoDeclarable | null
+  estado_nota: string | null
+  estado_hasta: string | null
   // Supabase devuelve el join como objeto o como arreglo según la relación.
   dueno: { nombre: string } | { nombre: string }[] | null
 }
@@ -114,6 +118,24 @@ function hace(iso: string | null, ahora: number): string {
  * resto cae en un token neutro — nunca en un hex crudo, que se vería mal en uno
  * de los dos temas.
  */
+/** La fila de agente_actividad, en la forma que usa la pantalla. */
+export function comoActividad(
+  f: { herramienta: string | null; herramienta_at: string | null; turno_desde: string | null; herramientas_turno: number } | undefined,
+): AgenteSala['actividad'] {
+  if (!f) return null
+  return {
+    herramienta: f.herramienta,
+    herramientaAt: f.herramienta_at,
+    turnoDesde: f.turno_desde,
+    herramientasTurno: f.herramientas_turno ?? 0,
+  }
+}
+
+const COLOR_NEUTRO = '#8a8f98'
+function esHex(c: string | null): c is string {
+  return typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)
+}
+
 function colorDeToken(hex: string | null): string {
   const mapa: Record<string, string> = {
     '#c9463d': 'var(--tx-accent)',
@@ -133,10 +155,10 @@ function colorDeToken(hex: string | null): string {
 export async function obtenerAgentesReales(
   supabase: SupabaseClient,
 ): Promise<{ agentes: AgenteSala[]; encargos: EncargoReal[]; fichas: Record<string, FichaAgente> }> {
-  const [resAgentes, resEncargos, resMemoria] = await Promise.all([
+  const [resAgentes, resEncargos, resMemoria, resActividad] = await Promise.all([
     supabase
       .from('agentes')
-      .select('id, nombre, descripcion, color, activo, ultimo_uso_at, expira_at, dueno:creado_por (nombre)')
+      .select('id, nombre, descripcion, color, activo, ultimo_uso_at, expira_at, estado_declarado, estado_nota, estado_hasta, dueno:creado_por (nombre)')
       .order('nombre'),
     obtenerEncargosReales(supabase),
     // Lo que los agentes escribieron en el Cerebro. Son pocas entradas hoy, y
@@ -148,7 +170,20 @@ export async function obtenerAgentesReales(
       .not('autor_externo', 'is', null)
       .order('created_at', { ascending: false })
       .limit(300),
+    // Lo que manda el hook de Claude Code. Si la tabla no responde, la oficina
+    // simplemente no muestra la herramienta: no es motivo para romper la Sala.
+    supabase.from('agente_actividad').select('agente_id, herramienta, herramienta_at, turno_desde, herramientas_turno'),
   ])
+  type FilaActividad = {
+    agente_id: string
+    herramienta: string | null
+    herramienta_at: string | null
+    turno_desde: string | null
+    herramientas_turno: number
+  }
+  const actividades = new Map(
+    ((resActividad.data ?? []) as FilaActividad[]).map((f) => [f.agente_id, f]),
+  )
 
   if (resAgentes.error) throw new Error(`No se pudieron leer los agentes: ${resAgentes.error.message}`)
 
@@ -169,6 +204,8 @@ export async function obtenerAgentesReales(
       nombre: fila.nombre,
       oficio: fila.descripcion ?? 'Sin oficio declarado',
       color: colorDeToken(fila.color),
+      colorHex: esHex(fila.color) ? fila.color : COLOR_NEUTRO,
+      actividad: comoActividad(actividades.get(fila.id)),
       estado,
       haciendo: describirQueHace(estado, enCurso, ultimoRespondido, fila, ahora),
       // El integrante que dio de alta al agente: es a nombre de quien trabaja,
@@ -177,6 +214,18 @@ export async function obtenerAgentesReales(
       encargosHoy: suyos.filter((e) => esDeHoy(e.creadoAt, ahora)).length,
       // Todavía no existe tabla `rutinas`: no hay de dónde sacarlo.
       proximaRutina: null,
+      oficina: estadoEnOficina({
+        activo: fila.activo,
+        ultimoUsoAt: fila.ultimo_uso_at,
+        declarado: fila.estado_declarado,
+        declaradoHasta: fila.estado_hasta,
+        nota: fila.estado_nota,
+        // Solo cuenta lo TOMADO: un encargo aprobado que nadie tomó todavía no
+        // es trabajo en curso.
+        encargoEnCurso: suyos.find((e) => e.estado === 'en_curso')?.titulo ?? null,
+        esperandoPermiso: esperandoFirma,
+        ahora,
+      }),
     }
   })
 

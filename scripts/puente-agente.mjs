@@ -139,6 +139,19 @@ function ejecutar(prompt, encargoId) {
   })
 }
 
+// ── El estado en la oficina de Intelligence. Lo declara el puente, así el
+// dueño del agente no tiene que acordarse. Si falla, no se detiene nada: la
+// oficina vuelve a mirar el latido.
+let ultimaDeclaracion = 0
+async function declarar(estado, nota, minutos) {
+  const r = await crm('PUT', '/api/agentes/estado', {
+    cuerpo: { estado, ...(nota ? { nota: nota.slice(0, 120) } : {}), ...(minutos ? { minutos } : {}) },
+  })
+  if (r.ok) ultimaDeclaracion = Date.now()
+  else log(`no pude declarar "${estado}" en la oficina (${r.status})`)
+}
+const RENOVAR_DESCANSO_MS = 20 * 60_000
+
 const recientes = []
 function quedaCupo() {
   const hace1h = Date.now() - 3_600_000
@@ -189,6 +202,7 @@ async function atender(encargo, identidad, ctx) {
 
   recientes.push(Date.now())
   log(`trabajando "${encargo.titulo}" (intento ${estado.tomados[encargo.id].intentos})`)
+  await declarar('trabajando', encargo.titulo, TIMEOUT_MIN + 5)
   const resultado = await ejecutar(armarPrompt(encargo, { agente: identidad, crm: CRM }), encargo.id)
   log(`ejecutor terminó en ${Math.round(resultado.ms / 1000)} s (código ${resultado.codigo}${resultado.vencido ? ', vencido' : ''})`)
 
@@ -197,6 +211,7 @@ async function atender(encargo, identidad, ctx) {
     delete despues.tomados[encargo.id]
     guardarEstado(ctx.rutaEstado, despues)
   }
+  await declarar('descansando', 'Esperando encargos', 30)
   return true
 }
 
@@ -233,6 +248,19 @@ async function main() {
   if (!yo) { log('el CRM no reconoce este token: no arranco (ver --diag)'); process.exit(1) }
   const ctx = { rutaEstado: archivoEstado(yo.id) }
   log(`${yo.nombre} escuchando ${CRM} · ejecutor "${EJECUTOR}" · tope ${MAX_HORA}/h`)
+  await declarar('descansando', 'Esperando encargos', 30)
+
+  // Al apagarse, avisa que no está: la oficina no tiene que esperar 30 min
+  // sin señales para darse cuenta.
+  let saliendo = false
+  const salir = async () => {
+    if (saliendo) return
+    saliendo = true
+    await declarar('ausente', null, 480)
+    process.exit(0)
+  }
+  process.on('SIGINT', salir)
+  process.on('SIGTERM', salir)
 
   let etag
   let espera = 15_000
@@ -254,6 +282,7 @@ async function main() {
       }
     }
     if (UNA_VEZ) break
+    if (Date.now() - ultimaDeclaracion > RENOVAR_DESCANSO_MS) await declarar('descansando', 'Esperando encargos', 30)
     espera = siguienteEspera(espera, huboCambios)
     await new Promise((listo) => setTimeout(listo, huboCambios ? 500 : espera))
   } while (true)

@@ -8,7 +8,7 @@
 // equipo, y escribir, como herramientas nativas.
 //
 // Pocas herramientas a propósito: cada una ocupa contexto del modelo en cada
-// conversación. Las cuatro frecuentes van con nombre propio; lo demás (consumo,
+// conversación. Las cinco frecuentes van con nombre propio; lo demás (consumo,
 // rutinas, mejoras, citas, demos) pasa por `tryvex_api`, que SOLO acepta rutas
 // /api/agentes/… — el token nunca sale hacia otra parte del CRM ni otro dominio.
 //
@@ -72,6 +72,20 @@ const HERRAMIENTAS = [
     },
   },
   {
+    name: 'tryvex_estado',
+    description: 'Decir en qué estoy, para la oficina de Intelligence: trabajando, descansando o ausente, con una nota corta. Vence solo (por defecto 30 min).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        estado: { type: 'string', enum: ['trabajando', 'descansando', 'ausente'] },
+        nota: { type: 'string', description: 'En pocas palabras, máximo 120 caracteres.' },
+        minutos: { type: 'number', description: 'Cuánto vale lo declarado: 1 a 480 (por defecto 30).' },
+      },
+      required: ['estado'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'tryvex_api',
     description: 'Cualquier otra ruta del manual: directivas, consumo, rutinas, mejoras, citas, demos. Solo rutas que empiezan con /api/agentes/.',
     inputSchema: {
@@ -122,6 +136,12 @@ function ejecutarHerramienta(nombre, a = {}) {
       const limite = Math.min(Math.max(Math.trunc(Number(a.limite) || 30), 1), 200)
       return llamar('GET', `/api/agentes/mensajes?limite=${limite}`)
     }
+    case 'tryvex_estado':
+      return llamar('PUT', '/api/agentes/estado', {
+        estado: a.estado,
+        ...(a.nota ? { nota: a.nota } : {}),
+        ...(a.minutos ? { minutos: Math.trunc(Number(a.minutos)) } : {}),
+      })
     case 'tryvex_api':
       return llamar(a.metodo, a.ruta, a.metodo === 'GET' ? undefined : a.cuerpo)
     default:

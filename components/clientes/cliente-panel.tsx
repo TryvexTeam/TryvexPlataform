@@ -27,6 +27,7 @@ import {
   Check,
   Maximize2,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { ClienteForm } from './cliente-form'
 import { PagoForm } from './pago-form'
@@ -35,7 +36,7 @@ import { ESTADOS_PROYECTO, resumenFinanciero, saldoInicialArrastrado } from '@/l
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 
-const estadoPagoConfig: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
+const estadoPagoConfig: Record<string, { label: string; color: string; bg: string; icon: LucideIcon }> = {
   pendiente: { label: 'Pendiente', color: 'oklch(80% 0.14 55)',  bg: 'oklch(74% 0.17 55 / 12%)',  icon: Clock },
   pagado:    { label: 'Pagado',    color: 'oklch(78% 0.14 145)', bg: 'oklch(72% 0.17 145 / 12%)', icon: CheckCircle2 },
   atrasado:  { label: 'Atrasado',  color: 'oklch(72% 0.21 22)',  bg: 'oklch(63% 0.21 22 / 12%)',  icon: AlertTriangle },
