@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ESTADOS_OFICINA } from '@/lib/agentes/estado-oficina'
+import { TRAJES } from '@/lib/agentes/estilo-agente'
 
 /**
  * Tipos de la Sala de Agentes — el espacio de Intelligence donde el equipo
@@ -54,6 +55,8 @@ export const ActividadAgenteSchema = z.object({
   herramientaAt: z.string().nullable(),
   turnoDesde: z.string().nullable(),
   herramientasTurno: z.number(),
+  /** Las últimas herramientas, la más reciente primero. */
+  recientes: z.array(z.object({ h: z.string(), at: z.string() })),
 })
 export type ActividadAgente = z.infer<typeof ActividadAgenteSchema>
 
@@ -83,6 +86,8 @@ export const AgenteSalaSchema = z.object({
   colorHex: z.string(),
   /** Qué hace en este momento, según el hook de Claude Code (tabla agente_actividad). */
   actividad: ActividadAgenteSchema.nullable(),
+  /** Cómo se ve en la oficina (lib/agentes/estilo-agente.ts). */
+  estilo: z.object({ traje: z.enum(TRAJES) }),
 })
 export type AgenteSala = z.infer<typeof AgenteSalaSchema>
 

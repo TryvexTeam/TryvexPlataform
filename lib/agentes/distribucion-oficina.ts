@@ -47,28 +47,50 @@ export function distribuirOficina(n: number): Distribucion {
 export const ZONAS_OFICINA = ['cola', 'conocimiento', 'whatsapp', 'directivas'] as const
 export type ZonaOficina = (typeof ZONAS_OFICINA)[number]
 
-/** Cuánto espacio extra lleva la sala alrededor de los escritorios, para las zonas. */
-const ANILLO_X = 3.4
-const ANILLO_Z = 5
+/** Espacio de la sala alrededor de los escritorios. */
+const COSTADO = 3.8
+const FONDO_PANTALLA = 4.4
+const FRENTE = 3.6
+/** A qué distancia de la pantalla se paran a mirarla. */
+const DISTANCIA_A_PANTALLA = 1.9
+/** Dónde se sienta el agente, respecto del centro de su escritorio. */
+export const ASIENTO: [number, number] = [0, -0.5]
 
 /**
- * La sala completa: escritorios al centro y una zona en cada esquina, como
- * las áreas de piso de una oficina. Atrás, el trabajo (la Cola) y el
- * conocimiento; adelante, lo de afuera (WhatsApp) y las reglas (Directivas).
+ * La sala completa. Al fondo, al centro, la pantalla grande de la Cola: es lo
+ * que todos miran. A los costados, el conocimiento y WhatsApp; adelante, las
+ * directivas. Sin muros: una isla abierta.
  */
 export function distribuirConZonas(n: number): Distribucion & { zonas: Record<ZonaOficina, [number, number]> } {
   const base = distribuirOficina(n)
   const [ancho, fondo] = base.sala
-  const x = Math.max(ancho / 3, 3)
-  const z = fondo / 2 + ANILLO_Z / 2 - 0.4
   return {
     puestos: base.puestos,
-    sala: [ancho + ANILLO_X, fondo + ANILLO_Z * 2],
+    sala: [ancho + COSTADO * 2, fondo + FONDO_PANTALLA + FRENTE],
     zonas: {
-      cola: [-x, -z],
-      conocimiento: [x, -z],
-      whatsapp: [-x, z],
-      directivas: [x, z],
+      // La "zona" de la Cola es la pantalla.
+      cola: [0, -(fondo / 2 + FONDO_PANTALLA * 0.62)],
+      conocimiento: [-(ancho / 2 + COSTADO * 0.52), -0.4],
+      whatsapp: [ancho / 2 + COSTADO * 0.52, -0.4],
+      directivas: [0, fondo / 2 + FRENTE * 0.55],
     },
   }
+}
+
+/** Dónde se para cada agente a mirar la pantalla: repartidos frente a ella. */
+export function lugarFrenteAPantalla(i: number, n: number, pantalla: [number, number], anchoPantalla: number): [number, number] {
+  const hueco = Math.min(0.95, (anchoPantalla - 1) / Math.max(n, 1))
+  const x = pantalla[0] + (i - (n - 1) / 2) * hueco
+  return [x, pantalla[1] + DISTANCIA_A_PANTALLA]
+}
+
+/**
+ * El camino del escritorio a la pantalla, por el pasillo: se levanta, sale
+ * hacia el pasillo de su derecha, camina por él hasta la altura de la
+ * pantalla, y de ahí a su lugar. Así no atraviesa ningún escritorio.
+ */
+export function rutaAPantalla(puesto: [number, number], destino: [number, number]): Array<[number, number]> {
+  const asiento: [number, number] = [puesto[0] + ASIENTO[0], puesto[1] + ASIENTO[1]]
+  const pasillo = puesto[0] + SEPARACION_X / 2
+  return [asiento, [pasillo, asiento[1]], [pasillo, destino[1]], destino]
 }

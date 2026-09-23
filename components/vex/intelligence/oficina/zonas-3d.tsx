@@ -8,7 +8,7 @@ import type { ZonaOficina } from '@/lib/agentes/distribucion-oficina'
 
 /**
  * Las cuatro zonas de la oficina, cada una con su dato real:
- *   · Cola          → una tarjeta por encargo esperando permiso
+ *   · Cola          → la pantalla grande (pantalla-cola.tsx)
  *   · Conocimiento  → un cubo por documento del Cerebro, unidos como un grafo
  *   · WhatsApp      → una burbuja por mensaje sin leer
  *   · Directivas    → una hoja por directiva vigente
@@ -36,36 +36,6 @@ function Piso({ color }: { color: string }) {
       <planeGeometry args={[3.4, 2.6]} />
       <meshStandardMaterial color={color} transparent opacity={0.12} />
     </mesh>
-  )
-}
-
-export function ZonaCola({ posicion, cantidad }: ZonaProps) {
-  const tarjetas = Math.min(cantidad, 8)
-  return (
-    <group position={[posicion[0], 0, posicion[1]]}>
-      <Piso color={COLOR_ZONA.cola} />
-      {/* Tablero de pie */}
-      <RoundedBox args={[2.3, 1.5, 0.08]} radius={0.04} position={[0, 1.35, -0.4]} castShadow>
-        <meshStandardMaterial color="#fbfcfe" />
-      </RoundedBox>
-      {[-0.95, 0.95].map((x) => (
-        <mesh key={x} position={[x, 0.3, -0.4]} castShadow>
-          <cylinderGeometry args={[0.03, 0.03, 0.6, 8]} />
-          <meshStandardMaterial color="#c9ced8" />
-        </mesh>
-      ))}
-      {Array.from({ length: tarjetas }, (_, i) => (
-        <RoundedBox
-          key={i}
-          args={[0.44, 0.3, 0.03]}
-          radius={0.03}
-          position={[-0.8 + (i % 4) * 0.53, 1.62 - Math.floor(i / 4) * 0.42, -0.34]}
-          castShadow
-        >
-          <meshStandardMaterial color={COLOR_ZONA.cola} emissive={COLOR_ZONA.cola} emissiveIntensity={0.25} />
-        </RoundedBox>
-      ))}
-    </group>
   )
 }
 

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { tablaEncargos } from '@/lib/repos/tabla-encargos'
+import { TRAJES } from '@/lib/agentes/estilo-agente'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Las tablas nuevas de Intelligence todavía no están en los tipos generados.
@@ -32,7 +33,7 @@ async function integranteActual() {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) throw new Error('Hay que iniciar sesión para operar la cola de encargos.')
+  if (!user) throw new Error('Hay que iniciar sesión para hacer esto.')
 
   const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
   if (!perfil) throw new Error('Solo los integrantes del equipo pueden operar a los agentes.')
@@ -187,6 +188,37 @@ export async function cambiarRutina(rutinaId: string, activa: boolean): Promise<
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No se pudo cambiar la rutina.' }
+  }
+}
+
+// ─── Estilo en la oficina ────────────────────────────────────────────────
+
+const EstiloSchema = z.object({
+  agenteId: z.string().uuid(),
+  traje: z.enum(TRAJES),
+})
+
+/**
+ * Cambiar cómo se ve un agente en la oficina 3D.
+ *
+ * Pasa por una función de la base (`cambiar_estilo_agente`) que solo toca la
+ * columna `estilo`: la tabla de agentes sigue siendo de solo lectura para la
+ * app, así que por acá no se puede tocar su llave ni desactivarlo.
+ */
+export async function cambiarEstiloAgente(entrada: z.input<typeof EstiloSchema>): Promise<Resultado> {
+  const parsed = EstiloSchema.safeParse(entrada)
+  if (!parsed.success) return { ok: false, error: 'Ese estilo no existe.' }
+  try {
+    const { supabase } = await integranteActual()
+    const { error } = await (supabase as unknown as ClienteSinTipos).rpc('cambiar_estilo_agente', {
+      p_agente: parsed.data.agenteId,
+      p_traje: parsed.data.traje,
+    })
+    if (error) return { ok: false, error: error.message }
+    revalidatePath('/vex/intelligence')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo cambiar el estilo.' }
   }
 }
 

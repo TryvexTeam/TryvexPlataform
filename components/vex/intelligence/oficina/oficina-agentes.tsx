@@ -1,14 +1,18 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useReducedMotion } from 'framer-motion'
 import { Building2, Maximize2 } from 'lucide-react'
 import { ESTADOS_OFICINA, type EstadoOficina } from '@/lib/agentes/estado-oficina'
 import { ZONAS_OFICINA, type ZonaOficina } from '@/lib/agentes/distribucion-oficina'
+import { encargosQueCambiaron, type EncargoPantalla } from '@/lib/agentes/pantalla-cola'
 import type { ActividadAgente, AgenteSala } from '@/lib/types/sala-agentes'
 import { useActividadEnVivo } from '@/lib/vex/usar-actividad-en-vivo'
+import { haceSegundos } from '@/lib/agentes/historial-actividad'
+import { DEFINICION_TRAJE, TRAJES, type TrajeAgente } from '@/lib/agentes/estilo-agente'
+import { cambiarEstiloAgente } from '@/app/(app)/vex/intelligence/acciones'
 import { COLOR_ESTADO, NOMBRE_ESTADO } from './estados'
 
 /**
@@ -78,16 +82,33 @@ function turnoAbierto(a: ActividadAgente | null, ahora: number): boolean {
   return ahora - ultima < TURNO_VIVO_MS
 }
 
+/** Cada cuánto, como mucho, uno que descansa se levanta a revisar la Cola. */
+const PASEO_CADA_MS = 25_000
+/** Cuánto espera un agente antes de volver a ir a mirar, si nada cambió. */
+const ENTRE_PASEOS_MS = 90_000
+
 interface OficinaProps {
   agentes: AgenteSala[]
+  /** La Cola: la muestra la pantalla grande, y sus cambios mueven a los agentes. */
+  encargos: EncargoPantalla[]
   zonas: Record<ZonaOficina, number>
   /** Ir a la sección de Intelligence que representa la zona. */
   alIr: (zona: ZonaOficina) => void
 }
 
-export function OficinaAgentes({ agentes: todos, zonas, alIr }: OficinaProps) {
+export function OficinaAgentes({ agentes: todos, encargos, zonas, alIr }: OficinaProps) {
   // Un agente con la credencial desactivada ya no tiene escritorio.
-  const agentes = useMemo(() => todos.filter((a) => a.oficina.fuente !== 'desactivado'), [todos])
+  // El traje recién elegido se ve al instante, sin esperar a la base. Vale solo
+  // mientras no llegue una lista nueva del servidor: esa ya trae lo guardado.
+  const [eleccion, setEleccion] = useState<{ base: AgenteSala[]; trajes: Record<string, TrajeAgente> }>({ base: todos, trajes: {} })
+  const trajes = eleccion.base === todos ? eleccion.trajes : null
+  const agentes = useMemo(
+    () =>
+      todos
+        .filter((a) => a.oficina.fuente !== 'desactivado')
+        .map((a) => (trajes?.[a.id] ? { ...a, estilo: { traje: trajes[a.id] } } : a)),
+    [todos, trajes],
+  )
   const router = useRouter()
   const sinMovimiento = useReducedMotion() ?? false
   const puede3D = useSyncExternalStore(sinSuscripcion, hayWebGL, () => true)
@@ -97,6 +118,42 @@ export function OficinaAgentes({ agentes: todos, zonas, alIr }: OficinaProps) {
   const [ahora, setAhora] = useState(0)
   const marco = useRef<HTMLDivElement>(null)
   const anclas = useRef<Map<string, HTMLElement>>(new Map())
+
+  // Quién tiene que ir a mirar la pantalla: sube el número de ese agente.
+  // Se decide mientras se renderiza (no en un efecto) comparando con la Cola
+  // anterior: un encargo nuevo o que cambió de estado mueve a su agente.
+  const [visitas, setVisitas] = useState<Record<string, number>>({})
+  const [colaAnterior, setColaAnterior] = useState(encargos)
+  if (colaAnterior !== encargos) {
+    const antes = new Map(colaAnterior.map((e) => [e.id, e.estado]))
+    const mover = new Set(encargosQueCambiaron(antes, encargos).map((e) => e.agenteId))
+    setColaAnterior(encargos)
+    if (mover.size > 0) {
+      setVisitas((v) => {
+        const nuevo = { ...v }
+        for (const id of mover) nuevo[id] = (nuevo[id] ?? 0) + 1
+        return nuevo
+      })
+    }
+  }
+
+  // Y de vez en cuando, uno que descansa se levanta a revisar la Cola: es lo
+  // que hace de verdad su puente, que la consulta cada pocos segundos.
+  const ultimoPaseo = useRef<Record<string, number>>({})
+  useEffect(() => {
+    if (!enPantalla || sinMovimiento) return
+    const t = setInterval(() => {
+      const ahoraMs = Date.now()
+      const libres = agentes.filter(
+        (a) => a.oficina.estado === 'descansando' && ahoraMs - (ultimoPaseo.current[a.id] ?? 0) > ENTRE_PASEOS_MS,
+      )
+      if (libres.length === 0) return
+      const elegidoAhora = libres[Math.floor(Math.random() * libres.length)]
+      ultimoPaseo.current[elegidoAhora.id] = ahoraMs
+      setVisitas((v) => ({ ...v, [elegidoAhora.id]: (v[elegidoAhora.id] ?? 0) + 1 }))
+    }, PASEO_CADA_MS)
+    return () => clearInterval(t)
+  }, [agentes, enPantalla, sinMovimiento])
 
   const actividadInicial = useMemo(() => Object.fromEntries(todos.map((a) => [a.id, a.actividad])), [todos])
   const actividad = useActividadEnVivo(actividadInicial)
@@ -164,7 +221,13 @@ export function OficinaAgentes({ agentes: todos, zonas, alIr }: OficinaProps) {
         <div
           ref={marco}
           className="relative h-[420px] min-w-0 overflow-hidden rounded-2xl sm:h-[520px] xl:h-[600px]"
-          style={{ border: '1px solid var(--tx-border)', background: '#eef1f6', touchAction: 'none' }}
+          style={{
+            border: '1px solid var(--tx-border)',
+            // El fondo del estudio: pastel, como las referencias de SAMS.
+            background:
+              'radial-gradient(900px 520px at 18% 0%, #dde8ff 0%, transparent 62%), radial-gradient(760px 520px at 92% 8%, #ffe9dc 0%, transparent 58%), linear-gradient(180deg, #f2f5fa 0%, #e9edf4 100%)',
+            touchAction: 'none',
+          }}
         >
           {agentes.length === 0 ? (
             <p className="grid h-full place-items-center p-6 text-center text-sm" style={{ color: '#5b6474' }}>
@@ -179,6 +242,9 @@ export function OficinaAgentes({ agentes: todos, zonas, alIr }: OficinaProps) {
               <div aria-hidden="true" className="absolute inset-0">
                 <EscenaOficina
                   agentes={agentes}
+                  encargos={encargos}
+                  visitas={visitas}
+                  alIr={alIr}
                   seleccionado={elegido}
                   alSeleccionar={setElegido}
                   animar={!sinMovimiento && enPantalla}
@@ -311,23 +377,179 @@ export function OficinaAgentes({ agentes: todos, zonas, alIr }: OficinaProps) {
           </ul>
 
           {actual && (
-            <div
-              role="status"
-              className="flex min-w-0 flex-col gap-1.5 rounded-xl p-3 text-xs"
-              style={{ border: `1px solid ${actual.colorHex}55`, background: 'var(--tx-surface-1)' }}
-            >
-              <p className="text-sm font-semibold text-[var(--tx-ink-primary)]">{actual.nombre}</p>
-              <p className="text-[var(--tx-ink-muted)]">{actual.oficio}</p>
-              <p style={{ color: COLOR_ESTADO[actual.oficina.estado] }} className="font-medium">
-                {NOMBRE_ESTADO[actual.oficina.estado]}
-                {actual.oficina.nota ? `: ${actual.oficina.nota}` : ''}
-              </p>
-              <p className="text-[var(--tx-ink-secondary)]">{EXPLICACION[actual.oficina.fuente]}</p>
-              {actual.humano && <p className="text-[var(--tx-ink-muted)]">Trabaja a nombre de {actual.humano}.</p>}
-            </div>
+            <FichaAgente
+              agente={actual}
+              actividad={actividad[actual.id] ?? null}
+              encargo={encargos.find((e) => e.agenteId === actual.id && e.estado === 'en_curso') ?? null}
+              ahora={ahora}
+              alVestir={(traje) => setEleccion((e) => ({ base: todos, trajes: { ...(e.base === todos ? e.trajes : {}), [actual.id]: traje } }))}
+              alFallar={() => setEleccion({ base: todos, trajes: {} })}
+            />
           )}
         </div>
       </div>
+    </section>
+  )
+}
+
+/**
+ * La ficha de un agente: qué está haciendo, de verdad y en detalle. Antes
+ * mostraba solo el estado y una nota ("En TryvexPlataform"), y al tocar a un
+ * agente no se sabía en qué andaba.
+ */
+function FichaAgente({
+  agente,
+  actividad,
+  encargo,
+  ahora,
+  alVestir,
+  alFallar,
+}: {
+  agente: AgenteSala
+  actividad: ActividadAgente | null
+  encargo: EncargoPantalla | null
+  ahora: number
+  alVestir: (traje: TrajeAgente) => void
+  alFallar: () => void
+}) {
+  const enTurno = turnoAbierto(actividad, ahora)
+  const tiempo = enTurno ? reloj(actividad?.turnoDesde ?? null, ahora) : null
+  const recientes = actividad?.recientes ?? []
+  const colorEstado = COLOR_ESTADO[agente.oficina.estado]
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex min-w-0 flex-col gap-3 rounded-xl p-3.5 text-xs"
+      style={{ border: `1px solid ${agente.colorHex}55`, background: 'var(--tx-surface-1)' }}
+    >
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--tx-ink-primary)]">{agente.nombre}</p>
+          <p className="truncate text-[var(--tx-ink-muted)]">{agente.oficio}</p>
+        </div>
+        <span
+          className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+          style={{ color: colorEstado, background: `${colorEstado}1f` }}
+        >
+          <span className="size-1.5 rounded-full" style={{ background: colorEstado }} />
+          {NOMBRE_ESTADO[agente.oficina.estado]}
+        </span>
+      </div>
+
+      <section aria-label="Ahora mismo" className="flex min-w-0 flex-col gap-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--tx-ink-muted)]">Ahora mismo</p>
+        {enTurno && actividad?.herramienta ? (
+          <>
+            <p className="truncate rounded-md px-2 py-1 font-mono text-[11px] text-[var(--tx-ink-primary)]" style={{ background: 'var(--tx-surface-2)' }}>
+              <span style={{ color: agente.colorHex }}>&gt;</span> {actividad.herramienta}
+            </p>
+            <p className="text-[var(--tx-ink-secondary)]">
+              {tiempo ? `En su turno hace ${tiempo}` : 'En su turno'}
+              {actividad.herramientasTurno > 0
+                ? ` · ${actividad.herramientasTurno} ${actividad.herramientasTurno === 1 ? 'herramienta' : 'herramientas'}`
+                : ''}
+            </p>
+          </>
+        ) : (
+          <p className="text-[var(--tx-ink-secondary)]">{agente.oficina.nota ?? NOMBRE_ESTADO[agente.oficina.estado]}</p>
+        )}
+      </section>
+
+      {encargo && (
+        <section aria-label="Su encargo" className="flex min-w-0 flex-col gap-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--tx-ink-muted)]">Su encargo</p>
+          <p className="text-[var(--tx-ink-primary)]">{encargo.titulo}</p>
+        </section>
+      )}
+
+      <section aria-label="Lo último que hizo" className="flex min-w-0 flex-col gap-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--tx-ink-muted)]">Lo último que hizo</p>
+        {recientes.length > 0 ? (
+          <ol className="flex min-w-0 flex-col gap-0.5">
+            {recientes.map((r, i) => (
+              <li key={`${r.at}-${i}`} className="flex min-w-0 items-baseline justify-between gap-2">
+                <span className="truncate font-mono text-[11px] text-[var(--tx-ink-secondary)]">{r.h}</span>
+                <span className="shrink-0 text-[10px] tabular-nums text-[var(--tx-ink-muted)]">
+                  {ahora ? haceSegundos(r.at, ahora) : ''}
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-[var(--tx-ink-muted)]">
+            Sin registro todavía. Aparece cuando su dueño conecta el hook de la oficina:{' '}
+            <code className="font-mono text-[10.5px]">node scripts/hook-oficina.mjs --instalar</code>
+          </p>
+        )}
+      </section>
+
+      <SelectorTraje agente={agente} alVestir={alVestir} alFallar={alFallar} />
+
+      <p className="text-[10.5px] text-[var(--tx-ink-muted)]">
+        {EXPLICACION[agente.oficina.fuente]}
+        {agente.humano ? ` Trabaja a nombre de ${agente.humano}.` : ''}
+      </p>
+    </div>
+  )
+}
+
+/** Elegir el traje del agente. Se ve al tiro en la oficina y queda guardado para todo el equipo. */
+function SelectorTraje({
+  agente,
+  alVestir,
+  alFallar,
+}: {
+  agente: AgenteSala
+  alVestir: (traje: TrajeAgente) => void
+  alFallar: () => void
+}) {
+  const [guardando, iniciar] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  const vestir = (traje: TrajeAgente) => {
+    if (traje === agente.estilo.traje) return
+    setError(null)
+    alVestir(traje)
+    iniciar(async () => {
+      const r = await cambiarEstiloAgente({ agenteId: agente.id, traje })
+      if (!r.ok) {
+        alFallar()
+        setError(r.error)
+      }
+    })
+  }
+
+  return (
+    <section aria-label="Estilo" className="flex min-w-0 flex-col gap-1.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--tx-ink-muted)]">
+        Estilo{guardando ? ' · guardando…' : ''}
+      </p>
+      <div role="radiogroup" aria-label={`Traje de ${agente.nombre}`} className="flex flex-wrap gap-1.5">
+        {TRAJES.map((t) => {
+          const puesto = agente.estilo.traje === t
+          return (
+            <button
+              key={t}
+              type="button"
+              role="radio"
+              aria-checked={puesto}
+              onClick={() => vestir(t)}
+              className="min-h-8 rounded-full px-3 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{
+                border: `1px solid ${puesto ? agente.colorHex : 'var(--tx-border-strong)'}`,
+                background: puesto ? `${agente.colorHex}22` : 'transparent',
+                color: puesto ? 'var(--tx-ink-primary)' : 'var(--tx-ink-secondary)',
+                outlineColor: agente.colorHex,
+              }}
+            >
+              {DEFINICION_TRAJE[t].nombre}
+            </button>
+          )
+        })}
+      </div>
+      {error && <p role="alert" className="text-[var(--tx-error)]">✗ {error}</p>}
     </section>
   )
 }

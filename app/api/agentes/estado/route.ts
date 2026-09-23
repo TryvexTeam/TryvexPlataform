@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { autenticarAgente, datosInvalidos, leerJson } from '@/lib/agentes/autenticar'
 import { ESTADOS_DECLARABLES } from '@/lib/agentes/estado-oficina'
+import { agregarReciente } from '@/lib/agentes/historial-actividad'
 
 /**
  * El agente dice en qué está, para la oficina de Intelligence.
@@ -99,7 +100,7 @@ export async function PUT(req: Request) {
   if (d.herramienta || d.turno) {
     const { data: previa } = await admin
       .from('agente_actividad')
-      .select('herramientas_turno, turno_desde')
+      .select('herramientas_turno, turno_desde, recientes')
       .eq('agente_id', agente.id)
       .maybeSingle()
 
@@ -115,6 +116,8 @@ export async function PUT(req: Request) {
     if (d.herramienta) {
       fila.herramienta = sinSecretos(d.herramienta)
       fila.herramienta_at = ahora.toISOString()
+      // Las últimas 8, para que la ficha cuente qué venía haciendo.
+      fila.recientes = agregarReciente(previa?.recientes, fila.herramienta as string, ahora.toISOString())
       fila.herramientas_turno = (d.turno === 'inicio' ? 0 : (previa?.herramientas_turno ?? 0)) + 1
       // Una herramienta sin turno abierto (el hook se instaló a mitad de una
       // sesión) abre uno: si no, el panel no sabría desde cuándo trabaja.

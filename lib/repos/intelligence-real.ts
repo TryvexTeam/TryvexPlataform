@@ -1,6 +1,8 @@
 import 'server-only'
 
+import { leerEstilo } from '@/lib/agentes/estilo-agente'
 import { estadoEnOficina, type EstadoDeclarable } from '@/lib/agentes/estado-oficina'
+import { recientesValidos } from '@/lib/agentes/historial-actividad'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AgenteSala, Encargo, EstadoAgente, EstadoEncargo } from '@/lib/types/sala-agentes'
 import { tablaEncargos } from '@/lib/repos/tabla-encargos'
@@ -40,6 +42,7 @@ interface FilaAgente {
   ultimo_uso_at: string | null
   expira_at: string | null
   estado_declarado: EstadoDeclarable | null
+  estilo: unknown
   estado_nota: string | null
   estado_hasta: string | null
   // Supabase devuelve el join como objeto o como arreglo según la relación.
@@ -120,7 +123,9 @@ function hace(iso: string | null, ahora: number): string {
  */
 /** La fila de agente_actividad, en la forma que usa la pantalla. */
 export function comoActividad(
-  f: { herramienta: string | null; herramienta_at: string | null; turno_desde: string | null; herramientas_turno: number } | undefined,
+  f:
+    | { herramienta: string | null; herramienta_at: string | null; turno_desde: string | null; herramientas_turno: number; recientes?: unknown }
+    | undefined,
 ): AgenteSala['actividad'] {
   if (!f) return null
   return {
@@ -128,6 +133,7 @@ export function comoActividad(
     herramientaAt: f.herramienta_at,
     turnoDesde: f.turno_desde,
     herramientasTurno: f.herramientas_turno ?? 0,
+    recientes: recientesValidos(f.recientes),
   }
 }
 
@@ -158,7 +164,7 @@ export async function obtenerAgentesReales(
   const [resAgentes, resEncargos, resMemoria, resActividad] = await Promise.all([
     supabase
       .from('agentes')
-      .select('id, nombre, descripcion, color, activo, ultimo_uso_at, expira_at, estado_declarado, estado_nota, estado_hasta, dueno:creado_por (nombre)')
+      .select('id, nombre, descripcion, color, activo, ultimo_uso_at, expira_at, estado_declarado, estado_nota, estado_hasta, estilo, dueno:creado_por (nombre)')
       .order('nombre'),
     obtenerEncargosReales(supabase),
     // Lo que los agentes escribieron en el Cerebro. Son pocas entradas hoy, y
@@ -172,7 +178,7 @@ export async function obtenerAgentesReales(
       .limit(300),
     // Lo que manda el hook de Claude Code. Si la tabla no responde, la oficina
     // simplemente no muestra la herramienta: no es motivo para romper la Sala.
-    supabase.from('agente_actividad').select('agente_id, herramienta, herramienta_at, turno_desde, herramientas_turno'),
+    supabase.from('agente_actividad').select('agente_id, herramienta, herramienta_at, turno_desde, herramientas_turno, recientes'),
   ])
   type FilaActividad = {
     agente_id: string
@@ -180,6 +186,7 @@ export async function obtenerAgentesReales(
     herramienta_at: string | null
     turno_desde: string | null
     herramientas_turno: number
+    recientes: unknown
   }
   const actividades = new Map(
     ((resActividad.data ?? []) as FilaActividad[]).map((f) => [f.agente_id, f]),
@@ -206,6 +213,7 @@ export async function obtenerAgentesReales(
       color: colorDeToken(fila.color),
       colorHex: esHex(fila.color) ? fila.color : COLOR_NEUTRO,
       actividad: comoActividad(actividades.get(fila.id)),
+      estilo: leerEstilo(fila.estilo, fila.nombre),
       estado,
       haciendo: describirQueHace(estado, enCurso, ultimoRespondido, fila, ahora),
       // El integrante que dio de alta al agente: es a nombre de quien trabaja,

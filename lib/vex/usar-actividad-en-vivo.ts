@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { ActividadAgente } from '@/lib/types/sala-agentes'
+import { recientesValidos } from '@/lib/agentes/historial-actividad'
 
 /**
  * La actividad de cada agente (qué herramienta usa ahora), escuchando la base.
@@ -32,6 +33,7 @@ export function useActividadEnVivo(inicial: Record<string, ActividadAgente | nul
           herramienta_at: string | null
           turno_desde: string | null
           herramientas_turno: number
+          recientes?: unknown
         }
         if (!f?.agente_id) return
         const id = f.agente_id
@@ -42,6 +44,7 @@ export function useActividadEnVivo(inicial: Record<string, ActividadAgente | nul
             herramientaAt: f.herramienta_at,
             turnoDesde: f.turno_desde,
             herramientasTurno: f.herramientas_turno ?? 0,
+            recientes: recientesValidos(f.recientes),
           },
         }))
       })

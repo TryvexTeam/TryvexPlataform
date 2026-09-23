@@ -298,6 +298,7 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
         <div className="flex min-w-0 flex-col gap-6">
           <OficinaAgentes
             agentes={agentes}
+            encargos={cola}
             zonas={{
               cola: cola.filter((e) => e.estado === 'encolado').length,
               conocimiento: props.documentos.length,
