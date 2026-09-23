@@ -1,7 +1,7 @@
 import 'server-only'
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AgenteSala, EstadoAgente } from '@/lib/types/sala-agentes'
+import type { AgenteSala, Encargo, EstadoAgente, EstadoEncargo } from '@/lib/types/sala-agentes'
 import { tablaEncargos } from '@/lib/repos/tabla-encargos'
 
 /**
@@ -253,4 +253,51 @@ export async function obtenerEncargosReales(
     motivoRechazo: f.motivo_rechazo,
     creadoAt: f.created_at,
   }))
+}
+
+/**
+ * La cola real, traducida al formato que muestra la Sala.
+ *
+ * Son dos vistas de lo mismo: la Cola sirve para operar (dar permiso, rechazar,
+ * archivar) y la Sala para mirar el conjunto. Antes esta tabla se alimentaba de
+ * datos inventados, y al conectar la Cola quedó vacía por un descuido — que es
+ * peor que la maqueta, porque una tabla vacía parece decir "no hay trabajo".
+ *
+ * Los rechazados no viajan: dejaron de ser trabajo pendiente y ensuciarían la
+ * lectura de qué está pasando ahora.
+ */
+export function comoEncargosDeSala(encargos: EncargoReal[]): Encargo[] {
+  // Un encargo esperando permiso está BLOQUEADO en el sentido literal: no puede
+  // avanzar hasta que una persona lo destrabe. Es el mismo concepto.
+  const estados: Record<EncargoReal['estado'], EstadoEncargo | null> = {
+    encolado: 'bloqueada',
+    aprobado: 'sin_empezar',
+    en_curso: 'en_curso',
+    respondido: 'listo',
+    rechazado: null,
+  }
+
+  return encargos.flatMap((e): Encargo[] => {
+    const estado = estados[e.estado]
+    if (!estado) return []
+
+    return [
+      {
+        id: e.id,
+        titulo: e.titulo,
+        agenteId: e.agenteId,
+        estado,
+        // Todavía no hay tabla de evidencias: decir que no hay es honesto,
+        // inventar un `exit_code` no lo sería.
+        evidencias: [],
+        veredicto: null,
+        pedidoPor: e.pedidoPor ?? 'alguien del equipo',
+        requiereFirma: e.estado === 'encolado',
+        porQueIrreversible:
+          e.estado === 'encolado'
+            ? 'El agente no puede trabajarlo hasta que una persona lo apruebe.'
+            : null,
+      },
+    ]
+  })
 }

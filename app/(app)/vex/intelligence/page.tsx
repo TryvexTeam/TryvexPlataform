@@ -8,7 +8,11 @@ import { PanelAjustes } from '@/components/vex/intelligence/panel-ajustes'
 import { PanelConversaciones } from '@/components/vex/intelligence/panel-conversaciones'
 import { EstadoAgente } from '@/components/vex/intelligence/estado-agente'
 import { PanelIntelligence } from '@/components/vex/intelligence/panel-intelligence'
-import { obtenerAgentesReales, obtenerEncargosReales } from '@/lib/repos/intelligence-real'
+import {
+  comoEncargosDeSala,
+  obtenerAgentesReales,
+  obtenerEncargosReales,
+} from '@/lib/repos/intelligence-real'
 import { encolarEncargo, aprobarEncargo, rechazarEncargo, archivarEncargo } from './acciones'
 import {
   CAMPANAS_EJEMPLO,
@@ -92,7 +96,7 @@ export default async function TryvexIntelligencePage() {
       alAprobar={aprobarEncargo}
       alRechazar={rechazarEncargo}
       alArchivar={archivarEncargo}
-      encargos={[]}
+      encargos={comoEncargosDeSala(colaReal)}
       hilo={HILO_EJEMPLO}
       rutinas={RUTINAS_EJEMPLO}
       herramientas={HERRAMIENTAS_EJEMPLO}
