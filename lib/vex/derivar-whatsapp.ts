@@ -1,3 +1,4 @@
+import { esperaRespuesta } from '@/lib/leads/cierre'
 import type {
   ConversacionCliente,
   EntradaHilo,
@@ -141,13 +142,15 @@ export function analizarHilo(hilo: MensajeWa[]): AnalisisHilo {
     ? hilo.filter((m) => m.direccion === 'out' && !m.es_bot && m.created_at > primerBot.created_at)
     : []
   const ultimo = hilo[hilo.length - 1]
+  const ultimoOut = hilo.findLastIndex((m) => m.direccion === 'out')
+  const entrantes = hilo.slice(ultimoOut + 1).map((m) => m.texto)
 
   return {
     clienteEscribio: Boolean(primerIn),
     primerBot,
     humanosTrasBot,
     ultimo,
-    sinRespuesta: ultimo.direccion === 'in',
+    sinRespuesta: ultimo.direccion === 'in' && esperaRespuesta(hilo[ultimoOut]?.texto ?? null, entrantes),
     nombreBot: hilo.find((m) => m.direccion === 'out' && m.es_bot)?.enviado_por ?? null,
   }
 }

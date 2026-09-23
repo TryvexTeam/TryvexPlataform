@@ -11,9 +11,10 @@ import { LeadsCategories } from './leads-categories'
 import { LeadForm } from './lead-form'
 import type { Lead, Interaccion, LeadInsert } from '@/lib/types/lead'
 import type { AsignacionConIntegrante } from '@/lib/types/asignacion'
+import type { LeadsRepository } from '@/lib/repos/leads'
 
 interface LeadsWorkspaceProps {
-  leads: Lead[]
+  leads: Awaited<ReturnType<LeadsRepository['list']>>
   selectedId: string | null
   interacciones: Interaccion[]
   /** Asignados por `lead_id`, consultados en lote por la página. */
@@ -94,11 +95,16 @@ export function LeadsWorkspace({
     handleCloseForm(false)
     router.refresh()
   }
-  const [activeEstado, setActiveEstado] = useState<Lead['estado'] | 'todos'>('todos')
+  const [activeEstado, setActiveEstado] = useState<Lead['estado'] | 'todos' | 'por_responder'>('todos')
 
   const selectedLead = selectedId ? (leads.find(l => l.id === selectedId) ?? null) : null
 
-  const filteredLeads = activeEstado === 'todos'
+  const porResponder = leads
+    .filter(l => l.porResponderDesde !== null)
+    .sort((a, b) => a.porResponderDesde!.localeCompare(b.porResponderDesde!))
+  const filteredLeads = activeEstado === 'por_responder'
+    ? porResponder
+    : activeEstado === 'todos'
     ? leads
     : leads.filter(l => l.estado === activeEstado)
 
@@ -122,6 +128,7 @@ export function LeadsWorkspace({
     >
       <LeadsCategories
         leads={leads}
+        porResponder={porResponder.length}
         activeEstado={activeEstado}
         onSelect={setActiveEstado}
       />

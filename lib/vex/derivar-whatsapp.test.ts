@@ -143,6 +143,47 @@ describe('el cliente escribió y nadie le contestó', () => {
   })
 })
 
+describe('Ópticas Kairos: el cliente cierra después de nuestra despedida', () => {
+  const mensajes = [
+    msg('a', 'in', '2026-09-04T10:00:00Z', { texto: 'No me interesa muchas gracias' }),
+    msg('a', 'out', '2026-09-04T10:01:00Z', { bot: true, texto: 'Eso, cuídate.' }),
+    msg('a', 'in', '2026-09-04T10:02:00Z', { texto: 'El Señor me da y maneja todo según su voluntad 🙏' }),
+  ]
+
+  it('no produce un traspaso sin_respuesta por la bendición final', () => {
+    expect(analizarHilo(mensajes).sinRespuesta).toBe(false)
+    expect(derivarTraspasos(mensajes, leads, idPorNombre, AHORA)).toEqual([])
+  })
+
+  it('si luego pregunta, vuelve a esperar aunque el último mensaje sea un cierre', () => {
+    const pendiente = [...mensajes,
+      msg('a', 'in', '2026-09-04T10:03:00Z', { texto: '¿Hacen páginas web?' }),
+      msg('a', 'in', '2026-09-04T10:04:00Z', { texto: 'Gracias 🙏🙏' }),
+    ]
+    expect(derivarTraspasos(pendiente, leads, idPorNombre, AHORA)[0].motivo).toBe('sin_respuesta')
+  })
+})
+
+describe('Peluquería Época: despedida con emoji', () => {
+  it('el emoji final no produce un traspaso sin_respuesta', () => {
+    const mensajes = [
+      msg('b', 'in', '2026-09-18T10:00:00Z', { texto: '¡Gracias, igualmente! Saludos.' }),
+      msg('b', 'out', '2026-09-18T10:01:00Z', { bot: true, texto: '¡Gracias a ti! Saludos y que tengas un excelente día.' }),
+      msg('b', 'in', '2026-09-18T10:02:00Z', { texto: '👋' }),
+    ]
+    expect(analizarHilo(mensajes).sinRespuesta).toBe(false)
+    expect(derivarTraspasos(mensajes, leads, idPorNombre, AHORA)).toEqual([])
+  })
+
+  it('un emoji no oculta una pregunta anterior sin contestar', () => {
+    const mensajes = [
+      msg('b', 'in', '2026-09-18T10:00:00Z', { texto: 'gracias, ¿y cuánto sale?' }),
+      msg('b', 'in', '2026-09-18T10:02:00Z', { texto: '👋' }),
+    ]
+    expect(derivarTraspasos(mensajes, leads, idPorNombre, AHORA)[0].motivo).toBe('sin_respuesta')
+  })
+})
+
 describe('marca de lectura', () => {
   it('cuenta como sin leer solo lo que llegó después de la última lectura', () => {
     const conLectura = new Map([['e', lead('e', { wa_leido_hasta: '2026-09-21T10:00:00Z' })]])

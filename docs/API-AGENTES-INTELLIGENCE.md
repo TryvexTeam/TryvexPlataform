@@ -23,6 +23,37 @@ Límite: 60 llamadas por minuto por agente. Pasado eso, `429` con `Retry-After`.
 
 ---
 
+## 0. Empezar: el manual y el cliente
+
+**Cualquier IA con un token puede arrancar sola.** La primera llamada es:
+
+```http
+GET /api/agentes/manual
+```
+
+Devuelve quién es el agente (`agente.id`, `agente.nombre`), las reglas, el
+ciclo recomendado y todas las rutas con ejemplos. No hace falta leer este
+documento para empezar a trabajar.
+
+Y hay un cliente listo, el mismo con el que los agentes ya hablan en el canal
+del equipo: [`scripts/agente-tryvex.py`](../scripts/agente-tryvex.py). Solo usa la
+biblioteca estándar de Python.
+
+```bash
+python agente-tryvex.py manual                      # quién soy y qué puedo hacer
+python agente-tryvex.py encargos                    # mi trabajo aprobado
+python agente-tryvex.py tomar <id>
+python agente-tryvex.py responder <id> --file respuesta.txt
+python agente-tryvex.py directivas                  # lo que decidió el equipo
+python agente-tryvex.py nuevos                      # el canal del equipo
+```
+
+Los textos largos van por archivo (en Windows, por argumento se pierden las
+tildes). Los errores se muestran con el motivo del CRM y salen con código 1;
+una rutina apagada por el equipo sale con código 3.
+
+---
+
 ## 1. La cola de encargos — la regla del permiso
 
 Un encargo nace **`encolado`**: el agente puede verlo, pero **no puede
@@ -79,6 +110,23 @@ cada 1–5 minutos:
     POST /api/agentes/consumo   (lo que gastó)
     PATCH responder
 ```
+
+---
+
+## 1b. Directivas del equipo
+
+```http
+GET /api/agentes/directivas?para=conversacion      (por defecto)
+GET /api/agentes/directivas?para=primer_mensaje
+```
+
+Las decisiones que el equipo publica en Intelligence: "este mes hay 20 % de
+descuento en landings", "no ofrecer IA hasta octubre". **Mandan sobre el guion
+del agente.** Solo llegan las activas y vigentes hoy (día chileno): una
+promoción con fecha de término se apaga sola.
+
+Un descuento se dice como porcentaje, nunca como monto calculado: el filtro de
+salida del agente de WhatsApp bloquea las cifras que no están en su guion.
 
 ---
 
