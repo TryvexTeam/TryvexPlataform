@@ -18,9 +18,10 @@
 //     puente-agente/actividad.mjs).
 //
 // Instalar / quitar (fusiona con ~/.claude/settings.json, no lo pisa):
-//   node scripts/hook-oficina.mjs --instalar
+//   node scripts/hook-oficina.mjs --instalar      ← hook + MCP del CRM, de una vez
 //   node scripts/hook-oficina.mjs --desinstalar
 //   node scripts/hook-oficina.mjs --diag
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
@@ -41,7 +42,39 @@ function rutaAjustes() {
   return join(homedir(), '.claude', 'settings.json')
 }
 
+/**
+ * Copia el hook, el MCP y lo que usan a ~/.claude/tryvex. Una carpeta estable:
+ * si el hook apuntara al repositorio, cambiar de rama lo rompería en cada mensaje.
+ */
+function copiarAInstalacion() {
+  const destino = join(homedir(), '.claude', 'tryvex')
+  const origen = dirname(ESTE_ARCHIVO)
+  mkdirSync(join(destino, 'puente-agente'), { recursive: true })
+  for (const f of ['hook-oficina.mjs', 'mcp-tryvex.mjs', 'puente-agente/llave.mjs', 'puente-agente/actividad.mjs']) {
+    const desde = join(origen, f)
+    const hacia = join(destino, f)
+    if (resolve(desde) !== resolve(hacia)) copyFileSync(desde, hacia)
+  }
+  return { hook: join(destino, 'hook-oficina.mjs'), mcp: join(destino, 'mcp-tryvex.mjs') }
+}
+
+const sinBarrasInvertidas = (ruta) => ruta.split('\\').join('/')
+
+/** Agrega el MCP del CRM a Claude Code, para este usuario. */
+function instalarMcp(rutaMcp) {
+  const args = ['mcp', 'add', '--scope', 'user', 'tryvex', '--', 'node', sinBarrasInvertidas(rutaMcp)]
+  const enWindows = process.platform === 'win32'
+  // Si ya existía (otra versión, otra ruta), se reemplaza.
+  spawnSync('claude', ['mcp', 'remove', '--scope', 'user', 'tryvex'], { stdio: 'ignore', shell: enWindows })
+  const r = spawnSync('claude', args, { encoding: 'utf8', shell: enWindows })
+  if (r.status === 0) console.log('MCP "tryvex" agregado a Claude Code (herramientas tryvex_*).')
+  else console.log(`No pude agregar el MCP solo. Hágalo a mano:\n  claude ${args.join(' ')}`)
+}
+
 function instalar() {
+  const { hook, mcp } = copiarAInstalacion()
+  instalarMcp(mcp)
+
   const ruta = rutaAjustes()
   mkdirSync(dirname(ruta), { recursive: true })
   let ajustes = {}
@@ -49,16 +82,18 @@ function instalar() {
     copyFileSync(ruta, `${ruta}.antes-hook-oficina`)
     ajustes = JSON.parse(readFileSync(ruta, 'utf8'))
   }
-  const comando = `node "${ESTE_ARCHIVO.replace(/\\/g, '/')}"`
+  const comando = `node "${sinBarrasInvertidas(hook)}"`
   ajustes.hooks ??= {}
   for (const evento of EVENTOS) {
-    const lista = (ajustes.hooks[evento] ??= [])
-    const ya = lista.some((g) => (g.hooks ?? []).some((h) => String(h.command ?? '').includes(MARCA)))
-    if (!ya) lista.push({ ...(evento === 'PreToolUse' ? { matcher: '*' } : {}), hooks: [{ type: 'command', command: comando, timeout: 5 }] })
+    // Si había una instalación anterior (apuntando a otra ruta), se reemplaza.
+    ajustes.hooks[evento] = (ajustes.hooks[evento] ?? [])
+      .map((g) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !String(h.command ?? '').includes(MARCA)) }))
+      .filter((g) => g.hooks.length > 0)
+    ajustes.hooks[evento].push({ ...(evento === 'PreToolUse' ? { matcher: '*' } : {}), hooks: [{ type: 'command', command: comando, timeout: 5 }] })
   }
   writeFileSync(ruta, `${JSON.stringify(ajustes, null, 2)}\n`)
   console.log(`Hook de la oficina instalado en ${ruta} (respaldo: settings.json.antes-hook-oficina).`)
-  console.log('Vale desde la próxima sesión de Claude Code.')
+  console.log(`Archivos en ${dirname(hook)}. Vale desde la próxima sesión de Claude Code.`)
 }
 
 function desinstalar() {
@@ -94,7 +129,8 @@ async function avisar(token, cuerpo) {
   try {
     const r = await fetch(`${CRM}/api/agentes/estado`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
+      // Sin conexión persistente: el proceso termina apenas llega la respuesta.
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8', Connection: 'close' },
       body: JSON.stringify(cuerpo),
       signal: AbortSignal.timeout(2500),
     })
@@ -158,4 +194,7 @@ if (arg === '--instalar') instalar()
 else if (arg === '--desinstalar') desinstalar()
 else if (arg === '--diag') await diag()
 else await hook().catch(() => {})
-process.exit(0)
+// Sin process.exit(): en Windows, cortar el proceso mientras una conexión se
+// está cerrando hace fallar a Node ("Assertion failed: UV_HANDLE_CLOSING"), y
+// Claude Code lo mostraría como error del hook. Se deja terminar solo, con 0.
+process.exitCode = 0
