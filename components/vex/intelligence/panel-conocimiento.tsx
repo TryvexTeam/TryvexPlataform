@@ -12,7 +12,11 @@ export interface DocumentoConocimiento {
   origen: 'manual' | 'web' | 'reunion' | 'conversacion'
   /** Un resumen de una línea de lo que contiene. */
   resumen: string
-  /** Cuántos trozos vectorizados tiene. */
+  /**
+   * Cuántas secciones tiene (encabezados del markdown). No son fragmentos
+   * vectorizados: `cerebro_docs` no se vectoriza, y llamarlos así prometería
+   * una búsqueda semántica que no existe.
+   */
   fragmentos: number
   /** Ids de los agentes que lo tienen a mano. */
   agentes: string[]
@@ -70,7 +74,7 @@ export function PanelConocimiento({ documentos, agentes }: PanelConocimientoProp
 
       <dl className="grid gap-3 sm:grid-cols-3">
         <Cifra etiqueta="Documentos" valor={documentos.length} />
-        <Cifra etiqueta="Fragmentos" valor={fragmentosTotales} />
+        <Cifra etiqueta="Secciones" valor={fragmentosTotales} />
         <Cifra
           etiqueta="Sin cita hace más de 30 días"
           valor={documentosSinCitaReciente}
@@ -118,8 +122,8 @@ export function PanelConocimiento({ documentos, agentes }: PanelConocimientoProp
               </div>
 
               <dl className="grid grid-cols-2 gap-2 text-xs tabular-nums">
-                <Dato etiqueta="fragmentos" valor={documento.fragmentos} />
-                <Dato etiqueta="citas este mes" valor={documento.citasMes} />
+                <Dato etiqueta="secciones" valor={documento.fragmentos} />
+                <Dato etiqueta="citas en 30 días" valor={documento.citasMes} />
               </dl>
 
               <div className="mt-auto flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--tx-ink-muted)]">

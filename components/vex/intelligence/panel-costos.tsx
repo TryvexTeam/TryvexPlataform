@@ -18,6 +18,18 @@ export interface CostoAgente {
 interface PanelCostosProps {
   costos: CostoAgente[]
   agentes: AgenteSala[]
+  /**
+   * Dólar observado usado para convertir. Los proveedores cobran en dólares;
+   * decir de dónde sale el número en pesos es parte de que sea creíble.
+   */
+  tasaCLP?: { valor: number; fecha: string } | null
+  /**
+   * Agentes activos que nunca reportaron su consumo. No es que no gasten: es
+   * que no se sabe. Mostrarlos en cero sería afirmar algo falso.
+   */
+  sinReporte?: string[]
+  /** Un problema que impide mostrar los costos, explicado. */
+  aviso?: string
 }
 
 const pesos = new Intl.NumberFormat('es-CL', {
@@ -28,7 +40,7 @@ const pesos = new Intl.NumberFormat('es-CL', {
 
 const enteros = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 })
 
-export function PanelCostos({ costos, agentes }: PanelCostosProps) {
+export function PanelCostos({ costos, agentes, tasaCLP, sinReporte = [], aviso }: PanelCostosProps) {
   const gastoHoy = costos.reduce((total, costo) => total + costo.gastoHoyCLP, 0)
   const gastoMes = costos.reduce((total, costo) => total + costo.gastoMesCLP, 0)
   const hoy = new Date()
@@ -47,8 +59,35 @@ export function PanelCostos({ costos, agentes }: PanelCostosProps) {
         </h2>
         <p className="mt-1 text-xs text-[var(--tx-ink-muted)]">
           Cuánto cuesta el trabajo del equipo y dónde se concentra.
+          {tasaCLP && (
+            <>
+              {' '}
+              Convertido a pesos con el dólar observado del {tasaCLP.fecha} (
+              {pesos.format(tasaCLP.valor)}).
+            </>
+          )}
         </p>
       </header>
+
+      {aviso && (
+        <p
+          className="rounded-xl px-3 py-2 text-xs text-[var(--tx-ink-secondary)]"
+          style={{
+            border: '1px solid color-mix(in oklab, var(--tx-warning) 45%, transparent)',
+            background: 'color-mix(in oklab, var(--tx-warning) 10%, transparent)',
+          }}
+        >
+          {aviso}
+        </p>
+      )}
+
+      {sinReporte.length > 0 && (
+        <p className="text-xs text-[var(--tx-ink-muted)]">
+          <b className="text-[var(--tx-ink-secondary)]">Sin reporte de consumo:</b>{' '}
+          {sinReporte.join(', ')}. Su gasto no aparece porque no lo informan, no porque sea cero.
+          Se reporta con <code>POST /api/agentes/consumo</code>.
+        </p>
+      )}
 
       <dl className="grid gap-3 sm:grid-cols-3">
         <CifraGrande etiqueta="Gasto de hoy" valor={gastoHoy} />

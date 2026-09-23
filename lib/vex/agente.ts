@@ -67,7 +67,13 @@ export interface DiaAnalytics {
 export interface AnalyticsAgente {
   rangeDays: number
   days?: DiaAnalytics[]
-  dudas?: Array<{ texto: string; veces: number }>
+  /**
+   * Dudas frecuentes que el VPS agrupa con IA. La forma es la de `Duda` en
+   * `Vex-Agente/src/lib/insights.ts`. Este tipo decía `{ texto, veces }` y no
+   * coincidía con lo que el VPS manda: cualquier pantalla que lo leyera habría
+   * mostrado dudas en blanco con un conteo NaN.
+   */
+  dudas?: Array<{ tema: string; count: number; pct: number; ejemplo?: string }>
   [clave: string]: unknown
 }
 

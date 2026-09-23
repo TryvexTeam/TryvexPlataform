@@ -144,6 +144,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
 
+  // Deja constancia de que lo agendó un agente. Sin esto el evento queda
+  // atribuido solo al integrante dueño del agente y Métricas no puede contar
+  // cuántas reuniones consiguen los agentes. Si falla, el evento ya existe y es
+  // lo que importa: se registra y se sigue, en vez de devolverle un error al
+  // agente por una etiqueta.
+  const { error: errorMarca } = await admin.from('eventos').update({ agente_id: agente.id }).eq('id', id)
+  if (errorMarca) console.error('[agentes/eventos] no se pudo marcar el agente del evento', errorMarca.message)
+
   // Espejo en Google Calendar con Meet e invitaciones. Best-effort:
   // si Google falla, el evento vive igual en el CRM.
   let meetLink: string | null = null

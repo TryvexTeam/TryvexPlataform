@@ -34,7 +34,11 @@ interface PanelTraspasosProps {
 
 /** Cuánto pesa cada motivo. Un reclamo no espera lo mismo que una consulta. */
 const PESO_MOTIVO: Record<MotivoTraspaso, number> = {
+  // Nadie le contestó a alguien que escribió: es lo más urgente que existe,
+  // porque del otro lado hay una persona esperando y creyendo que la ignoran.
+  sin_respuesta: 110,
   reclamo: 100,
+  tomado_por_humano: 30,
   dato_sensible: 90,
   precio_no_autorizado: 70,
   pidio_humano: 60,
@@ -44,6 +48,8 @@ const PESO_MOTIVO: Record<MotivoTraspaso, number> = {
 }
 
 const TEXTO_MOTIVO: Record<MotivoTraspaso, string> = {
+  sin_respuesta: 'nadie le respondió',
+  tomado_por_humano: 'lo tomó una persona',
   reclamo: 'reclamo',
   dato_sensible: 'dato sensible',
   precio_no_autorizado: 'precio no autorizado',
@@ -182,9 +188,12 @@ export function PanelTraspasos({ traspasos, agentes }: PanelTraspasosProps) {
                       Ya se intentó (no lo repita):
                     </p>
                     <ul className="mt-1 flex flex-col gap-0.5">
-                      {traspaso.intentos.map((intento) => (
+                      {traspaso.intentos.map((intento, i) => (
                         <li
-                          key={intento}
+                          // Por posición y texto: el bot repite mensajes ("👋"
+                          // dos veces en el mismo hilo), y el texto solo como
+                          // clave duplica o se come filas.
+                          key={`${i}-${intento}`}
                           className="flex items-start gap-1.5 text-[11px] text-[var(--tx-ink-secondary)]"
                         >
                           <Undo2 size={11} className="mt-0.5 shrink-0 text-[var(--tx-ink-muted)]" />
@@ -258,7 +267,8 @@ export function PanelTraspasos({ traspasos, agentes }: PanelTraspasosProps) {
 
 function InsigniaMotivo({ motivo }: { motivo: MotivoTraspaso }) {
   const esFreno = FRENOS.includes(motivo)
-  const grave = motivo === 'reclamo' || motivo === 'dato_sensible'
+  // Que nadie le conteste a quien escribió es lo más grave: va en rojo.
+  const grave = motivo === 'sin_respuesta' || motivo === 'reclamo' || motivo === 'dato_sensible'
 
   return (
     <span

@@ -3,6 +3,10 @@ import type { LeadInsert, LeadUpdate, Lead, Interaccion } from '@/lib/types/lead
 import type { FilaAccionHoy, SerieDia } from '@/lib/types/dashboard'
 import { debeAvanzarAContactado, esContacto } from '@/lib/types/lead'
 import { diaSantiago } from '@/lib/utils/fecha-santiago'
+import { esperaRespuesta } from '@/lib/leads/cierre'
+
+/** Cuántos mensajes de WhatsApp por lead se leen para saber si espera respuesta. */
+const MENSAJES_POR_LEAD = 30
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/types/database'
 
@@ -22,10 +26,18 @@ export class LeadsRepository {
     origen?: string
     responsable_id?: string
     search?: string
-  }): Promise<Lead[]> {
+  }): Promise<Array<Lead & { porResponderDesde: string | null }>> {
     let query = this.sb
       .from('fact_leads')
-      .select('*')
+      .select('*, mensajes_wa(id, direccion, texto, created_at)')
+      // Un solo pedido, acotado por lead: un hilo muy activo no puede quitar
+      // del lote los mensajes de los demás, como haría un límite global.
+      // Treinta por lead alcanzan: para saber si espera respuesta basta ver lo
+      // que llegó después de nuestro último mensaje. Con más, esta lista (que
+      // se carga en cada visita a Leads) crecería con cada conversación.
+      .order('created_at', { referencedTable: 'mensajes_wa', ascending: false })
+      .order('id', { referencedTable: 'mensajes_wa', ascending: false })
+      .limit(MENSAJES_POR_LEAD, { referencedTable: 'mensajes_wa' })
       .order('created_at', { ascending: false })
       // El kanban pinta la lista completa agrupada por estado — bajar este
       // número truncaría columnas enteras sin avisar. Es un techo de
@@ -46,7 +58,21 @@ export class LeadsRepository {
 
     const { data, error } = await query
     if (error) throw new Error(error.message)
-    return (data ?? []) as Lead[]
+    return (data ?? []).map(({ mensajes_wa, ...lead }) => {
+      const hilo = [...mensajes_wa].reverse()
+      const ultimoOut = hilo.findLastIndex((m) => m.direccion === 'out')
+      // Si los treinta son del cliente y ninguno nuestro, el lead espera
+      // respuesta: esa es la lectura honesta, y los treinta cuentan como
+      // pendientes. Nunca se lanza un error acá: un lead raro no puede tumbar
+      // la lista entera de Leads para todo el equipo.
+      const pendientes = hilo.slice(ultimoOut + 1)
+      const porResponderDesde = esperaRespuesta(
+        hilo[ultimoOut]?.texto ?? null,
+        pendientes.map((m) => m.texto),
+      ) ? pendientes[0].created_at : null
+      // Solo viaja la fecha derivada al navegador, nunca el lote de mensajes.
+      return { ...lead as Lead, porResponderDesde }
+    })
   }
 
   async getById(id: string): Promise<Lead | null> {

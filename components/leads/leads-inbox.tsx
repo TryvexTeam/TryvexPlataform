@@ -60,8 +60,8 @@ function LeadAvatar({
         // Encima del avatar y no al lado del nombre: es el lugar donde la gente
         // ya mira sin que nadie le explique, por WhatsApp y por todo lo demas.
         <span
-          title={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin responder`}
-          aria-label={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin responder`}
+          title={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin leer`}
+          aria-label={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin leer`}
           style={{
             position: 'absolute',
             top: -3,
@@ -136,7 +136,7 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_VACIOS)
   const [panelAbierto, setPanelAbierto] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  // Quien escribio por WhatsApp y sigue sin respuesta.
+  // La lectura es independiente del filtro Por responder: abrir el hilo no responde.
   const { noLeidos } = useWaNoLeidos()
 
   useEffect(() => {

@@ -2,17 +2,21 @@ import { z } from 'zod'
 
 /**
  * Tipos de la Sala de Agentes — el espacio de Intelligence donde el equipo
- * reparte trabajo a los agentes, firma lo irreversible y revisa lo entregado.
+ * reparte trabajo a los agentes, da permiso para lo que se ejecuta y revisa lo
+ * entregado.
  *
- * Se apoyan en el modelo que YA existe en la base, no en uno nuevo:
- *   · `agentes` (migración 024): identidad, color, token, último uso.
- *   · `tareas` + loop agéntico (migración 014): estados, latido, firma humana,
- *     `ejecutado_por` distinto de `validado_por`.
- *   · `tarea_evidencias` (014): la regla de oro — sin evidencia no hay entrega.
+ * De dónde sale cada cosa (verificado contra la base el 22-sep-2026):
+ *   · `agentes`: identidad, color, dueño, llave, y `ultimo_uso_at`, que es el
+ *     latido del que se deriva el estado.
+ *   · `agente_encargos`: la cola de trabajo. Nace esperando permiso.
+ *   · `mensajes_wa` + `fact_leads`: conversaciones y traspasos, derivados.
+ *   · `agente_consumo`, `agente_citas`, `agente_rutinas`, `campanas`, `mejoras`:
+ *     lo que reportan los agentes por `/api/agentes/*`.
  *
- * Lo único que todavía no tiene respaldo en la base son las RUTINAS y el estado
- * de presencia por agente; van marcados abajo. Esta primera entrega es la capa
- * visual, así que se alimenta de `lib/vex/sala-ejemplo.ts`.
+ * Ojo con una suposición vieja: la migración 014 del "loop agéntico"
+ * (`tareas.ejecutado_por`, `tarea_evidencias`) NO está aplicada en esta base.
+ * Las evidencias de un encargo todavía no tienen tabla; por eso `Encargo.evidencias`
+ * llega vacío en vez de inventarse.
  */
 
 /**
@@ -94,6 +98,8 @@ export type Encargo = z.infer<typeof EncargoSchema>
  */
 export const RutinaSchema = z.object({
   id: z.string(),
+  /** De quién es. Sin esto, cada agente mostraba las rutinas de todos. */
+  agenteId: z.string(),
   titulo: z.string(),
   descripcion: z.string(),
   /** 'reloj' corre a una hora fija; 'evento' reacciona a algo del CRM. */
@@ -254,6 +260,12 @@ export interface Canal {
  * que nadie midió, y un motivo que nadie mide no se puede arreglar.
  */
 export const MOTIVOS_TRASPASO = [
+  // Los dos primeros se DERIVAN de los mensajes reales, sin que nadie los
+  // anote: un cliente al que nadie contestó, y una persona que tomó el control
+  // de algo que atendía el bot. Los demás los tiene que declarar el agente al
+  // soltar la conversación; mientras no lo haga, no se adivinan.
+  'sin_respuesta',
+  'tomado_por_humano',
   'pidio_humano',
   'fuera_de_guion',
   'precio_no_autorizado',

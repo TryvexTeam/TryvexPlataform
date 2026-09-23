@@ -3,8 +3,9 @@ import Link from 'next/link'
 
 import type { Lead } from '@/lib/types/lead'
 
-const CATEGORIES: { id: Lead['estado'] | 'todos'; label: string }[] = [
+const CATEGORIES: { id: Lead['estado'] | 'todos' | 'por_responder'; label: string }[] = [
   { id: 'todos',            label: 'Todos'            },
+  { id: 'por_responder',    label: 'Por responder'    },
   { id: 'sin_contactar',    label: 'Sin contactar'    },
   { id: 'contactado',       label: 'Contactado'       },
   { id: 'interesado',       label: 'Interesado'       },
@@ -14,16 +15,17 @@ const CATEGORIES: { id: Lead['estado'] | 'todos'; label: string }[] = [
   { id: 'descartado',       label: 'Descartado'       },
 ]
 
-const INBOX_CATS  = CATEGORIES.filter(c => c.id === 'todos')
-const ESTADO_CATS = CATEGORIES.filter(c => c.id !== 'todos')
+const INBOX_CATS  = CATEGORIES.filter(c => c.id === 'todos' || c.id === 'por_responder')
+const ESTADO_CATS = CATEGORIES.filter(c => c.id !== 'todos' && c.id !== 'por_responder')
 
 interface LeadsCategoriesProps {
   leads: Lead[]
-  activeEstado: Lead['estado'] | 'todos'
-  onSelect: (estado: Lead['estado'] | 'todos') => void
+  porResponder: number
+  activeEstado: typeof CATEGORIES[number]['id']
+  onSelect: (estado: typeof CATEGORIES[number]['id']) => void
 }
 
-export function LeadsCategories({ leads, activeEstado, onSelect }: LeadsCategoriesProps) {
+export function LeadsCategories({ leads, porResponder, activeEstado, onSelect }: LeadsCategoriesProps) {
   const counts = leads.reduce<Record<string, number>>((acc, l) => {
     acc[l.estado] = (acc[l.estado] ?? 0) + 1
     return acc
@@ -31,12 +33,14 @@ export function LeadsCategories({ leads, activeEstado, onSelect }: LeadsCategori
   const total = leads.length
 
   function renderItem(cat: typeof CATEGORIES[number]) {
-    const count = cat.id === 'todos' ? total : (counts[cat.id] ?? 0)
+    const count = cat.id === 'todos' ? total : cat.id === 'por_responder' ? porResponder : (counts[cat.id] ?? 0)
     const isActive = activeEstado === cat.id
 
     return (
       <button
         key={cat.id}
+        type="button"
+        aria-pressed={isActive}
         onClick={() => onSelect(cat.id)}
         className="leads-categories__item"
         // El activo va en blanco, no en acento: el rojo de la marca queda
@@ -66,7 +70,7 @@ export function LeadsCategories({ leads, activeEstado, onSelect }: LeadsCategori
         <span className="leads-categories__left">
           <span className="truncate">{cat.label}</span>
         </span>
-        {count > 0 && (
+        {(count > 0 || cat.id === 'por_responder') && (
           <span
             className="leads-categories__count"
             style={{ color: isActive ? 'rgba(15,15,20,.55)' : 'var(--tx-ink-muted)' }}
@@ -79,7 +83,7 @@ export function LeadsCategories({ leads, activeEstado, onSelect }: LeadsCategori
   }
 
   return (
-    <nav className="leads-categories">
+    <nav className="leads-categories" aria-label="Categorías de leads" style={{ minWidth: 0, maxWidth: '100%' }}>
       <span className="leads-categories__title">INBOX</span>
       {INBOX_CATS.map(renderItem)}
 
