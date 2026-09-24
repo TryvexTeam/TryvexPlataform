@@ -2,6 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/types/database'
 import type { AgenteSala, Encargo, Evidencia } from '@/lib/types/sala-agentes'
 
+import { estadoEnOficina } from '@/lib/agentes/estado-oficina'
+import { estiloPorDefecto } from '@/lib/agentes/estilo-agente'
+
 export class SalaAgentesRepository {
   constructor(private readonly sb: SupabaseClient) {}
 
@@ -30,6 +33,9 @@ export class SalaAgentesRepository {
         nombre: agente.nombre,
         oficio: agente.descripcion ?? '',
         color: agente.color ?? 'var(--tx-ink-muted)',
+        colorHex: agente.color && /^#[0-9a-f]{6}$/i.test(agente.color) ? agente.color : '#8a8f98',
+        actividad: null,
+        estilo: estiloPorDefecto(agente.nombre),
         estado: !Number.isFinite(ultimoUso) || ahora - ultimoUso > 15 * 60 * 1000
           ? 'sin_latido'
           : 'en_reposo',
@@ -39,6 +45,11 @@ export class SalaAgentesRepository {
         encargosHoy: 0,
         // NO VERIFICADO: agentes.proxima_rutina. La tabla rutinas no existe.
         proximaRutina: null,
+        // Sin encargos ni lo declarado a mano, solo queda el latido.
+        oficina: estadoEnOficina({
+          activo: agente.activo, ultimoUsoAt: agente.ultimo_uso_at, declarado: null, declaradoHasta: null,
+          nota: null, encargoEnCurso: null, esperandoPermiso: false, ahora,
+        }),
       }
     })
   }

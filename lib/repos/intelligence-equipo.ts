@@ -434,6 +434,7 @@ export function herramientasDelCRM(): Herramienta[] {
     { id: 'rutinas', nombre: 'Rutinas', ruta: '/api/agentes/rutinas', detalle: 'Declara sus rutinas y reporta cada corrida.', concedida: true, exigeFirma: false },
     { id: 'mejoras', nombre: 'Proponer mejoras', ruta: '/api/agentes/mejoras', detalle: 'Propone un cambio con su evidencia. Aplicarlo requiere que una persona lo apruebe.', concedida: true, exigeFirma: true },
     { id: 'directivas', nombre: 'Directivas del equipo', ruta: '/api/agentes/directivas', detalle: 'Lee las decisiones vigentes del equipo (promociones, cambios de tono) para aplicarlas en todo.', concedida: true, exigeFirma: false },
+    { id: 'estado', nombre: 'Estado en la oficina', ruta: '/api/agentes/estado', detalle: 'Dice si está trabajando, descansando o ausente, con una nota. Lo declarado vence solo.', concedida: true, exigeFirma: false },
     { id: 'demos', nombre: 'Demos', ruta: '/api/agentes/demos', detalle: 'Consulta si un número tiene una demo activa y gasta su cupo. Solo la usa el agente de WhatsApp.', concedida: true, exigeFirma: false },
   ]
 }

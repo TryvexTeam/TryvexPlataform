@@ -72,10 +72,23 @@ export async function autenticarAgente(
 
   // Esto ES el latido: cada llamada de un agente dice "sigo vivo". La Sala
   // deriva el estado de acá, así que no es un detalle cosmético.
-  await admin.from('agentes').update({ ultimo_uso_at: new Date().toISOString() }).eq('id', fila.id)
+  //
+  // Pero se escribe como máximo cada 2 minutos. `agentes` está en tiempo real
+  // y cada escritura hace recargar Intelligence en todas las pantallas
+  // abiertas: con varios puentes consultando la cola cada 15 segundos, la
+  // pantalla no paraba de recargarse. Para saber quién está, 2 minutos sobran.
+  const ahora = Date.now()
+  await admin
+    .from('agentes')
+    .update({ ultimo_uso_at: new Date(ahora).toISOString() })
+    .eq('id', fila.id)
+    .or(`ultimo_uso_at.is.null,ultimo_uso_at.lt.${new Date(ahora - LATIDO_CADA_MS).toISOString()}`)
 
   return { agente: { id: fila.id, nombre: fila.nombre }, admin }
 }
+
+/** Cada cuánto se guarda el latido, como máximo. */
+const LATIDO_CADA_MS = 2 * 60_000
 
 function noAutorizado(): NextResponse {
   return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })

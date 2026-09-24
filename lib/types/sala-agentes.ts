@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { ESTADOS_OFICINA } from '@/lib/agentes/estado-oficina'
+import { TRAJES } from '@/lib/agentes/estilo-agente'
 
 /**
  * Tipos de la Sala de Agentes — el espacio de Intelligence donde el equipo
@@ -48,6 +50,16 @@ export type EstadoEncargo = (typeof ESTADOS_ENCARGO)[number]
 export const TIPOS_EVIDENCIA = ['exit_code', 'screenshot', 'url', 'log', 'test'] as const
 export type TipoEvidencia = (typeof TIPOS_EVIDENCIA)[number]
 
+export const ActividadAgenteSchema = z.object({
+  herramienta: z.string().nullable(),
+  herramientaAt: z.string().nullable(),
+  turnoDesde: z.string().nullable(),
+  herramientasTurno: z.number(),
+  /** Las últimas herramientas, la más reciente primero. */
+  recientes: z.array(z.object({ h: z.string(), at: z.string() })),
+})
+export type ActividadAgente = z.infer<typeof ActividadAgenteSchema>
+
 export const AgenteSalaSchema = z.object({
   id: z.string(),
   nombre: z.string(),
@@ -63,6 +75,19 @@ export const AgenteSalaSchema = z.object({
   encargosHoy: z.number(),
   /** Cuándo corre su próxima rutina, en texto de persona. */
   proximaRutina: z.string().nullable(),
+  /** Lo que muestra la oficina 3D (lib/agentes/estado-oficina.ts). */
+  oficina: z.object({
+    estado: z.enum(ESTADOS_OFICINA),
+    nota: z.string().nullable(),
+    fuente: z.enum(['encargo', 'permiso', 'declarado', 'latido', 'desactivado']),
+    venceAt: z.string().nullable(),
+  }),
+  /** El color tal cual está en la base (hex). La escena 3D no entiende tokens CSS. */
+  colorHex: z.string(),
+  /** Qué hace en este momento, según el hook de Claude Code (tabla agente_actividad). */
+  actividad: ActividadAgenteSchema.nullable(),
+  /** Cómo se ve en la oficina (lib/agentes/estilo-agente.ts). */
+  estilo: z.object({ traje: z.enum(TRAJES) }),
 })
 export type AgenteSala = z.infer<typeof AgenteSalaSchema>
 

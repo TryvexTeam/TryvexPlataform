@@ -25,6 +25,7 @@ import {
   Wallet,
   ShieldCheck,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { TryvexLogo } from '@/components/shared/tryvex-logo'
 
 const MotionLink = motion.create(Link)
@@ -110,7 +111,7 @@ function NavItem({
 }: {
   href: string
   label: string
-  icon: React.ElementType
+  icon: LucideIcon
   active: boolean
   count: number | null
   onNavigate?: () => void

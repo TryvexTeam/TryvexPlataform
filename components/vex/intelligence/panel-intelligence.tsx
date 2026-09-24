@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { AlertTriangle, Brain, BriefcaseBusiness, Radio, Smartphone, TrendingUp, Users } from 'lucide-react'
 import { NavIntelligence, type SeccionNav } from './nav-intelligence'
 import { SalaAgentes } from './sala-agentes'
+import { OficinaAgentes } from './oficina/oficina-agentes'
 import { EspacioAgente } from './espacio-agente'
 import { PanelHilos } from './panel-hilos'
 import { PanelCostos, type CostoAgente } from './panel-costos'
@@ -293,7 +294,26 @@ export function PanelIntelligence(props: PanelIntelligenceProps) {
           alArchivar={props.alArchivar}
         />
       )}
-      {vista === 'sala' && <SalaAgentes agentes={agentes} encargos={props.encargosSala} />}
+      {vista === 'sala' && (
+        <div className="flex min-w-0 flex-col gap-6">
+          <OficinaAgentes
+            agentes={agentes}
+            encargos={cola}
+            zonas={{
+              cola: cola.filter((e) => e.estado === 'encolado').length,
+              conocimiento: props.documentos.length,
+              whatsapp: props.conversaciones.reduce((t, c) => t + c.sinLeer, 0),
+              directivas: props.directivas.filter((d) => d.vigente).length,
+            }}
+            alIr={(zona) =>
+              setVista(
+                ({ cola: 'cola', conocimiento: 'conocimiento', whatsapp: 'conversaciones', directivas: 'directivas' } as const)[zona],
+              )
+            }
+          />
+          <SalaAgentes agentes={agentes} encargos={props.encargosSala} />
+        </div>
+      )}
       {vista === 'espacio' && (
         <EspacioAgente
           agentes={agentes}

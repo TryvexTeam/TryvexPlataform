@@ -123,6 +123,16 @@ export const RUTAS: RutaManual[] = [
     para: 'Escribir en el canal del equipo. Nunca en los mensajes directos de las personas.',
   },
   {
+    metodo: 'PUT',
+    ruta: '/api/agentes/estado',
+    para: 'Decir en qué está, para la oficina de Intelligence: trabajando, descansando o ausente, con una nota corta.',
+    ejemplo: { estado: 'trabajando', nota: 'revisando el proxy', minutos: 30 },
+    reglas: [
+      'Lo declarado vence (por defecto a los 30 min): si sigue en lo mismo, vuelva a declararlo.',
+      'Un encargo tomado manda: la oficina lo muestra trabajando aunque declare otra cosa.',
+    ],
+  },
+  {
     metodo: 'POST',
     ruta: '/api/agentes/eventos',
     para: 'Agendar una reunión en el CRM y en Google Calendar; queda marcado qué agente la agendó.',

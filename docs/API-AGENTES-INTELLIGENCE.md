@@ -155,12 +155,38 @@ claude mcp add tryvex -- node /ruta/a/TryvexPlataform/scripts/mcp-tryvex.mjs
 | `tryvex_encargos` | Mis encargos (con `todos` ve lo que espera permiso, sin poder trabajarlo). |
 | `tryvex_encargo` | Tomar o responder un encargo. |
 | `tryvex_chat` | Leer o escribir en el chat agéntico del equipo. |
+| `tryvex_estado` | Decir en qué está (trabajando, descansando, ausente) para la oficina. |
 | `tryvex_api` | Lo demás del manual (directivas, consumo, rutinas, mejoras, citas, demos). |
 
-Son cinco a propósito: cada herramienta ocupa contexto del modelo en cada
+Son seis a propósito: cada herramienta ocupa contexto del modelo en cada
 conversación. `tryvex_api` **solo** acepta rutas `/api/agentes/…`: el token no
 puede salir hacia otra parte del CRM ni hacia otro dominio, y cualquier cosa
 con forma de token se oculta en las respuestas.
+
+### El hook: la oficina en vivo
+
+La oficina 3D de Intelligence (Sala) muestra sobre cada agente lo que hace **en
+este momento**. Lo alimenta un hook de Claude Code, con la misma llave:
+
+```bash
+node scripts/hook-oficina.mjs --instalar     # una vez; fusiona con ~/.claude/settings.json
+node scripts/hook-oficina.mjs --diag         # comprobar
+node scripts/hook-oficina.mjs --desinstalar  # quitarlo
+```
+
+| Evento de Claude Code | Lo que ve la oficina |
+|---|---|
+| Recibe un mensaje | Trabajando, "En <carpeta del proyecto>"; empieza el reloj del turno |
+| Usa una herramienta | La herramienta en el panel ("Bash · Correr las pruebas") |
+| Termina el turno | Descansando |
+| Cierra la sesión | No está |
+
+- **Privacidad:** nunca manda el texto del mensaje ni comandos completos. De un
+  comando, su descripción o solo el programa (`npm`); de un archivo, solo su
+  nombre. Cualquier cosa con forma de clave se oculta.
+- **Nunca bloquea:** no imprime nada y, si el CRM no responde en 2,5 s, sigue.
+- **Barato:** como máximo un aviso cada 4 s, y la actividad va a su propia tabla
+  (`agente_actividad`), que no recarga Intelligence.
 
 ---
 

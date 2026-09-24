@@ -12,6 +12,7 @@ import {
   UserPlusIcon,
   XIcon,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { Notificacion } from '@/lib/repos/notificaciones'
 
 /**
@@ -39,7 +40,7 @@ interface PilaNotificacionesProps {
   onDescartar: (ids: string[]) => void
 }
 
-const ICONOS: Record<string, React.ElementType> = {
+const ICONOS: Record<string, LucideIcon> = {
   nuevo_cliente: UserPlusIcon,
   proyecto_asignado: FolderKanbanIcon,
   entrega_proxima: CalendarClockIcon,
