@@ -6,7 +6,11 @@ import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { AsignacionesRepository } from '@/lib/repos/asignaciones'
 import { MensajesWaRepository } from '@/lib/repos/mensajes-wa'
 import { debeAvanzarAContactado } from '@/lib/types/lead'
-import { transporteActivo, enviarPorVex } from '@/lib/wa/transporte'
+import {
+  transporteActivo,
+  enviarPorVex,
+  explicarTransporteSinConfigurar,
+} from '@/lib/wa/transporte'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -95,7 +99,20 @@ export async function POST(req: Request) {
   // decide.
   let referenciaVex: string | number | undefined
   let avisoRegistro: string | undefined
-  if (transporteActivo() === 'vex') {
+
+  // Sin transporte elegido no se manda nada, y se dice por qué.
+  //
+  // Antes esto caía a `puente` por omisión y el mensaje quedaba 'encolado'
+  // esperando a un proceso que ya no existe. No había error que mirar —nadie
+  // falló, nadie fue a buscarlo— así que desde la pantalla se veía igual que
+  // un envío en camino. 502 y el motivo: es peor un mensaje que se cree
+  // enviado que uno que avisa que no salió.
+  const transporte = transporteActivo()
+  if (transporte === 'sin_configurar') {
+    return NextResponse.json({ error: explicarTransporteSinConfigurar() }, { status: 502 })
+  }
+
+  if (transporte === 'vex') {
     const envio = await enviarPorVex(numero, texto, nombreNegocio ?? undefined)
     if (!envio.ok) {
       return NextResponse.json(

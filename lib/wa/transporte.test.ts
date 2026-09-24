@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { transporteActivo, enviarPorVex } from './transporte'
+import { transporteActivo, enviarPorVex, explicarTransporteSinConfigurar } from './transporte'
 
 const AGENTE = 'https://agente.test'
 const TOKEN = 'txa_token'
@@ -25,20 +25,55 @@ afterEach(() => {
 })
 
 describe('transporteActivo', () => {
-  it('usa el puente por defecto — desplegar no cambia producción por sí solo', () => {
-    expect(transporteActivo()).toBe('puente')
+  /**
+   * Antes, sin la variable esto devolvía 'puente'. Tenía sentido mientras el
+   * puente corría: desplegar no cambiaba producción por sí solo. Pero el puente
+   * murió, y el default pasó a mandar mensajes a un proceso inexistente.
+   *
+   * Costó cuatro mensajes en 'encolado' durante dos días, sin un solo error que
+   * mirar, porque nadie falló — nadie fue a buscarlos.
+   */
+  it('sin la variable NO elige: avisa', () => {
+    expect(transporteActivo()).toBe('sin_configurar')
   })
 
-  it('cambia a vex solo con el valor exacto', () => {
+  it('usa vex solo con el valor exacto', () => {
     process.env.WA_TRANSPORTE = 'vex'
     expect(transporteActivo()).toBe('vex')
   })
 
-  it('cualquier otro valor cae al puente, no a un estado raro', () => {
-    for (const v of ['VEX', 'agente', 'si', '1', '']) {
+  it('el puente sigue disponible, pero hay que pedirlo', () => {
+    // No desaparece: el corte entre transportes debe ser deliberado, y volver
+    // atrás tiene que ser posible sin tocar código.
+    process.env.WA_TRANSPORTE = 'puente'
+    expect(transporteActivo()).toBe('puente')
+  })
+
+  it('tolera mayúsculas y espacios, que es como se escriben las variables a mano', () => {
+    for (const v of [' VEX ', 'Vex', '  vex']) {
       process.env.WA_TRANSPORTE = v
-      expect(transporteActivo()).toBe('puente')
+      expect(transporteActivo()).toBe('vex')
     }
+  })
+
+  it('un valor que no existe tampoco elige por su cuenta', () => {
+    for (const v of ['agente', 'si', '1', '']) {
+      process.env.WA_TRANSPORTE = v
+      expect(transporteActivo()).toBe('sin_configurar')
+    }
+  })
+})
+
+describe('explicarTransporteSinConfigurar', () => {
+  it('cuando falta, nombra la variable y qué poner', () => {
+    const m = explicarTransporteSinConfigurar()
+    expect(m).toContain('WA_TRANSPORTE')
+    expect(m).toContain('vex')
+  })
+
+  it('cuando el valor es inválido, lo cita para que se vea el error de tipeo', () => {
+    process.env.WA_TRANSPORTE = 'vexx'
+    expect(explicarTransporteSinConfigurar()).toContain('"vexx"')
   })
 })
 
