@@ -116,9 +116,12 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
         Volver
       </button>
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <h1 className="text-xl font-bold text-[var(--tx-ink-primary)] leading-snug">{tarea.titulo}</h1>
+      {/* Header. `flex-wrap` + `min-w-0`: mismo patrón que lead-detalle.tsx y
+          cliente-detalle.tsx -- un título largo junto a "Restaurar" +
+          "Eliminar para siempre" (la etiqueta más larga de las tres fichas
+          hermanas) no cabían en una fila en el teléfono. */}
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <h1 className="min-w-0 break-words text-xl font-bold text-[var(--tx-ink-primary)] leading-snug">{tarea.titulo}</h1>
         <div className="flex items-center gap-2 shrink-0">
           {tarea.eliminado_at ? (
             <>
