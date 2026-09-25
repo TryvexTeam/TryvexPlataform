@@ -55,6 +55,13 @@ export function FrenoJornada({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accion: 'entrada' }),
       })
+      // 409 = ya estaba abierta (la marcó en otra pestaña o en el celular): lo
+      // que la persona quería ya está hecho, así que se deja pasar.
+      if (res.status === 409) {
+        toast.info('Ya tenías la jornada abierta.')
+        router.refresh()
+        return
+      }
       if (!res.ok) throw new Error('no se pudo')
       toast.success('Jornada empezada')
       router.refresh()
