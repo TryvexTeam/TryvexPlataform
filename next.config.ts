@@ -9,13 +9,28 @@ import type { NextConfig } from "next";
  * confirme que la lista de orígenes está completa, pasar a enforce quitando
  * "-Report-Only" del header.
  */
+/**
+ * El Supabase del CRM ya no vive en `*.supabase.co`: desde el 26-sep-2026 es
+ * self-hosted en el VPS. Su origen sale de la misma variable que usa el cliente,
+ * así la CSP sigue al host si vuelve a cambiar. `*.supabase.co` se mantiene
+ * mientras existan despliegues viejos apuntando a la nube.
+ */
+const supabaseOrigenes = (() => {
+  try {
+    const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')
+    return `${url.origin} wss://${url.host}`
+  } catch {
+    return ''
+  }
+})()
+
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://generativelanguage.googleapis.com https://graph.facebook.com https://rtc.live.cloudflare.com",
+  `connect-src 'self' ${supabaseOrigenes} https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://generativelanguage.googleapis.com https://graph.facebook.com https://rtc.live.cloudflare.com`,
   "frame-src 'self' https://www.youtube.com https://music.youtube.com https://vimeo.com",
   "media-src 'self' blob: https:",
   "object-src 'none'",
