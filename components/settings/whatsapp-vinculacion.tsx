@@ -253,7 +253,7 @@ function cuerpoPara({ estado, imagen, conectado, baneado, sinLatidoHace }: Cuerp
         <Mensaje
           icono={<WifiOff size={18} className="text-red-500" />}
           titulo="El agente no responde"
-          detalle="No se pudo contactar al agente de WhatsApp. Revisá que el servicio esté arriba."
+          detalle="No se llega al agente de WhatsApp: o está caído, o el proxy del VPS (Traefik de Coolify) no lo encuentra. La vinculación no se toca: no reescanee."
         />
       )
 

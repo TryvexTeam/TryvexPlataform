@@ -119,6 +119,21 @@ describe('obtenerEstadoQr', () => {
     expect((await obtenerEstadoQr()).estado).toBe('token_invalido')
   })
 
+  it('un 503 del proxy del VPS NO es la credencial: no se llega al agente', async () => {
+    // Lo que pasó el 28-sep-2026: el Traefik de Coolify no tenía ruta hacia el
+    // agente y respondía esto. El panel decía "rechazó la credencial" y la
+    // credencial estaba perfecta.
+    simularAgente(new Response('no available server', { status: 503, headers: { 'content-type': 'text/plain' } }))
+
+    expect((await obtenerEstadoQr()).estado).toBe('sin_respuesta')
+  })
+
+  it('un 503 vacío tampoco se atribuye a la credencial', async () => {
+    simularAgente(new Response('', { status: 503 }))
+
+    expect((await obtenerEstadoQr()).estado).toBe('sin_respuesta')
+  })
+
   it('reporta sin respuesta ante un error del agente', async () => {
     simularAgente(responder(500, { ok: false }))
 

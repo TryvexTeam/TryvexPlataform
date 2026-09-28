@@ -68,6 +68,12 @@ const TIEMPO_LIMITE_MS = 10_000
  * token por query param, lo que lo dejaba escrito en cualquier log de acceso
  * intermedio; una cabecera no queda registrada así.
  */
+/** ¿Este 503 lo mandó el propio agente, por arrancar sin sus claves de panel? */
+async function esElAgenteSinCredenciales(res: Response): Promise<boolean> {
+  const cuerpo = await res.text().catch(() => '')
+  return /sin credenciales/i.test(cuerpo)
+}
+
 export async function obtenerEstadoQr(): Promise<ResultadoQr> {
   const urlAgente = process.env.VEX_AGENT_URL?.replace(/\/+$/, '')
   const token = process.env.VEX_AGENT_TOKEN
@@ -83,8 +89,14 @@ export async function obtenerEstadoQr(): Promise<ResultadoQr> {
 
     // 401/403: el agente está vivo pero no acepta nuestro token.
     if (res.status === 401 || res.status === 403) return { estado: 'token_invalido' }
-    // 503: el agente corre sin sus credenciales de panel y se cerró solo.
-    if (res.status === 503) return { estado: 'token_invalido' }
+    // 503: puede venir del agente o del proxy que tiene delante, y se
+    // arreglan en lugares distintos. Solo es "credencial" si lo dice el
+    // agente (su JSON "Panel sin credenciales…"); cualquier otro 503 —el
+    // "no available server" de Traefik, uno vacío— es que no se llega a él.
+    // El 28-sep-2026 esa confusión mandó a revisar un token que estaba bien.
+    if (res.status === 503) {
+      return (await esElAgenteSinCredenciales(res)) ? { estado: 'token_invalido' } : { estado: 'sin_respuesta' }
+    }
     if (!res.ok) return { estado: 'sin_respuesta' }
 
     const datos = (await res.json()) as RespuestaAgente

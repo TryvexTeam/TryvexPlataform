@@ -127,11 +127,20 @@ describe('errores', () => {
     expect(error.message).not.toContain(TOKEN)
   })
 
-  it('explica el 503 como agente sin credenciales', async () => {
-    simular(responder(503, { ok: false }))
+  it('explica el 503 como agente sin credenciales cuando lo dice el agente', async () => {
+    // El cuerpo real que manda el agente (src/proxy.ts de Vex-Agente).
+    simular(responder(503, { ok: false, error: 'Panel sin credenciales configuradas. Definí DASHBOARD_USER…' }))
 
     const error = await obtenerAjustes().catch((e) => e)
     expect(error.message).toContain('credenciales')
+  })
+
+  it('un 503 del proxy del VPS no se atribuye a las credenciales', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('no available server', { status: 503 }))
+
+    const error = await obtenerAjustes().catch((e) => e)
+    expect(error.status).toBe(503)
+    expect(error.message).toContain('No se llega al agente')
   })
 
   it('acota el cuerpo del error para no volcar una página entera', async () => {
