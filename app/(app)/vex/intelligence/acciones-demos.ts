@@ -23,7 +23,7 @@ const CrearDemoSchema = z.object({
   // formulario y choca en la base con un error que nadie entiende.
   nombreNegocio: z.string().trim().min(2, 'Escriba el nombre del negocio.').max(120, 'El nombre admite hasta 120 caracteres.'),
   telefono: z.string().transform(normalizarTelefonoDemo)
-    .pipe(z.string('Ingrese un teléfono de 8 a 15 dígitos, con código de país.')),
+    .pipe(z.string('Revise el teléfono: un celular chileno (9 dígitos, o con +56) o uno extranjero con + y código de país.')),
   guion: z.string().trim().min(50, 'El guion necesita al menos 50 caracteres.').max(8000, 'El guion admite hasta 8000 caracteres.'),
   horas: z.union([z.literal(24), z.literal(72), z.literal(168)], { error: 'Elija una duración de 24 horas, 3 días o 7 días.' }),
   limiteMensajes: z.number().int('El límite debe ser un número entero.').min(1, 'El límite mínimo es 1 mensaje.').max(500, 'El límite máximo es 500 mensajes.'),
