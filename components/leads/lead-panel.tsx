@@ -18,7 +18,9 @@ import {
   Trophy,
   XCircle,
   Pencil,
-  StickyNote as StickyNoteIcon
+  StickyNote as StickyNoteIcon,
+  ExternalLink,
+  History,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Lead, Interaccion } from '@/lib/types/lead'
@@ -28,6 +30,8 @@ import { LeadForm } from './lead-form'
 import { NotaInterna } from './nota-interna'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { LeadChatWa } from './lead-chat-wa'
+import { LeadEscribirWhatsapp } from './lead-escribir-whatsapp'
+import { LeadHistorialManual } from './lead-historial-manual'
 import { LeadPitchModal } from './lead-pitch-modal'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
@@ -46,6 +50,14 @@ const origenLabels: Record<Lead['origen'], string> = {
   manual:   'Manual',
   referido: 'Referido',
 }
+
+/** Pantalla completa en el teléfono: devolver el espacio de la Dynamic Island y la barra de gestos. */
+const MARGENES_SEGUROS = {
+  paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))',
+  paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+  paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+  paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+} as const
 
 interface LeadPanelProps {
   lead: Lead | null
@@ -94,6 +106,11 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   // el botón de WhatsApp haría que el atajo no sirviera de nada.
   const [chatAbierto, setChatAbierto] = useState(searchParams.get('chat') === '1')
   const [pitchAbierto, setPitchAbierto] = useState(false)
+  // Escribir desde el WhatsApp propio (no depende del QR del equipo) y el
+  // historial anotado a mano de lo que se habla por ahí.
+  const [whatsappPropioAbierto, setWhatsappPropioAbierto] = useState(false)
+  const [historialAbierto, setHistorialAbierto] = useState(false)
+  const [historialVersion, setHistorialVersion] = useState(0)
   // "Llamé" no abre un formulario: solo pregunta si contestó, para poder
   // pintar el ícono de teléfono distinto en la tarjeta sin abrir la ficha.
   const [showLlamada, setShowLlamada] = useState(false)
@@ -543,8 +560,8 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             </button>
           </div>
         )}
-        {/* `flex-wrap`: son 6 botones ("Ganado", "Perdido", "Llamé",
-            "Registrar Contacto", "WhatsApp", "Pitch") y sin esto no entraban
+        {/* `flex-wrap`: son 8 botones ("Ganado", "Perdido", "Llamé",
+            "Registrar Contacto", "Chat CRM", "WhatsApp", "Historial", "Pitch") y sin esto no entraban
             en una sola fila en un teléfono — como `<main>` tiene
             `overflow-x-hidden` (necesario en el resto de la app para que no
             aparezca scroll lateral), los últimos botones quedaban cortados y
@@ -593,9 +610,27 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             }`}
           >
             <MessageCircle size={12} />
-            <span>{chatAbierto ? 'Cerrar chat' : 'WhatsApp'}</span>
+            {/* "Chat CRM" y no "WhatsApp": sale por el número del equipo y
+                depende del QR vinculado. El de al lado es tu WhatsApp. */}
+            <span>{chatAbierto ? 'Cerrar chat' : 'Chat CRM'}</span>
           </button>
         )}
+        {lead.telefono && (
+          <button
+            onClick={() => setWhatsappPropioAbierto(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-green-500/15 bg-green-500/5 hover:bg-green-500/15 text-green-400 transition-colors"
+          >
+            <ExternalLink size={12} />
+            <span>WhatsApp</span>
+          </button>
+        )}
+        <button
+          onClick={() => setHistorialAbierto(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.06] text-[var(--tx-ink-secondary)] transition-colors"
+        >
+          <History size={12} />
+          <span>Historial</span>
+        </button>
 
         <button
           onClick={() => setPitchAbierto(true)}
@@ -673,6 +708,43 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Mismo patrón de modal que el chat del CRM: pantalla completa en el
+            teléfono (con los márgenes de la Dynamic Island), ventana en el
+            escritorio. `key` por la misma razón: el panel no se remonta al
+            cambiar de lead y el texto de una ficha no puede quedar en otra. */}
+        {lead.telefono && (
+          <Dialog open={whatsappPropioAbierto} onOpenChange={setWhatsappPropioAbierto}>
+            <DialogContent
+              showCloseButton={false}
+              className="modal-pantalla-movil flex flex-col gap-0 p-4 max-w-none w-screen rounded-none sm:w-full sm:max-w-lg sm:rounded-xl"
+              style={MARGENES_SEGUROS}
+            >
+              <DialogTitle className="sr-only">Escribir por WhatsApp a {lead.nombre_negocio ?? 'este lead'}</DialogTitle>
+              <LeadEscribirWhatsapp
+                key={lead.id}
+                lead={lead}
+                onCerrar={() => setWhatsappPropioAbierto(false)}
+                onAnotado={() => setHistorialVersion((v) => v + 1)}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
+        <Dialog open={historialAbierto} onOpenChange={setHistorialAbierto}>
+          <DialogContent
+            showCloseButton={false}
+            className="modal-pantalla-movil flex flex-col gap-0 p-4 max-w-none w-screen rounded-none sm:w-full sm:max-w-lg sm:rounded-xl sm:h-[80vh]"
+            style={MARGENES_SEGUROS}
+          >
+            <DialogTitle className="sr-only">Historial de {lead.nombre_negocio ?? 'este lead'}</DialogTitle>
+            <LeadHistorialManual
+              key={lead.id}
+              lead={lead}
+              version={historialVersion}
+              onCerrar={() => setHistorialAbierto(false)}
+            />
+          </DialogContent>
+        </Dialog>
 
         {/* El pitch: datos de contacto para confirmar, estado, y el guion de
             llamada personalizado del negocio. Se abre desde el botón "Pitch". */}
