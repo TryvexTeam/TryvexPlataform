@@ -1483,6 +1483,7 @@ export interface Database {
           voucher_path: string | null
           voucher_nombre: string | null
           notas: string | null
+          negocio: string
           creado_por: string | null
           created_at: string
           updated_at: string
@@ -1503,6 +1504,7 @@ export interface Database {
           voucher_path?: string | null
           voucher_nombre?: string | null
           notas?: string | null
+          negocio?: string
           creado_por?: string | null
           created_at?: string
           updated_at?: string
@@ -1523,6 +1525,7 @@ export interface Database {
           voucher_path?: string | null
           voucher_nombre?: string | null
           notas?: string | null
+          negocio?: string
           creado_por?: string | null
           created_at?: string
           updated_at?: string

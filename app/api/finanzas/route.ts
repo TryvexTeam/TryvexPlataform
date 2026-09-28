@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     hasta: searchParams.get('hasta') ?? undefined,
     tipo: searchParams.get('tipo') ?? undefined,
     categoria: searchParams.get('categoria') ?? undefined,
+    negocio: searchParams.get('negocio') ?? undefined,
   })
   if (!filtro.success) {
     return NextResponse.json({ success: false, error: filtro.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })

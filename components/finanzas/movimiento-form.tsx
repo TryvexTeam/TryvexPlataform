@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SelectorFecha } from '@/components/ui/selector-fecha'
-import {
+import { NEGOCIOS, NEGOCIO_POR_DEFECTO,
   CATEGORIA_LABELS,
   METODOS_PAGO,
   METODO_LABELS,
@@ -78,6 +78,7 @@ function estadoInicial(mov?: Movimiento, venta?: VentaACobrar) {
       contraparte: '',
       cliente_id: venta.cliente_id,
       notas: '',
+      negocio: NEGOCIO_POR_DEFECTO as string,
     }
   }
   return {
@@ -90,6 +91,7 @@ function estadoInicial(mov?: Movimiento, venta?: VentaACobrar) {
     contraparte: mov?.contraparte ?? '',
     cliente_id: mov?.cliente_id ?? NINGUNO,
     notas: mov?.notas ?? '',
+    negocio: (mov?.negocio ?? NEGOCIO_POR_DEFECTO) as string,
   }
 }
 
@@ -170,6 +172,7 @@ export function MovimientoForm({ open, onOpenChange, movimiento, venta, clientes
         cliente_id: form.cliente_id === NINGUNO ? null : form.cliente_id,
         venta_id: venta?.id ?? movimiento?.venta_id ?? null,
         notas: form.notas || null,
+        negocio: form.negocio,
         voucher_path: voucher?.path ?? movimiento?.voucher_path ?? null,
         voucher_nombre: voucher?.nombre ?? movimiento?.voucher_nombre ?? null,
       }
@@ -258,6 +261,18 @@ export function MovimientoForm({ open, onOpenChange, movimiento, venta, clientes
               </Select>
               {errors.categoria && <p className="text-xs text-red-500">{errors.categoria}</p>}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="mov-negocio">Negocio</Label>
+            <Select value={form.negocio} onValueChange={(v) => set('negocio', v ?? NEGOCIO_POR_DEFECTO)} disabled={!!venta}>
+              <SelectTrigger id="mov-negocio"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {NEGOCIOS.map((n) => (
+                  <SelectItem key={n} value={n}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-1.5">
