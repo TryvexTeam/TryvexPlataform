@@ -57,6 +57,15 @@ const TODAS_CATEGORIAS = [...CATEGORIAS_INGRESO, ...CATEGORIAS_EGRESO] as unknow
  * necesita sin él: en un PATCH puede venir solo el monto, y la regla "la categoría
  * corresponde al tipo" no se puede evaluar sin los dos campos presentes.
  */
+/**
+ * De qué negocio viene cada movimiento. La tabla es compartida con Tryvex Store
+ * (la tienda escribe ahí sus ventas y compras de stock marcadas como tales), y
+ * sin esta etiqueta no había forma de separar la plata de cada negocio.
+ */
+export const NEGOCIOS = ['Tryvex Agencia', 'Tryvex Store'] as const
+export type Negocio = (typeof NEGOCIOS)[number]
+export const NEGOCIO_POR_DEFECTO: Negocio = 'Tryvex Agencia'
+
 const MovimientoCamposSchema = z.object({
     tipo: z.enum(['ingreso', 'egreso']),
     categoria: z.enum(TODAS_CATEGORIAS),
@@ -72,6 +81,7 @@ const MovimientoCamposSchema = z.object({
     voucher_path: z.string().max(500).nullable().optional(),
     voucher_nombre: z.string().max(300).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
+  negocio: z.enum(NEGOCIOS).optional(),
 })
 
 /** La categoría tiene que corresponder al tipo: un "sueldo" que mete plata a la caja
@@ -97,6 +107,7 @@ export const FiltroFinanzasSchema = z.object({
   hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   tipo: z.enum(['ingreso', 'egreso']).optional(),
   categoria: z.string().optional(),
+  negocio: z.enum(NEGOCIOS).optional(),
 })
 
 export type MovimientoInsert = z.infer<typeof MovimientoInsertSchema>
@@ -119,6 +130,8 @@ export type Movimiento = {
   voucher_path: string | null
   voucher_nombre: string | null
   notas: string | null
+  /** 'Tryvex Agencia' o 'Tryvex Store'. */
+  negocio: string
   creado_por: string | null
   created_at: string
   updated_at: string

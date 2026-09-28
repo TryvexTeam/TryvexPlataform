@@ -31,6 +31,7 @@ export class FinanzasRepository {
     if (filtro.hasta) q = q.lte('fecha', filtro.hasta)
     if (filtro.tipo) q = q.eq('tipo', filtro.tipo)
     if (filtro.categoria) q = q.eq('categoria', filtro.categoria)
+    if (filtro.negocio) q = q.eq('negocio', filtro.negocio)
 
     const { data, error } = await q
     if (error) throw new Error(error.message)

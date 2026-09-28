@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SelectorFecha } from '@/components/ui/selector-fecha'
 import { ConfirmarDialog } from '@/components/clientes/confirmar-dialog'
 import { MovimientoForm, type ClienteOpcion } from '@/components/finanzas/movimiento-form'
-import {
+import { NEGOCIOS,
   CATEGORIAS_EGRESO,
   CATEGORIAS_INGRESO,
   CATEGORIA_LABELS,
@@ -73,6 +73,7 @@ export function FinanzasWorkspace({
   const [hasta, setHasta] = useState(rangoInicial.hasta)
   const [tipo, setTipo] = useState<string>(TODOS)
   const [categoria, setCategoria] = useState<string>(TODOS)
+  const [negocio, setNegocio] = useState<string>(TODOS)
   const [formAbierto, setFormAbierto] = useState(false)
   const [editando, setEditando] = useState<Movimiento | undefined>(undefined)
   const [porBorrar, setPorBorrar] = useState<Movimiento | null>(null)
@@ -87,6 +88,7 @@ export function FinanzasWorkspace({
       if (hasta) qs.set('hasta', hasta)
       if (tipo !== TODOS) qs.set('tipo', tipo)
       if (categoria !== TODOS) qs.set('categoria', categoria)
+      if (negocio !== TODOS) qs.set('negocio', negocio)
 
       const res = await fetch(`/api/finanzas?${qs.toString()}`)
       const json = await res.json()
@@ -97,7 +99,7 @@ export function FinanzasWorkspace({
     } finally {
       setCargando(false)
     }
-  }, [desde, hasta, tipo, categoria])
+  }, [desde, hasta, tipo, categoria, negocio])
 
   // Se salta la primera pasada: la página ya llegó con los datos del mes en curso
   // renderizados desde el servidor; volver a pedirlos sería un viaje regalado. Va en
@@ -197,7 +199,7 @@ export function FinanzasWorkspace({
       )}
 
       {/* Filtros */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="f-desde">Desde</Label>
           <SelectorFecha id="f-desde" value={desde} onChange={(v) => setDesde(v)} />
@@ -229,6 +231,18 @@ export function FinanzasWorkspace({
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1.5">
+          <Label>Negocio</Label>
+          <Select value={negocio} onValueChange={(v) => setNegocio(v ?? TODOS)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODOS}>Todos</SelectItem>
+              {NEGOCIOS.map((n) => (
+                <SelectItem key={n} value={n}>{n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </section>
 
       {/* Movimientos */}
@@ -246,6 +260,7 @@ export function FinanzasWorkspace({
                   <tr>
                     <th className="text-left font-medium px-3 py-2">Fecha</th>
                     <th className="text-left font-medium px-3 py-2">Tipo</th>
+                    <th className="text-left font-medium px-3 py-2">Negocio</th>
                     <th className="text-left font-medium px-3 py-2">Categoría</th>
                     <th className="text-left font-medium px-3 py-2">Descripción</th>
                     <th className="text-left font-medium px-3 py-2">Contraparte</th>
@@ -258,6 +273,7 @@ export function FinanzasWorkspace({
                     <tr key={m.id} className="border-t border-[var(--tx-border)]">
                       <td className="px-3 py-2 text-[var(--tx-ink-muted)] whitespace-nowrap">{formatearFecha(m.fecha)}</td>
                       <td className="px-3 py-2"><BadgeTipo tipo={m.tipo} /></td>
+                      <td className="px-3 py-2"><BadgeNegocio negocio={m.negocio} /></td>
                       <td className="px-3 py-2 text-[var(--tx-ink-secondary)]">{CATEGORIA_LABELS[m.categoria] ?? m.categoria}</td>
                       <td className="px-3 py-2 text-[var(--tx-ink-primary)]">{m.descripcion}</td>
                       <td className="px-3 py-2 text-[var(--tx-ink-muted)]">
@@ -301,6 +317,7 @@ export function FinanzasWorkspace({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <BadgeTipo tipo={m.tipo} />
+                      <BadgeNegocio negocio={m.negocio} />
                       <span className="text-[11px] text-[var(--tx-ink-muted)] truncate">
                         {m.contraparte || m.cliente?.nombre_negocio || '—'}
                       </span>
@@ -463,6 +480,24 @@ function Kpi({
         </div>
       </div>
     </motion.div>
+  )
+}
+
+/** De qué negocio viene la plata: Tryvex Store en violeta, la agencia en celeste. */
+function BadgeNegocio({ negocio }: { negocio: string | null | undefined }) {
+  const nombre = negocio || 'Tryvex Agencia'
+  const esTienda = nombre === 'Tryvex Store'
+  return (
+    <span
+      title={`Movimiento de ${nombre}`}
+      className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
+        esTienda
+          ? 'bg-violet-500/15 text-violet-300 border border-violet-500/30'
+          : 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+      }`}
+    >
+      {esTienda ? 'Store' : 'Agencia'}
+    </span>
   )
 }
 
