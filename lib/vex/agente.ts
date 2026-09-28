@@ -147,7 +147,10 @@ function mensajePara(status: number, detalle: string): string {
     return 'El agente rechazó la credencial: VEX_AGENT_TOKEN no coincide con el suyo'
   }
   if (status === 503) {
-    return 'El agente corre sin sus credenciales de panel y se cerró solo'
+    // Mismo criterio que lib/wa/qr.ts: solo es el agente si él lo dice.
+    return /sin credenciales/i.test(detalle)
+      ? 'El agente corre sin sus credenciales de panel y se cerró solo'
+      : 'No se llega al agente: el proxy del VPS no encuentra el servicio'
   }
   return detalle || `El agente respondió ${status}`
 }
