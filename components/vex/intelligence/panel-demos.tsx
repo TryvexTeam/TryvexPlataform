@@ -6,6 +6,7 @@ import { useReloj } from '@/lib/vex/usar-reloj'
 import { rubroDelGuion } from '@/lib/vex/simulacion-demo'
 import { PLANTILLAS_DEMO, guionDePlantilla, plantillaPorId, type PlantillaDemo } from '@/lib/vex/plantillas-demo'
 import { TelefonoDemo } from './telefono-demo'
+import { formatearTelefonoDemo, normalizarTelefonoDemo } from '@/lib/vex/telefono-demo'
 import type { DemoAgente, leadsParaDemo } from '@/lib/repos/demos'
 import type { apagarDemo, crearDemo, sugerirGuionDemo, CrearDemoEntrada } from '@/app/(app)/vex/intelligence/acciones-demos'
 
@@ -50,6 +51,7 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
   const [leadId, setLeadId] = useState<string>()
   const [nombreNegocio, setNombreNegocio] = useState('')
   const [telefono, setTelefono] = useState('')
+  const telefonoLeido = normalizarTelefonoDemo(telefono)
   const [guion, setGuion] = useState('')
   const [horas, setHoras] = useState<CrearDemoEntrada['horas']>(24)
   const [limite, setLimite] = useState('40')
@@ -110,7 +112,7 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
         setLeadId(idLead)
         setPlantillaId(null)
         setNombreNegocio(r.nombreNegocio)
-        setTelefono(r.telefono)
+        setTelefono(r.telefono ? formatearTelefonoDemo(r.telefono) : '')
         setGuion(r.guion)
         setBusqueda(r.nombreNegocio)
         setMostrarResultados(false)
@@ -265,7 +267,21 @@ export function PanelDemos({ demos, leads, alSugerir, alCrear, alApagar }: Panel
             </label>
             <label className={etiqueta}>Teléfono que probará la demo
               <input required type="tel" inputMode="tel" autoComplete="tel" placeholder="+56 9 8765 2232"
-                value={telefono} onChange={e => setTelefono(e.target.value)} className={campo} style={estiloCampo} />
+                value={telefono} onChange={e => setTelefono(e.target.value)}
+                // Al salir del campo se deja escrito como Vex lo va a leer: así
+                // lo que se ve es exactamente lo que se guarda.
+                onBlur={() => { if (telefonoLeido) setTelefono(formatearTelefonoDemo(telefonoLeido)) }}
+                aria-invalid={telefono.trim() !== '' && !telefonoLeido}
+                aria-describedby="telefono-demo-lectura"
+                className={campo} style={estiloCampo} />
+              <span id="telefono-demo-lectura" aria-live="polite" className="text-xs font-normal"
+                style={{ color: telefono.trim() === '' ? 'var(--tx-ink-muted)' : telefonoLeido ? 'var(--tx-success)' : 'var(--tx-error)' }}>
+                {telefono.trim() === ''
+                  ? 'Celular chileno en cualquier formato; extranjero, con + y código de país.'
+                  : telefonoLeido
+                    ? `✓ Vex lo va a reconocer como ${formatearTelefonoDemo(telefonoLeido)}`
+                    : '✗ Revise el número: a un celular chileno le faltan o sobran dígitos, o a uno extranjero le falta el +.'}
+              </span>
             </label>
           </div>
           {separador}
