@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server'
-import { CAMPOS_ACCESO, type IntegranteAcceso } from '@/lib/types/acceso'
+import { CAMPOS_ACCESO, type IntegranteAcceso, type IpBloqueada, type IpCandidata } from '@/lib/types/acceso'
 
 // El tipo generado en lib/types/database.ts va por detras del esquema real (no
 // tiene es_superadmin ni las tablas nuevas). Mismo escape que usan los otros
@@ -15,7 +15,7 @@ type Admin = any
 const BAN_PERMANENTE = '876000h'
 
 /** Etapa en la que fallo una revocacion. La UI necesita saberlo para no mentir. */
-export type EtapaAcceso = 'marcar' | 'sesiones' | 'bloqueo' | 'restaurar'
+export type EtapaAcceso = 'marcar' | 'sesiones' | 'bloqueo' | 'restaurar' | 'bloqueo_ip' | 'eliminar_cuenta'
 
 /**
  * Error que sabe en que quedo la operacion.
@@ -34,6 +34,14 @@ export class ErrorAcceso extends Error {
     this.name = 'ErrorAcceso'
     this.etapa = etapa
     this.estado = estado
+  }
+}
+
+/** La persona ya estaba desvinculada: la API responde 409. */
+export class YaDesvinculadoError extends Error {
+  constructor() {
+    super('Ya estaba desvinculado')
+    this.name = 'YaDesvinculadoError'
   }
 }
 
@@ -157,6 +165,113 @@ export class AccesoRepository {
     }
   }
 
+  async getPorAuthUser(authUserId: string): Promise<IntegranteAcceso | null> {
+    const { data, error } = await this.admin.from('dim_integrantes').select(CAMPOS_ACCESO)
+      .eq('auth_user_id', authUserId).maybeSingle()
+    if (error) throw new Error(error.message)
+    return (data as IntegranteAcceso) ?? null
+  }
+
+  async getDesvinculadoPorEmail(email: string): Promise<IntegranteAcceso | null> {
+    const { data, error } = await this.admin.from('dim_integrantes').select(CAMPOS_ACCESO)
+      .eq('email', email.trim().toLowerCase()).not('desvinculado_at', 'is', null).maybeSingle()
+    if (error) throw new Error(error.message)
+    return (data as IntegranteAcceso) ?? null
+  }
+
+  async ipsParaDesvincular(integranteId: string): Promise<IpCandidata[]> {
+    const { data: ips, error } = await this.admin.rpc('ips_de_integrante', {
+      p_integrante_id: integranteId,
+      p_dias: 90,
+    })
+    if (error) throw new Error(error.message)
+    const filas = (ips ?? []) as { ip: string; ultima_vez: string; origen: 'app' | 'sesion' }[]
+    if (filas.length === 0) return []
+    const { data: compartidas, error: errorCompartidas } = await this.admin.rpc('ips_compartidas', {
+      p_ips: filas.map((fila) => fila.ip),
+      p_excluir: integranteId,
+      p_dias: 30,
+    })
+    if (errorCompartidas) throw new Error(errorCompartidas.message)
+    const porIp = new Map<string, string[]>(
+      ((compartidas ?? []) as { ip: string; integrantes: string[] }[]).map((fila) => [fila.ip, fila.integrantes]),
+    )
+    return filas.map((fila) => ({ ...fila, compartida_con: porIp.get(fila.ip) ?? [] }))
+  }
+
+  async desvincular(entrada: {
+    integrante: IntegranteAcceso
+    ips: string[]
+    actor: { id: string; nombre: string; email: string }
+    motivo?: string
+  }): Promise<{ sesionesCerradas: number; ipsBloqueadas: string[] }> {
+    const { integrante, actor } = entrada
+    // `desvinculado_at is null`: la desvinculación es idempotente. Si ya estaba
+    // desvinculado (aunque ya estuviera inactivo por una revocación previa) no se repite.
+    const { data: marcadas, error: errorMarca } = await this.admin.from('dim_integrantes')
+      .update({ activo: false, desvinculado_at: new Date().toISOString() })
+      .eq('id', integrante.id).is('desvinculado_at', null).select('id')
+    if (errorMarca) throw new ErrorAcceso('marcar', 'No se cambió nada.', errorMarca.message)
+    if (!marcadas || marcadas.length === 0) throw new YaDesvinculadoError()
+
+    let sesionesCerradas = 0
+    let ipsBloqueadas: string[] = []
+    try {
+      const { data: bloqueadas, error: errorIps } = await this.admin.rpc('bloquear_ips', {
+        p_ips: entrada.ips, p_integrante_id: integrante.id, p_actor_id: actor.id,
+        p_motivo: entrada.motivo ?? null,
+      })
+      if (errorIps) throw new ErrorAcceso('bloqueo_ip', 'La persona quedó inactiva, pero no se bloquearon sus IPs.', errorIps.message)
+      ipsBloqueadas = (bloqueadas ?? []) as string[]
+
+      if (integrante.auth_user_id) {
+        const { data, error } = await this.admin.rpc('revocar_sesiones_auth', { p_auth_user_id: integrante.auth_user_id })
+        if (error) throw new ErrorAcceso('sesiones', 'La persona quedó inactiva y sus IPs bloqueadas, pero alguna sesión puede seguir viva.', error.message)
+        sesionesCerradas = Number(data ?? 0)
+        // Ban antes de borrar: si el borrado falla, la cuenta queda al menos baneada.
+        const { error: errorBan } = await this.admin.auth.admin.updateUserById(integrante.auth_user_id, { ban_duration: BAN_PERMANENTE })
+        if (errorBan) throw new ErrorAcceso('eliminar_cuenta', 'La persona quedó sin acceso y sus sesiones fueron cerradas, pero su cuenta Auth no se bloqueó ni se eliminó.', errorBan.message)
+        const { error: eliminar } = await this.admin.auth.admin.deleteUser(integrante.auth_user_id)
+        if (eliminar) throw new ErrorAcceso('eliminar_cuenta', 'La persona quedó sin acceso y sus sesiones fueron cerradas, pero su cuenta Auth no se eliminó (quedó bloqueada).', eliminar.message)
+      }
+    } catch (error) {
+      // La persona ya está marcada como desvinculada: la bitácora debe reflejar
+      // el hecho, incluso incompleto, o el rastro mentiría por omisión.
+      const etapa = error instanceof ErrorAcceso ? error.etapa : 'desconocida'
+      await this.registrar({ integrante, accion: 'desvinculado', actor,
+        motivo: `INCOMPLETO en etapa ${etapa}${entrada.motivo ? ` — ${entrada.motivo}` : ''}`,
+        sesionesCerradas, ipsBloqueadas })
+      throw error
+    }
+
+    await this.registrar({ integrante, accion: 'desvinculado', actor, motivo: entrada.motivo,
+      sesionesCerradas, ipsBloqueadas })
+    return { sesionesCerradas, ipsBloqueadas }
+  }
+
+  async permitirReingreso(integrante: IntegranteAcceso, actor: { id: string; nombre: string; email: string }): Promise<void> {
+    const { error } = await this.admin.from('dim_integrantes').update({ desvinculado_at: null }).eq('id', integrante.id)
+    if (error) throw new ErrorAcceso('restaurar', 'La persona sigue desvinculada.', error.message)
+    await this.registrar({ integrante, accion: 'reincorporable', actor, sesionesCerradas: 0 })
+  }
+
+  async listIpsBloqueadas(): Promise<IpBloqueada[]> {
+    const { data, error } = await this.admin.from('ips_bloqueadas')
+      .select('ip, integrante_id, motivo, created_at, dim_integrantes!ips_bloqueadas_integrante_fkey(nombre)')
+      .order('created_at', { ascending: false })
+    if (error) throw new Error(error.message)
+    return (data ?? []).map((fila: { ip: string; integrante_id: string | null; motivo: string | null; created_at: string; dim_integrantes: { nombre: string } | null }) => ({
+      ip: fila.ip, integrante_id: fila.integrante_id,
+      integrante_nombre: fila.dim_integrantes?.nombre ?? null,
+      motivo: fila.motivo, created_at: fila.created_at,
+    }))
+  }
+
+  async desbloquearIp(ip: string): Promise<void> {
+    const { error } = await this.admin.from('ips_bloqueadas').delete().eq('ip', ip)
+    if (error) throw new Error(error.message)
+  }
+
   /**
    * Deja el rastro. Se llama despues de que la operacion salio bien, no antes:
    * una bitacora que registra intenciones en vez de hechos no sirve para responder
@@ -164,10 +279,11 @@ export class AccesoRepository {
    */
   async registrar(entrada: {
     integrante: IntegranteAcceso
-    accion: 'revocado' | 'restaurado'
+    accion: 'revocado' | 'restaurado' | 'desvinculado' | 'reincorporable'
     actor: { id: string; nombre: string; email: string }
     motivo?: string
     sesionesCerradas: number
+    ipsBloqueadas?: string[]
   }): Promise<void> {
     // El fallo al escribir la bitacora NO tumba la revocacion: la persona ya esta
     // afuera y devolver un error haria que el administrador reintentara una accion
@@ -182,6 +298,7 @@ export class AccesoRepository {
       actor_email: entrada.actor.email,
       motivo: entrada.motivo ?? null,
       sesiones_cerradas: entrada.sesionesCerradas,
+      ips_bloqueadas: entrada.ipsBloqueadas ?? null,
     })
 
     if (error) {

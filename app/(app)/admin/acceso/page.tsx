@@ -4,6 +4,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { PermisosRepository } from '@/lib/repos/permisos'
 import { AccesoRepository } from '@/lib/repos/acceso'
 import { AccesoEquipo } from '@/components/admin/acceso-equipo'
+import { IpsBloqueadas } from '@/components/admin/ips-bloqueadas'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +30,8 @@ export default async function AdminAccesoPage() {
   // Se lee con la clave de servicio porque la lista tiene que incluir a los
   // inactivos, y la RLS de dim_integrantes solo deja ver a los del equipo. Sin
   // esto, los revocados desaparecerían de la pantalla y nadie podría restaurarlos.
-  const equipo = await new AccesoRepository(createAdminClient()).listEquipo()
+  const repo = new AccesoRepository(createAdminClient())
+  const [equipo, ipsBloqueadas] = await Promise.all([repo.listEquipo(), repo.listIpsBloqueadas()])
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6 pb-24 md:pb-6">
@@ -44,6 +46,7 @@ export default async function AdminAccesoPage() {
       </div>
 
       <AccesoEquipo equipoInicial={equipo} miIntegranteId={yo.id} />
+      <IpsBloqueadas iniciales={ipsBloqueadas} />
     </div>
   )
 }
