@@ -28,7 +28,8 @@
       "tarjeta con su nombre y quién lo saludó",
       "accesos rápidos funcionan"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "Playwright 390px con sesión real de cuenta de prueba: \"¡Bienvenido/a a Tryvex, Prueba!\" visible + 3 atajos (captura bienvenida-nuevo.png)"
   },
   {
     "id": "bienvenida-tarjeta-equipo",
@@ -39,7 +40,8 @@
       "segundo clic no duplica mensaje",
       "nuevo recibe notificación"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "e2e-t101.mjs: POST /api/bienvenidas crea DM, 2º clic ya_saludado=true, 1 solo mensaje, notificación al nuevo; Playwright: botón \"Dar la bienvenida\" visible (bug de doble llegada corregido en 7f…)"
   },
   {
     "id": "google-login",
@@ -76,7 +78,8 @@
       "navegar con sesión",
       "fila en integrante_ips con ultima_vez"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "e2e-t101.mjs: GET /dashboard con x-forwarded-for 198.51.100.23 → fila en integrante_ips"
   },
   {
     "id": "ip-bloqueo-proxy",
@@ -87,7 +90,8 @@
       "/api → JSON 403",
       "desbloquear → vuelve 200"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "e2e-t101.mjs: IP bloqueada → /login 403 HTML y /api/chat/conversaciones 403 JSON; otra IP pasa; DELETE ips-bloqueadas → tras TTL 60 s vuelve a entrar"
   },
   {
     "id": "desvincular-flujo",
@@ -99,7 +103,8 @@
       "dim_integrantes conserva fila con desvinculado_at",
       "registro_accesos 'desvinculado'"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "e2e-t101.mjs: confirmación correcta → 200; fila conservada (activo=false, desvinculado_at, auth_user_id null); auth user eliminado; registro_accesos desvinculado=1"
   },
   {
     "id": "desvincular-guardas",
