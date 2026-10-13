@@ -5,17 +5,26 @@ import { ipCliente } from '@/lib/net/ip-cliente'
 import { respuestaBloqueo } from '@/lib/net/respuesta-bloqueo'
 import { RedRepository } from '@/lib/repos/red'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { crearClienteAdmin } from '@/lib/supabase/admin'
 
 const TTL_IP = 60_000
 const MAX_IPS = 1_000
 const cacheIps = new Map<string, { bloqueada: boolean; vence: number }>()
 
-async function estaBloqueada(supabase: SupabaseClient, ip: string | null): Promise<boolean> {
+async function estaBloqueada(ip: string | null): Promise<boolean> {
   if (!ip) return false
   const ahora = Date.now()
   const guardada = cacheIps.get(ip)
   if (guardada && guardada.vence > ahora) return guardada.bloqueada
-  const bloqueada = await new RedRepository(supabase).ipBloqueada(ip)
+  let bloqueada: boolean | null
+  try {
+    bloqueada = await new RedRepository(crearClienteAdmin() as unknown as SupabaseClient).ipBloqueada(ip)
+  } catch (error) {
+    console.error('[middleware] no se pudo comprobar la IP; se permite el acceso:', error)
+    return false
+  }
+  // Un fallo de la RPC no se cachea: solo se guardan resultados reales.
+  if (bloqueada === null) return false
   // Esta caché vive solo en memoria del servidor: el cliente no puede escribirla
   // ni falsificar una entrada. El TTL limita el retraso al desbloquear una red.
   if (cacheIps.size >= MAX_IPS) cacheIps.delete(cacheIps.keys().next().value as string)
@@ -55,7 +64,7 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  if (await estaBloqueada(supabase as unknown as SupabaseClient, ipCliente(request.headers))) {
+  if (await estaBloqueada(ipCliente(request.headers))) {
     if (request.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json({ success: false, error: 'Acceso bloqueado' }, { status: 403 })
     }
