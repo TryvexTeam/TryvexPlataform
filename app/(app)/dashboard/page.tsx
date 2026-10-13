@@ -10,11 +10,13 @@ import { JornadasRepository } from '@/lib/repos/jornadas'
 import { ProyectosRepository } from '@/lib/repos/proyectos'
 import { PresenciaRepository } from '@/lib/repos/presencia'
 import { EventosRepository } from '@/lib/repos/eventos'
+import { BienvenidasRepository } from '@/lib/repos/bienvenidas'
 import { DashDeck, type LeadTarjeta, type TareaDelDia } from '@/components/dashboard/dash-deck'
 import { SkeletonDeck } from '@/components/dashboard/skeleton-deck'
 import { AgendaHoy } from '@/components/dashboard/agenda-hoy'
 import { PanelAtrasos } from '@/components/dashboard/panel-atrasos'
 import { ProximaCita } from '@/components/dashboard/proxima-cita'
+import { TarjetaBienvenida } from '@/components/dashboard/tarjeta-bienvenida'
 import { inicioDiaSantiago } from '@/lib/utils/fecha-santiago'
 import type { TramoEmbudo } from '@/components/dashboard/embudo-tira'
 import type {
@@ -196,6 +198,7 @@ export default async function DashboardPage() {
     citaProxima,
     marcadorEquipo,
     atrasos,
+    recienLlegados,
   ] = await Promise.all([
     integranteId
       ? new JornadasRepository(supabase).getAbierta(integranteId).catch(() => null)
@@ -413,6 +416,7 @@ export default async function DashboardPage() {
         return { misAtrasadas: [], misAtrasadasTotal: 0, atrasadasEquipo: null, conectados: [] }
       }
     })(),
+    new BienvenidasRepository(supabase).recientes().catch(() => []),
   ])
 
   const nombre = integrante?.nombre?.split(' ')[0] ?? 'por aquí'
@@ -422,6 +426,10 @@ export default async function DashboardPage() {
           cumple ese papel y repetir "Panel de Mando" encima solo agregaba una
           línea que nadie lee dos veces. La landmark sigue anunciada. */}
       <h1 className="sr-only">Panel de Mando</h1>
+
+      {integranteId && recienLlegados.length > 0 && (
+        <TarjetaBienvenida integrantes={recienLlegados} miIntegranteId={integranteId} />
+      )}
 
       {/* Antes que nada: lo que uno debe y quién está en jornada. Va arriba del
           deck a propósito — si hay que buscarlo, no cumple su función. */}
