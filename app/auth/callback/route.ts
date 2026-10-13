@@ -23,43 +23,64 @@ export async function GET(request: Request) {
   const user = data.user
   const email = emailGoogle.toLowerCase()
   const admin = createAdminClient()
+
+  // Solo se borra una cuenta recién creada por este flujo de Google: todas sus
+  // identidades son google y nació hace menos de 10 minutos. Una cuenta antigua o
+  // con contraseña/otro proveedor NUNCA se borra aquí.
+  const identidades = user.identities ?? []
+  const esCuentaNuevaDeGoogle =
+    identidades.length > 0 &&
+    identidades.every((identidad) => identidad.provider === 'google') &&
+    Date.now() - new Date(user.created_at).getTime() < 600_000
+
+  async function limpiar(borrar: boolean) {
+    const { error: errorSalida } = await supabase.auth.signOut()
+    if (errorSalida) console.error('[auth/callback] signOut falló:', errorSalida.message)
+    if (!borrar) return
+    const { error: errorBorrado } = await admin.auth.admin.deleteUser(user.id)
+    if (errorBorrado) console.error('[auth/callback] deleteUser falló:', errorBorrado.message)
+  }
+
   try {
     const acceso = new AccesoRepository(admin)
     const integranteVinculado = await acceso.getPorAuthUser(user.id)
     const integrante = integranteVinculado ?? await acceso.getDesvinculadoPorEmail(email)
+    const borrable = !integranteVinculado && esCuentaNuevaDeGoogle
     let invitacion: Awaited<ReturnType<typeof validarToken>> | null = null
     if (token) invitacion = await validarToken(admin, token)
 
     if (token && !invitacion?.valido) {
-      await supabase.auth.signOut()
-      if (!integranteVinculado && Date.now() - new Date(user.created_at).getTime() < 600_000) await admin.auth.admin.deleteUser(user.id)
+      await limpiar(borrable)
       return haciaLogin(request, 'google_error')
     }
 
     if (token && invitacion?.valido && invitacion.invitacion?.email.toLowerCase() !== email) {
-      await supabase.auth.signOut()
-      if (!integranteVinculado && Date.now() - new Date(user.created_at).getTime() < 600_000) await admin.auth.admin.deleteUser(user.id)
+      await limpiar(borrable)
       return haciaLogin(request, 'google_correo_distinto', invitacion.invitacion?.email)
     }
 
     if (integrante?.desvinculado_at) {
-      await supabase.auth.signOut()
-      if (!integranteVinculado && Date.now() - new Date(user.created_at).getTime() < 600_000) await admin.auth.admin.deleteUser(user.id)
+      await limpiar(borrable)
       return haciaLogin(request, 'desvinculado')
     }
 
     if (integrante?.activo) {
-      if (token && invitacion?.valido) await marcarUsado(admin, token)
-      if (!token) await marcarPendientesUsadasPorEmail(admin, email)
+      // Un fallo al cerrar la invitación no expulsa a un integrante legítimo.
+      try {
+        if (token && invitacion?.valido) await marcarUsado(admin, token)
+        if (!token) await marcarPendientesUsadasPorEmail(admin, email)
+      } catch (errorInvitacion) {
+        console.error('[auth/callback] no se pudo cerrar la invitación:', errorInvitacion)
+      }
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
-    await supabase.auth.signOut()
-    if (!integranteVinculado && Date.now() - new Date(user.created_at).getTime() < 600_000) await admin.auth.admin.deleteUser(user.id)
-    return haciaLogin(request, integrante?.desvinculado_at ? 'desvinculado' : 'google_sin_invitacion')
+    await limpiar(borrable)
+    // Integrante conocido pero inactivo (no desvinculado) no es "sin invitación".
+    return haciaLogin(request, integrante ? 'sin_acceso' : 'google_sin_invitacion')
   } catch (error) {
     console.error('[auth/callback] error procesando OAuth:', error)
-    await supabase.auth.signOut()
+    await limpiar(false)
     return haciaLogin(request, 'google_error')
   }
 }
