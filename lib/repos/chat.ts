@@ -19,7 +19,19 @@ interface MiembroRow {
   fijado_at: string | null
   archivado_at: string | null
   silenciado_hasta: string | null
-  dim_integrantes: { nombre: string; avatar_url: string | null; color: string | null } | null
+  dim_integrantes: DatosIntegrante | DatosIntegrante[] | null
+}
+
+interface DatosIntegrante {
+  nombre: string
+  avatar_url: string | null
+  color: string | null
+}
+
+/** PostgREST devuelve el embed como objeto o como arreglo según la relación. */
+function datosIntegrante(embed: MiembroRow['dim_integrantes']): DatosIntegrante | null {
+  if (Array.isArray(embed)) return embed[0] ?? null
+  return embed
 }
 
 export class ChatRepository {
@@ -68,11 +80,12 @@ export class ChatRepository {
     const porConv = new Map<string, MiembroChat[]>()
     for (const m of (miembros.data ?? []) as MiembroRow[]) {
       const lista = porConv.get(m.conversacion_id) ?? []
+      const datos = datosIntegrante(m.dim_integrantes)
       lista.push({
         integrante_id: m.integrante_id,
-        nombre: m.dim_integrantes?.nombre ?? 'Sin nombre',
-        avatar_url: m.dim_integrantes?.avatar_url ?? null,
-        color: m.dim_integrantes?.color ?? null,
+        nombre: datos?.nombre ?? 'Sin nombre',
+        avatar_url: datos?.avatar_url ?? null,
+        color: datos?.color ?? null,
         ultimo_leido_at: m.ultimo_leido_at,
         fijado_at: m.fijado_at,
         archivado_at: m.archivado_at,

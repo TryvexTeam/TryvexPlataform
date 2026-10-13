@@ -19,7 +19,9 @@ export function useNavegacionChat(inicial?: string) {
   useEffect(() => {
     if (activaId) document.documentElement.dataset.chatConversation = 'true'
     else delete document.documentElement.dataset.chatConversation
-    return () => delete document.documentElement.dataset.chatConversation
+    return () => {
+      delete document.documentElement.dataset.chatConversation
+    }
   }, [activaId])
 
   const abrir = useCallback((id: string) => {
