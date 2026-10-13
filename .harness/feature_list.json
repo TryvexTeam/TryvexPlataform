@@ -195,5 +195,15 @@
       "npm run build"
     ],
     "pasa": false
+  },
+  {
+    "id": "chat-sin-limite",
+    "descripcion": "Mensajes del chat sin límite de caracteres (solo el tope de 4,5 MB del cuerpo en Vercel, con error claro)",
+    "pasos": [
+      "enviar mensaje de 50.000 caracteres → se guarda",
+      "se muestra con 'Leer más'",
+      "cuerpo > 4,5 MB → error legible"
+    ],
+    "pasa": false
   }
 ]
