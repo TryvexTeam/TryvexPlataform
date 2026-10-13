@@ -416,7 +416,10 @@ export default async function DashboardPage() {
         return { misAtrasadas: [], misAtrasadasTotal: 0, atrasadasEquipo: null, conectados: [] }
       }
     })(),
-    new BienvenidasRepository(supabase).recientes().catch(() => []),
+    new BienvenidasRepository(supabase).recientes().catch((error) => {
+      console.error('[dashboard] no se pudieron cargar las bienvenidas:', error)
+      return []
+    }),
   ])
 
   const nombre = integrante?.nombre?.split(' ')[0] ?? 'por aquí'

@@ -20,11 +20,13 @@ export async function POST(req: Request) {
     const bienvenidas = new BienvenidasRepository(supabase)
     const nuevo = await bienvenidas.getActivo(parsed.data.nuevo_id)
     if (!nuevo) return NextResponse.json({ success: false, error: 'Ese integrante no existe' }, { status: 404 })
-    const { yaSaludado } = await bienvenidas.saludar(nuevo.id, yo.id)
+    const yaSaludado = await bienvenidas.yaSaludo(nuevo.id, yo.id)
     const chat = new ChatRepository(supabase)
     const conversacionId = await chat.abrirDm(yo.id, nuevo.id)
     if (!yaSaludado) {
-      await chat.enviar(conversacionId, yo.id, `¡Bienvenido/a a Tryvex, ${nuevo.nombre.split(' ')[0]}!`)
+      await chat.enviar(conversacionId, yo.id, `¡Bienvenido/a a Tryvex, ${nuevo.nombre.split(' ')[0]}! 👋`)
+      // El saludo se registra DESPUÉS de enviar el mensaje: si el envío falla, se puede reintentar.
+      await bienvenidas.saludar(nuevo.id, yo.id)
       await new NotificacionesRepository(supabase).notificar({
         destinatarios: [nuevo.id], tipo: 'bienvenida',
         titulo: `${yo.nombre} te dio la bienvenida`, link: `/chat?c=${conversacionId}`,
@@ -32,6 +34,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ success: true, data: { conversacion_id: conversacionId, ya_saludado: yaSaludado } })
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'No se pudo dar la bienvenida' }, { status: 500 })
+    console.error('[bienvenidas] fallo:', error)
+    return NextResponse.json({ success: false, error: 'No se pudo dar la bienvenida' }, { status: 500 })
   }
 }
