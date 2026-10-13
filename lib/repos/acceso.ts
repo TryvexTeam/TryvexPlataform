@@ -37,6 +37,14 @@ export class ErrorAcceso extends Error {
   }
 }
 
+/** La persona ya estaba desvinculada: la API responde 409. */
+export class YaDesvinculadoError extends Error {
+  constructor() {
+    super('Ya estaba desvinculado')
+    this.name = 'YaDesvinculadoError'
+  }
+}
+
 export class AccesoRepository {
   private admin: Admin
 
@@ -166,7 +174,7 @@ export class AccesoRepository {
 
   async getDesvinculadoPorEmail(email: string): Promise<IntegranteAcceso | null> {
     const { data, error } = await this.admin.from('dim_integrantes').select(CAMPOS_ACCESO)
-      .ilike('email', email).not('desvinculado_at', 'is', null).maybeSingle()
+      .eq('email', email.trim().toLowerCase()).not('desvinculado_at', 'is', null).maybeSingle()
     if (error) throw new Error(error.message)
     return (data as IntegranteAcceso) ?? null
   }
@@ -198,28 +206,47 @@ export class AccesoRepository {
     motivo?: string
   }): Promise<{ sesionesCerradas: number; ipsBloqueadas: string[] }> {
     const { integrante, actor } = entrada
-    const { error: errorMarca } = await this.admin.from('dim_integrantes')
-      .update({ activo: false, desvinculado_at: new Date().toISOString() }).eq('id', integrante.id)
+    // `desvinculado_at is null`: la desvinculación es idempotente. Si ya estaba
+    // desvinculado (aunque ya estuviera inactivo por una revocación previa) no se repite.
+    const { data: marcadas, error: errorMarca } = await this.admin.from('dim_integrantes')
+      .update({ activo: false, desvinculado_at: new Date().toISOString() })
+      .eq('id', integrante.id).is('desvinculado_at', null).select('id')
     if (errorMarca) throw new ErrorAcceso('marcar', 'No se cambió nada.', errorMarca.message)
-
-    const { data: bloqueadas, error: errorIps } = await this.admin.rpc('bloquear_ips', {
-      p_ips: entrada.ips, p_integrante_id: integrante.id, p_actor_id: actor.id,
-      p_motivo: entrada.motivo ?? null,
-    })
-    if (errorIps) throw new ErrorAcceso('bloqueo_ip', 'La persona quedó inactiva, pero no se bloquearon sus IPs.', errorIps.message)
+    if (!marcadas || marcadas.length === 0) throw new YaDesvinculadoError()
 
     let sesionesCerradas = 0
-    if (integrante.auth_user_id) {
-      const { data, error } = await this.admin.rpc('revocar_sesiones_auth', { p_auth_user_id: integrante.auth_user_id })
-      if (error) throw new ErrorAcceso('sesiones', 'La persona quedó inactiva y sus IPs bloqueadas, pero alguna sesión puede seguir viva.', error.message)
-      sesionesCerradas = Number(data ?? 0)
-      const { error: eliminar } = await this.admin.auth.admin.deleteUser(integrante.auth_user_id)
-      if (eliminar) throw new ErrorAcceso('eliminar_cuenta', 'La persona quedó sin acceso y sus sesiones fueron cerradas, pero su cuenta Auth no se eliminó.', eliminar.message)
+    let ipsBloqueadas: string[] = []
+    try {
+      const { data: bloqueadas, error: errorIps } = await this.admin.rpc('bloquear_ips', {
+        p_ips: entrada.ips, p_integrante_id: integrante.id, p_actor_id: actor.id,
+        p_motivo: entrada.motivo ?? null,
+      })
+      if (errorIps) throw new ErrorAcceso('bloqueo_ip', 'La persona quedó inactiva, pero no se bloquearon sus IPs.', errorIps.message)
+      ipsBloqueadas = (bloqueadas ?? []) as string[]
+
+      if (integrante.auth_user_id) {
+        const { data, error } = await this.admin.rpc('revocar_sesiones_auth', { p_auth_user_id: integrante.auth_user_id })
+        if (error) throw new ErrorAcceso('sesiones', 'La persona quedó inactiva y sus IPs bloqueadas, pero alguna sesión puede seguir viva.', error.message)
+        sesionesCerradas = Number(data ?? 0)
+        // Ban antes de borrar: si el borrado falla, la cuenta queda al menos baneada.
+        const { error: errorBan } = await this.admin.auth.admin.updateUserById(integrante.auth_user_id, { ban_duration: BAN_PERMANENTE })
+        if (errorBan) throw new ErrorAcceso('eliminar_cuenta', 'La persona quedó sin acceso y sus sesiones fueron cerradas, pero su cuenta Auth no se bloqueó ni se eliminó.', errorBan.message)
+        const { error: eliminar } = await this.admin.auth.admin.deleteUser(integrante.auth_user_id)
+        if (eliminar) throw new ErrorAcceso('eliminar_cuenta', 'La persona quedó sin acceso y sus sesiones fueron cerradas, pero su cuenta Auth no se eliminó (quedó bloqueada).', eliminar.message)
+      }
+    } catch (error) {
+      // La persona ya está marcada como desvinculada: la bitácora debe reflejar
+      // el hecho, incluso incompleto, o el rastro mentiría por omisión.
+      const etapa = error instanceof ErrorAcceso ? error.etapa : 'desconocida'
+      await this.registrar({ integrante, accion: 'desvinculado', actor,
+        motivo: `INCOMPLETO en etapa ${etapa}${entrada.motivo ? ` — ${entrada.motivo}` : ''}`,
+        sesionesCerradas, ipsBloqueadas })
+      throw error
     }
 
     await this.registrar({ integrante, accion: 'desvinculado', actor, motivo: entrada.motivo,
-      sesionesCerradas, ipsBloqueadas: (bloqueadas ?? []) as string[] })
-    return { sesionesCerradas, ipsBloqueadas: (bloqueadas ?? []) as string[] }
+      sesionesCerradas, ipsBloqueadas })
+    return { sesionesCerradas, ipsBloqueadas }
   }
 
   async permitirReingreso(integrante: IntegranteAcceso, actor: { id: string; nombre: string; email: string }): Promise<void> {

@@ -16,6 +16,7 @@ export async function POST(req: Request) {
     await repo.permitirReingreso(integrante, auth.actor)
     return NextResponse.json({ success: true, data: { integrante_id: integrante.id } })
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'No se pudo permitir el reingreso' }, { status: 500 })
+    console.error('[admin/acceso/reingreso] fallo:', error)
+    return NextResponse.json({ success: false, error: 'No se pudo permitir el reingreso' }, { status: 500 })
   }
 }

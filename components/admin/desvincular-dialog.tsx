@@ -28,7 +28,7 @@ export function DesvincularDialog({ integrante, onClose, onDone }: Props) {
         if (!cuerpo.success) throw new Error(cuerpo.error)
         const candidatas = cuerpo.data as IpCandidata[]
         setIps(candidatas)
-        setElegidas(new Set(candidatas.filter((ip) => ip.origen === 'app' && ip.compartida_con.length === 0).map((ip) => ip.ip)))
+        setElegidas(new Set(candidatas.filter((ip) => ip.origen === 'app' && ip.compartida_con.length === 0 && !ip.es_tuya).map((ip) => ip.ip)))
       }).catch((error) => toast.error(error instanceof Error ? error.message : 'No se pudieron cargar las IPs'))
       .finally(() => setCargando(false))
   }, [integrante])
@@ -56,8 +56,8 @@ export function DesvincularDialog({ integrante, onClose, onDone }: Props) {
         <div className="rounded-xl border border-red-500/25 bg-red-500/5 p-3 text-sm text-red-500"><AlertTriangle className="mr-2 inline h-4 w-4" />Esta acción requiere una invitación nueva para volver.</div>
         <fieldset className="space-y-2"><legend className="text-sm font-medium text-[var(--tx-ink-primary)]">IPs que se bloquearán</legend>
           {cargando && ips.length === 0 ? <p className="text-sm text-[var(--tx-ink-muted)]">Consultando redes…</p> : ips.length === 0 ? <p className="text-sm text-[var(--tx-ink-muted)]">No se encontraron IPs recientes.</p> : ips.map((fila) => <label key={fila.ip} className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--tx-border)] p-3">
-            <Checkbox checked={elegidas.has(fila.ip)} onCheckedChange={(valor) => setElegidas((actuales) => { const copia = new Set(actuales); if (valor === true) copia.add(fila.ip); else copia.delete(fila.ip); return copia })} aria-label={`Bloquear IP ${fila.ip}`} />
-            <span className="min-w-0"><span className="block font-mono text-sm text-[var(--tx-ink-primary)]">{fila.ip}</span><span className="block text-xs text-[var(--tx-ink-muted)]">{fila.compartida_con.length > 0 ? `También la usa: ${fila.compartida_con.join(', ')}` : fila.origen === 'sesion' ? 'Puede ser IP de un servidor' : 'Registrada desde la app'}</span></span>
+            <Checkbox disabled={fila.compartida_con.length > 0 || fila.es_tuya === true} checked={elegidas.has(fila.ip)} onCheckedChange={(valor) => setElegidas((actuales) => { const copia = new Set(actuales); if (valor === true) copia.add(fila.ip); else copia.delete(fila.ip); return copia })} aria-label={`Bloquear IP ${fila.ip}`} />
+            <span className="min-w-0"><span className="block font-mono text-sm text-[var(--tx-ink-primary)]">{fila.ip}</span><span className="block text-xs text-[var(--tx-ink-muted)]">{fila.es_tuya ? 'Es tu IP actual: no se puede bloquear' : fila.compartida_con.length > 0 ? `No se puede bloquear: también la usa ${fila.compartida_con.join(', ')}` : fila.origen === 'sesion' ? 'Puede ser IP de un servidor' : 'Registrada desde la app'}</span></span>
           </label>)}</fieldset>
         <div className="space-y-1.5"><Label htmlFor="motivo-desvincular">Motivo (opcional)</Label><Textarea id="motivo-desvincular" value={motivo} maxLength={500} onChange={(e) => setMotivo(e.target.value)} /></div>
         <div className="space-y-1.5"><Label htmlFor="confirmar-desvincular">Escriba el nombre exacto: <strong>{integrante?.nombre}</strong></Label><Input id="confirmar-desvincular" value={confirmacion} autoComplete="off" onChange={(e) => setConfirmacion(e.target.value)} /></div>

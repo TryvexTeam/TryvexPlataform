@@ -10,7 +10,8 @@ export async function GET() {
   try {
     return NextResponse.json({ success: true, data: await new AccesoRepository(createAdminClient()).listIpsBloqueadas() })
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'No se pudieron leer las IPs' }, { status: 500 })
+    console.error('[admin/ips-bloqueadas] fallo al leer:', error)
+    return NextResponse.json({ success: false, error: 'No se pudieron leer las IPs' }, { status: 500 })
   }
 }
 
@@ -23,6 +24,7 @@ export async function DELETE(req: Request) {
     await new AccesoRepository(createAdminClient()).desbloquearIp(parsed.data.ip)
     return NextResponse.json({ success: true, data: { ip: parsed.data.ip } })
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'No se pudo desbloquear' }, { status: 500 })
+    console.error('[admin/ips-bloqueadas] fallo al desbloquear:', error)
+    return NextResponse.json({ success: false, error: 'No se pudo desbloquear' }, { status: 500 })
   }
 }

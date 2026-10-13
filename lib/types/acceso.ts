@@ -33,6 +33,8 @@ export type IpCandidata = {
   ultima_vez: string
   origen: 'app' | 'sesion'
   compartida_con: string[]
+  /** Es la IP desde la que el administrador hace la petición. */
+  es_tuya?: boolean
 }
 
 export type IpBloqueada = {
