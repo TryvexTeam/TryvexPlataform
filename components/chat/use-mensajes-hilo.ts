@@ -12,7 +12,7 @@ export function useMensajesHilo(conversacion: Conversacion, miIntegranteId: stri
   const [fijados, setFijados] = useState<Mensaje[]>([])
   const [cargando, setCargando] = useState(true)
 
-  const lecturaInicial = useRef(
+  const [lecturaInicial] = useState(() =>
     conversacion.miembros.find((m) => m.integrante_id === miIntegranteId)?.ultimo_leido_at ??
       new Date().toISOString(),
   )
@@ -74,6 +74,7 @@ export function useMensajesHilo(conversacion: Conversacion, miIntegranteId: stri
   }, [cargar])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void cargar()
     void cargarFijados()
   }, [cargar, cargarFijados])
@@ -162,8 +163,8 @@ export function useMensajesHilo(conversacion: Conversacion, miIntegranteId: stri
   }, [conversacion.id, miIntegranteId, marcarLeida, cargarFijados, refrescarCoalescido])
 
   const primerNoLeido = useMemo(
-    () => indicePrimerNoLeido(mensajes, lecturaInicial.current, miIntegranteId),
-    [mensajes, miIntegranteId],
+    () => indicePrimerNoLeido(mensajes, lecturaInicial, miIntegranteId),
+    [mensajes, miIntegranteId, lecturaInicial],
   )
   const noLeidosIniciales = cantidadNoLeidosDesde(mensajes, primerNoLeido)
 

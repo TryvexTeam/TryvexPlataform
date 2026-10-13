@@ -29,13 +29,16 @@ export function FilaConversacion(props: FilaConversacionProps) {
   const { conversacion: c } = props
   const [offset, setOffset] = useState(0)
   const [menu, setMenu] = useState(false)
+  const [arrastrando, setArrastrando] = useState(false)
   const inicio = useRef<{ x: number; y: number } | null>(null)
   const largo = useRef<ReturnType<typeof setTimeout> | null>(null)
   const titulo = tituloConversacion(c, props.miIntegranteId)
+  // eslint-disable-next-line react-hooks/purity
   const silenciada = Boolean(c.silenciado_hasta && new Date(c.silenciado_hasta).getTime() > Date.now())
 
   const down = (e: React.PointerEvent) => {
     inicio.current = { x: e.clientX - offset, y: e.clientY }
+    setArrastrando(true)
     largo.current = setTimeout(() => setMenu(true), 450)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
@@ -51,6 +54,7 @@ export function FilaConversacion(props: FilaConversacionProps) {
     if (largo.current) clearTimeout(largo.current)
     setOffset(Math.abs(offset) < 55 ? 0 : Math.sign(offset) * 160)
     inicio.current = null
+    setArrastrando(false)
   }
   const abrir = () => offset ? setOffset(0) : props.onAbrir()
 
@@ -71,7 +75,7 @@ export function FilaConversacion(props: FilaConversacionProps) {
         onPointerUp={up}
         onPointerCancel={up}
         className="chat-row relative z-10 flex min-h-[76px] w-full items-center gap-3 bg-[var(--chat-list)] pl-4 pr-3 text-left"
-        style={{ transform: `translate3d(${offset}px,0,0)`, transition: inicio.current ? 'none' : 'transform 220ms cubic-bezier(.32,.72,0,1)' }}
+        style={{ transform: `translate3d(${offset}px,0,0)`, transition: arrastrando ? 'none' : 'transform 220ms cubic-bezier(.32,.72,0,1)' }}
         aria-current={props.activa ? 'true' : undefined}
       >
         <AvatarChat nombre={titulo} avatarUrl={avatarConversacion(c, props.miIntegranteId).url} color={avatarConversacion(c, props.miIntegranteId).color} size={52} />

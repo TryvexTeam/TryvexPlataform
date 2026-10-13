@@ -17,7 +17,9 @@ interface MenuConversacionProps {
 export function MenuConversacion(props: MenuConversacionProps) {
   const { abierta, conversacion, onAbierta } = props
   const silenciada = Boolean(
-    conversacion.silenciado_hasta && new Date(conversacion.silenciado_hasta).getTime() > Date.now(),
+    conversacion.silenciado_hasta &&
+      // eslint-disable-next-line react-hooks/purity
+      new Date(conversacion.silenciado_hasta).getTime() > Date.now(),
   )
   const elegir = (accion: () => void) => () => {
     accion()
