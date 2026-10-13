@@ -146,11 +146,13 @@ export function parsearMarkdown(fuente: string, opciones: OpcionesMd = {}): Bloq
       continue
     }
 
-    const titulo = /^(#{1,3})\s+(.*)$/.exec(linea)
+    // `####` en adelante (común en documentos .md) se dibuja como el nivel 3:
+    // mejor un subtítulo de más que dejar los `#` sueltos como texto.
+    const titulo = /^(#{1,6})\s+(.*)$/.exec(linea)
     if (titulo) {
       bloques.push({
         tipo: 'titulo',
-        nivel: titulo[1].length as 1 | 2 | 3,
+        nivel: Math.min(titulo[1].length, 3) as 1 | 2 | 3,
         contenido: parsearInline(titulo[2].trim()),
       })
       i++
@@ -201,8 +203,11 @@ export function parsearMarkdown(fuente: string, opciones: OpcionesMd = {}): Bloq
       lineas[i].trim() !== '' &&
       !esItem(lineas[i]) &&
       !/^>\s?/.test(lineas[i]) &&
-      !/^#{1,3}\s+/.test(lineas[i]) &&
-      !/^```/.test(lineas[i].trim())
+      !/^#{1,6}\s+/.test(lineas[i]) &&
+      !/^```/.test(lineas[i].trim()) &&
+      // Una tabla pegada al texto de arriba («Ritmo semanal:» y debajo la
+      // tabla, sin línea en blanco) corta el párrafo, como en GitHub.
+      !(lineas[i].includes('|') && i + 1 < lineas.length && SEPARADOR_TABLA.test(lineas[i + 1]))
     ) {
       cuerpo.push(lineas[i])
       i++

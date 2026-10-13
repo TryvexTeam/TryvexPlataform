@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { esImagen, esTexto, esPdf, esHtml, esVideo, esOfimatica, type AdjuntoMensaje } from './chat'
+import { esImagen, esTexto, esPdf, esHtml, esMarkdown, esVideo, esOfimatica, type AdjuntoMensaje } from './chat'
 
 const adj = (nombre: string, tipo_mime: string): AdjuntoMensaje => ({
   id: 'x',
@@ -95,5 +95,20 @@ describe('esOfimatica', () => {
   it('no se confunde con texto ni HTML', () => {
     expect(esOfimatica(adj('notas.md', 'text/markdown'))).toBe(false)
     expect(esOfimatica(adj('pagina.html', 'text/html'))).toBe(false)
+  })
+})
+
+describe('esMarkdown', () => {
+  it('reconoce un .md subido desde Windows (MIME genérico)', () =>
+    expect(esMarkdown(adj('PRP-001-bitacora-coach-mvp.md', 'application/octet-stream'))).toBe(true))
+
+  it('reconoce por tipo MIME', () => expect(esMarkdown(adj('notas', 'text/markdown'))).toBe(true))
+
+  it('sigue siendo texto, para que el Código quede a un clic', () =>
+    expect(esTexto(adj('README.md', 'application/octet-stream'))).toBe(true))
+
+  it('no confunde un .txt ni un .html', () => {
+    expect(esMarkdown(adj('notas.txt', 'text/plain'))).toBe(false)
+    expect(esMarkdown(adj('pagina.html', 'text/html'))).toBe(false)
   })
 })
