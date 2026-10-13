@@ -134,7 +134,8 @@
       "atrás vuelve a la lista",
       "bottom-nav y topbar ocultos en conversación móvil"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "Playwright 390px (build de producción): abrir chat → URL con ?c=; nav.fixed.bottom-0 = 0 y .topbar-app oculto en conversación; goBack → lista visible sin ?c="
   },
   {
     "id": "chat-lista",
@@ -153,7 +154,8 @@
       "screenshot móvil 390px",
       "ticks azules al leer el otro"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "Capturas 390px y 1280px: cola en primera burbuja de la racha, hora+ticks dentro, ✓ gris enviado y ✓✓ azul leído, \"Editado\", \"Leer más\", píldora \"Hoy\", doodle"
   },
   {
     "id": "chat-interacciones",
@@ -199,7 +201,8 @@
       "npx vitest run",
       "npm run build"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "Rama integrada: tsc exit 0, npm run lint 0 errores, vitest 805/805, npm run build Compiled successfully"
   },
   {
     "id": "chat-sin-limite",
