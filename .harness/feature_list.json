@@ -7,7 +7,8 @@
       "ips_de_integrante niega a anon/authenticated",
       "PostgREST recargó el esquema"
     ],
-    "pasa": false
+    "pasa": true,
+    "evidencia": "REST anon: rpc ip_bloqueada('8.8.8.8') → false HTTP 200; rpc ips_de_integrante → 42501 HTTP 401; psql: funciones bloquear_ips/ip_bloqueada/registrar_ip/revocar_sesiones_auth presentes; NOTIFY pgrst reload"
   },
   {
     "id": "bienvenida-anuncio",
