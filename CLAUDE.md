@@ -45,7 +45,7 @@ components/
 ├── proyectos/      — Kanban + detalle + formulario
 ├── tareas/         — Kanban + detalle + formulario
 ├── shared/         — KanbanBoard reutilizable
-├── dashboard/ · admin/ · chat/ · equipo/ · finanzas/ · jornada/ · llamadas/ · vex/ · cerebro/ · settings/ — dominios propios
+└── dashboard/ · admin/ · chat/ · equipo/ · finanzas/ · jornada/ · llamadas/ · vex/ · cerebro/ · settings/ — dominios propios
 
 lib/
 ├── supabase/       — client.ts, server.ts, middleware.ts
