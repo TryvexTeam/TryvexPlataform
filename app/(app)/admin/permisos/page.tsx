@@ -1,5 +1,6 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { KeyRound } from 'lucide-react'
+import { KeyRound, UserX } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PermisosRepository } from '@/lib/repos/permisos'
 import { PermisosEquipo } from '@/components/admin/permisos-equipo'
@@ -29,14 +30,23 @@ export default async function AdminPermisosPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 p-6 pb-24 md:pb-6">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <KeyRound className="h-6 w-6 text-neutral-700" />
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-semibold text-[var(--tx-ink-primary)]">Accesos</h1>
           <p className="text-sm text-[var(--tx-ink-muted)]">
             Reparte visibilidad sin convertir a nadie en administrador
           </p>
         </div>
+        {/* Quitar acceso y desvincular viven en su propia pantalla: son acciones
+            destructivas y no se mezclan con los interruptores de visibilidad. */}
+        <Link
+          href="/admin/acceso"
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--tx-border)] px-3 text-sm font-medium text-[var(--tx-ink-primary)] hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tx-accent)]"
+        >
+          <UserX className="h-4 w-4" aria-hidden="true" />
+          Quitar acceso o desvincular
+        </Link>
       </div>
 
       <PermisosEquipo equipoInicial={equipo} />
