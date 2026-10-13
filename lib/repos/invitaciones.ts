@@ -126,6 +126,22 @@ export async function marcarUsado(
   if (error) throw error
 }
 
+/** Cierra invitaciones aprobadas todavía pendientes del correo que ya entró con OAuth. */
+export async function marcarPendientesUsadasPorEmail(
+  supabase: SupabaseClient,
+  email: string,
+): Promise<void> {
+  const ahora = new Date().toISOString()
+  const { error } = await supabase
+    .from('invitaciones')
+    .update({ used_at: ahora })
+    .eq('email', email.trim().toLowerCase())
+    .is('used_at', null)
+    .not('aprobado_at', 'is', null)
+    .gt('expires_at', ahora)
+  if (error) throw error
+}
+
 export async function verificarRateLimit(
   supabase: SupabaseClient,
   invitadoPorId: string

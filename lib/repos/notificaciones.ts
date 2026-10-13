@@ -81,7 +81,8 @@ export class NotificacionesRepository {
   }
 
   /** Crea la notificación para cada destinatario que tenga el toggle activo.
-   *  Best-effort: nunca lanza (los emisores no deben romper la operación principal). */
+   *  Best-effort: nunca lanza (los emisores no deben romper la operación principal).
+   *  Devuelve true si la campanita se guardó (o no había a quién avisar). */
   async notificar(input: {
     destinatarios: string[]
     tipo: TipoNotificacion
@@ -89,10 +90,10 @@ export class NotificacionesRepository {
     cuerpo?: string
     link?: string
     excluir?: string | null
-  }): Promise<void> {
+  }): Promise<boolean> {
     try {
       const ids = [...new Set(input.destinatarios)].filter((id) => id !== input.excluir)
-      if (ids.length === 0) return
+      if (ids.length === 0) return true
 
       const { data: prefs } = await this.sb
         .from('dim_integrantes')
@@ -102,7 +103,7 @@ export class NotificacionesRepository {
       const habilitados = ((prefs ?? []) as { id: string; notificaciones: Partial<Notificaciones> | null }[])
         .filter((p) => p.notificaciones?.[input.tipo] !== false)
         .map((p) => p.id)
-      if (habilitados.length === 0) return
+      if (habilitados.length === 0) return true
 
       const { error: errorInsert } = await this.sb.from('notificaciones').insert(
         habilitados.map((integrante_id) => ({
@@ -117,6 +118,7 @@ export class NotificacionesRepository {
       // principal. Pero antes ni se miraba: un INSERT rechazado (RLS, columna
       // faltante, etc.) desaparecía sin dejar rastro y "no me llegó la campanita"
       // era indiagnosticable.
+      const insertOk = !errorInsert
       if (errorInsert) {
         console.error('[notificar] no se pudo insertar la notificación', {
           tipo: input.tipo,
@@ -151,8 +153,10 @@ export class NotificacionesRepository {
           motivo: resultado.motivo ?? 'todas_las_suscripciones_fallaron',
         })
       }
+      return insertOk
     } catch (err) {
       console.error('[notificar]', err instanceof Error ? err.message : err)
+      return false
     }
   }
 

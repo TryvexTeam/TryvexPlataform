@@ -1,0 +1,227 @@
+[
+  {
+    "id": "db-119",
+    "descripcion": "Migraciones 038+119 en producción con permisos correctos",
+    "pasos": [
+      "RPC ip_bloqueada responde a anon",
+      "ips_de_integrante niega a anon/authenticated",
+      "PostgREST recargó el esquema"
+    ],
+    "pasa": true,
+    "evidencia": "REST anon: rpc ip_bloqueada('8.8.8.8') → false HTTP 200; rpc ips_de_integrante → 42501 HTTP 401; psql: funciones bloquear_ips/ip_bloqueada/registrar_ip/revocar_sesiones_auth presentes; NOTIFY pgrst reload"
+  },
+  {
+    "id": "bienvenida-anuncio",
+    "descripcion": "Un integrante nuevo dispara UNA notificación de bienvenida al resto",
+    "pasos": [
+      "integrante con llegada_anunciada_at null navega a la app",
+      "el resto recibe notificación tipo bienvenida",
+      "segunda navegación no repite"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "bienvenida-tarjeta-nuevo",
+    "descripcion": "El recién llegado ve su tarjeta de bienvenida en el dashboard",
+    "pasos": [
+      "entrar como nuevo",
+      "tarjeta con su nombre y quién lo saludó",
+      "accesos rápidos funcionan"
+    ],
+    "pasa": true,
+    "evidencia": "Playwright 390px con sesión real de cuenta de prueba: \"¡Bienvenido/a a Tryvex, Prueba!\" visible + 3 atajos (captura bienvenida-nuevo.png)"
+  },
+  {
+    "id": "bienvenida-tarjeta-equipo",
+    "descripcion": "El resto ve 'Dar la bienvenida' y saludar abre el DM",
+    "pasos": [
+      "botón visible para recién llegados de 7 días",
+      "POST /api/bienvenidas crea saludo + mensaje",
+      "segundo clic no duplica mensaje",
+      "nuevo recibe notificación"
+    ],
+    "pasa": true,
+    "evidencia": "e2e-t101.mjs: POST /api/bienvenidas crea DM, 2º clic ya_saludado=true, 1 solo mensaje, notificación al nuevo; Playwright: botón \"Dar la bienvenida\" visible (bug de doble llegada corregido en 7f…)"
+  },
+  {
+    "id": "google-login",
+    "descripcion": "Integrante existente entra con Google",
+    "pasos": [
+      "botón en /login",
+      "callback canjea código",
+      "llega a /dashboard"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "google-invitacion",
+    "descripcion": "Invitado entra con Google con el correo invitado",
+    "pasos": [
+      "signup con token muestra botón",
+      "callback crea integrante y marca invitación usada"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "google-rechazo",
+    "descripcion": "Cuenta Google sin invitación es rechazada sin dejar huérfanos",
+    "pasos": [
+      "redirige a /login?motivo=google_sin_invitacion",
+      "el auth user creado se borra"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "ip-registro",
+    "descripcion": "El CRM registra la IP real del cliente",
+    "pasos": [
+      "navegar con sesión",
+      "fila en integrante_ips con ultima_vez"
+    ],
+    "pasa": true,
+    "evidencia": "e2e-t101.mjs: GET /dashboard con x-forwarded-for 198.51.100.23 → fila en integrante_ips"
+  },
+  {
+    "id": "ip-bloqueo-proxy",
+    "descripcion": "Una IP bloqueada recibe 403 en páginas y API",
+    "pasos": [
+      "insertar IP de prueba",
+      "página → HTML 403",
+      "/api → JSON 403",
+      "desbloquear → vuelve 200"
+    ],
+    "pasa": true,
+    "evidencia": "e2e-t101.mjs: IP bloqueada → /login 403 HTML y /api/chat/conversaciones 403 JSON; otra IP pasa; DELETE ips-bloqueadas → tras TTL 60 s vuelve a entrar"
+  },
+  {
+    "id": "desvincular-flujo",
+    "descripcion": "Superadmin desvincula: cuenta borrada, sesiones cerradas, IPs bloqueadas, historial conservado",
+    "pasos": [
+      "diálogo lista IPs con compartidas desmarcadas",
+      "confirmar con nombre exacto",
+      "auth user eliminado",
+      "dim_integrantes conserva fila con desvinculado_at",
+      "registro_accesos 'desvinculado'"
+    ],
+    "pasa": true,
+    "evidencia": "e2e-t101.mjs: confirmación correcta → 200; fila conservada (activo=false, desvinculado_at, auth_user_id null); auth user eliminado; registro_accesos desvinculado=1"
+  },
+  {
+    "id": "desvincular-guardas",
+    "descripcion": "Guardas de desvincular",
+    "pasos": [
+      "no a sí mismo",
+      "no al último superadmin",
+      "rechaza IPs ajenas a la lista",
+      "no-superadmin → 403"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "desvinculado-no-revive",
+    "descripcion": "Un desvinculado no se re-vincula al registrarse de nuevo",
+    "pasos": [
+      "trigger no lo re-vincula",
+      "permitir reingreso limpia desvinculado_at"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "chat-navegacion-movil",
+    "descripcion": "Lista ↔ conversación con URL, transición iOS y swipe-back",
+    "pasos": [
+      "abrir chat agrega ?c=",
+      "atrás vuelve a la lista",
+      "bottom-nav y topbar ocultos en conversación móvil"
+    ],
+    "pasa": true,
+    "evidencia": "Playwright 390px (build de producción): abrir chat → URL con ?c=; nav.fixed.bottom-0 = 0 y .topbar-app oculto en conversación; goBack → lista visible sin ?c="
+  },
+  {
+    "id": "chat-lista",
+    "descripcion": "Lista estilo WhatsApp: título grande, buscador, filtros, swipes",
+    "pasos": [
+      "filtros Todos/No leídos/Grupos",
+      "buscar filtra",
+      "fijar/archivar/silenciar/no leído persisten"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "chat-burbujas",
+    "descripcion": "Burbujas: rachas, cola, hora+ticks, editado, solo-emoji, cita, reenviado",
+    "pasos": [
+      "screenshot móvil 390px",
+      "ticks azules al leer el otro"
+    ],
+    "pasa": true,
+    "evidencia": "Capturas 390px y 1280px: cola en primera burbuja de la racha, hora+ticks dentro, ✓ gris enviado y ✓✓ azul leído, \"Editado\", \"Leer más\", píldora \"Hoy\", doodle"
+  },
+  {
+    "id": "chat-interacciones",
+    "descripcion": "Swipe para responder, long-press con reacciones y menú, bajar con contador",
+    "pasos": [
+      "menú en orden pedido",
+      "eliminar sin confirm() nativo"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "chat-composer",
+    "descripcion": "Composer: +, cámara↔enviar, crecer 6 líneas, responder/editar, teclado iOS",
+    "pasos": [
+      "editar ≤15 min",
+      "Enter en escritorio envía"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "chat-escribiendo",
+    "descripcion": "'escribiendo…' en header y lista",
+    "pasos": [
+      "dos sesiones; una escribe; la otra lo ve y expira a 4 s"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "chat-reenviar",
+    "descripcion": "Reenviar copia texto y adjuntos a 1-5 chats",
+    "pasos": [
+      "adjunto copiado a ruta destino",
+      "reenviado=true"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "calidad",
+    "descripcion": "tsc, lint, vitest y build pasan en la rama integrada",
+    "pasos": [
+      "npx tsc --noEmit",
+      "npm run lint",
+      "npx vitest run",
+      "npm run build"
+    ],
+    "pasa": true,
+    "evidencia": "Rama integrada: tsc exit 0, npm run lint 0 errores, vitest 805/805, npm run build Compiled successfully"
+  },
+  {
+    "id": "chat-sin-limite",
+    "descripcion": "Mensajes del chat sin límite de caracteres (solo el tope de 4,5 MB del cuerpo en Vercel, con error claro)",
+    "pasos": [
+      "enviar mensaje de 50.000 caracteres → se guarda",
+      "se muestra con 'Leer más'",
+      "cuerpo > 4,5 MB → error legible"
+    ],
+    "pasa": false
+  },
+  {
+    "id": "chat-teclado-sin-nav",
+    "descripcion": "En el teléfono, dentro de un chat no hay barra inferior y el teclado queda pegado al campo de texto",
+    "pasos": [
+      "móvil 390px: abrir conversación → bottom-nav ausente del DOM",
+      "enfocar el campo → nada entre teclado y composer",
+      "cualquier pantalla: input con foco → bottom-nav oculto"
+    ],
+    "pasa": false
+  }
+]

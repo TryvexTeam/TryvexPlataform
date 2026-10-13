@@ -1,4 +1,6 @@
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
+import { after } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Topbar } from '@/components/layout/topbar'
@@ -12,6 +14,10 @@ import { PermisosRepository, puede } from '@/lib/repos/permisos'
 import { ProveedorLlamadas } from '@/components/llamadas/proveedor-llamadas'
 import { FrenoJornada } from '@/components/jornada/freno-jornada'
 import { JornadasRepository } from '@/lib/repos/jornadas'
+import { BienvenidasRepository } from '@/lib/repos/bienvenidas'
+import { RedRepository } from '@/lib/repos/red'
+import { ipCliente } from '@/lib/net/ip-cliente'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -66,6 +72,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ])
 
   const integrante = permisos
+
+  if (integrante && !bypass) {
+    const ip = ipCliente(await headers())
+    after(async () => {
+      // La IP se escribe con la clave de servicio y el id resuelto aquí, en el
+      // servidor: la RPC ya no es ejecutable por el rol del usuario (migración 121).
+      const resultados = await Promise.allSettled([
+        new BienvenidasRepository(datos).anunciarLlegada(integrante.id),
+        new RedRepository(createAdminClient() as unknown as SupabaseClient).registrarIpDe(integrante.id, ip),
+      ])
+      for (const resultado of resultados) {
+        if (resultado.status === 'rejected') console.error('[layout] tarea posterior falló:', resultado.reason)
+      }
+    })
+  }
 
   // ¿Tiene jornada abierta? Decide si las secciones de trabajo piden marcar
   // entrada. Va después de los permisos porque necesita el id del integrante,
