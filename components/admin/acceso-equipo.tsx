@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from '@/lib/toast'
 import type { IntegranteAcceso, ResultadoAcceso } from '@/lib/types/acceso'
+import { DesvincularDialog } from '@/components/admin/desvincular-dialog'
 
 interface AccesoEquipoProps {
   equipoInicial: IntegranteAcceso[]
@@ -26,6 +27,7 @@ interface AccesoEquipoProps {
 export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProps) {
   const [equipo, setEquipo] = useState<IntegranteAcceso[]>(equipoInicial)
   const [aRevocar, setARevocar] = useState<IntegranteAcceso | null>(null)
+  const [aDesvincular, setADesvincular] = useState<IntegranteAcceso | null>(null)
   const [confirmacion, setConfirmacion] = useState('')
   const [motivo, setMotivo] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -79,6 +81,21 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
     }
   }
 
+  async function permitirReingreso(integrante: IntegranteAcceso) {
+    setEnviando(true)
+    try {
+      const res = await fetch('/api/admin/acceso/reingreso', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ integrante_id: integrante.id }),
+      })
+      const cuerpo = await res.json()
+      if (!res.ok || !cuerpo.success) throw new Error(cuerpo.error ?? 'No se pudo permitir el reingreso')
+      setEquipo((actual) => actual.map((fila) => fila.id === integrante.id ? { ...fila, desvinculado_at: null } : fila))
+      toast.success('Reingreso permitido', { description: 'Ahora necesita una invitación nueva.' })
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo permitir el reingreso') }
+    finally { setEnviando(false) }
+  }
+
   if (equipo.length === 0) {
     return <p className="text-sm text-[var(--tx-ink-muted)]">Todavía no hay integrantes.</p>
   }
@@ -114,7 +131,7 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
                 }
               >
                 {integrante.activo ? <UserCheck size={12} /> : <ShieldOff size={12} />}
-                {integrante.activo ? 'Con acceso' : 'Sin acceso'}
+                {integrante.desvinculado_at ? 'Desvinculado' : integrante.activo ? 'Con acceso' : 'Sin acceso'}
               </span>
 
               {integrante.activo ? (
@@ -126,13 +143,13 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
                      pueda revertirlo. El endpoint lo rechaza igual. */
                   disabled={soyYo || enviando}
                   title={soyYo ? 'No puedes quitarte el acceso a ti mismo' : undefined}
-                  onClick={() => {
-                    setARevocar(integrante)
-                    setConfirmacion('')
-                    setMotivo('')
-                  }}
+                  onClick={() => setADesvincular(integrante)}
                 >
-                  <UserX size={14} /> Quitar acceso
+                  <UserX size={14} /> Desvincular de Tryvex
+                </Button>
+              ) : integrante.desvinculado_at ? (
+                <Button variant="outline" size="sm" className="shrink-0" disabled={enviando} onClick={() => permitirReingreso(integrante)}>
+                  <UserCheck size={14} /> Permitir reingreso
                 </Button>
               ) : (
                 <Button
@@ -206,6 +223,11 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DesvincularDialog
+        integrante={aDesvincular}
+        onClose={() => setADesvincular(null)}
+        onDone={(id) => setEquipo((actual) => actual.map((fila) => fila.id === id ? { ...fila, activo: false, desvinculado_at: new Date().toISOString(), auth_user_id: null } : fila))}
+      />
     </>
   )
 }
