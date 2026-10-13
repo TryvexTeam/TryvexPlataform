@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { CodeIcon, DownloadIcon, EyeIcon, LinkIcon, XIcon } from 'lucide-react'
+import { Markdown } from '@/components/shared/markdown'
 import { copiarTexto } from '@/lib/utils/copiar-texto'
 import {
   MAX_BYTES_PREVIEW,
   esExcel,
   esHtml,
   esImagen,
+  esMarkdown,
   esOfimatica,
   esPdf,
   esTexto,
@@ -51,6 +53,7 @@ export function VisorAdjunto({
   const alternable = (esHtml(adjunto) || esTexto(adjunto)) && !esOfimatica(adjunto)
   const [modo, setModo] = useState<'ver' | 'codigo'>(
     esHtml(adjunto) ||
+      esMarkdown(adjunto) ||
       esImagen(adjunto) ||
       esPdf(adjunto) ||
       esVideo(adjunto) ||
@@ -238,6 +241,8 @@ function Cuerpo({ adjunto, modo }: { adjunto: AdjuntoMensaje; modo: 'ver' | 'cod
   if (esPdf(adjunto)) {
     return <VistaPdf adjunto={adjunto} fuente={urlAdjunto(adjunto.id)} />
   }
+
+  if (esMarkdown(adjunto)) return <VistaMarkdown adjunto={adjunto} />
 
   if (esHtml(adjunto)) {
     return (
@@ -598,8 +603,8 @@ function OfimaticaDescarga({ adjunto }: { adjunto: AdjuntoMensaje }) {
   )
 }
 
-/** El contenido crudo, para cuando se quiere leer el código y no verlo dibujado. */
-function CodigoDelArchivo({ adjunto }: { adjunto: AdjuntoMensaje }) {
+/** Trae el archivo como texto (con el mismo tope que el resto de las vistas). */
+function useTextoDelArchivo(adjunto: AdjuntoMensaje) {
   const [texto, setTexto] = useState<string | null>(null)
   const [errorAlLeer, setErrorAlLeer] = useState<string | null>(null)
 
@@ -619,6 +624,33 @@ function CodigoDelArchivo({ adjunto }: { adjunto: AdjuntoMensaje }) {
   }, [adjunto.id, demasiadoGrande, texto, errorAlLeer])
 
   useEffect(() => traer(), [traer])
+
+  return { texto, error }
+}
+
+/**
+ * Un .md dibujado como documento. Usa el mismo `Markdown` del chat, que arma
+ * nodos de React y nunca HTML crudo: el archivo lo subió alguien, y así no hay
+ * forma de que traiga un script. Ancho de lectura de página, como el Word.
+ */
+function VistaMarkdown({ adjunto }: { adjunto: AdjuntoMensaje }) {
+  const { texto, error } = useTextoDelArchivo(adjunto)
+
+  if (error) return <p className="px-4 py-3 text-[12px] opacity-70">{error}</p>
+  if (texto === null) return <p className="px-4 py-3 text-[12px] opacity-70">Leyendo…</p>
+
+  return (
+    <div className="flex-1 bg-[var(--tx-bg-elevated,#16181d)]">
+      <Markdown documento className="mx-auto max-w-[820px] px-5 py-6 sm:px-8 text-[15px] leading-relaxed">
+        {texto}
+      </Markdown>
+    </div>
+  )
+}
+
+/** El contenido crudo, para cuando se quiere leer el código y no verlo dibujado. */
+function CodigoDelArchivo({ adjunto }: { adjunto: AdjuntoMensaje }) {
+  const { texto, error } = useTextoDelArchivo(adjunto)
 
   if (error) return <p className="px-4 py-3 text-[12px] opacity-70">{error}</p>
   if (texto === null) return <p className="px-4 py-3 text-[12px] opacity-70">Leyendo…</p>

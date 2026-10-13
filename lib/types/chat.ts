@@ -166,6 +166,18 @@ export function esExcel(adjunto: AdjuntoMensaje): boolean {
 }
 
 /**
+ * Markdown (.md): se dibuja como documento, con títulos, listas y tablas.
+ *
+ * Igual que el HTML, quien manda un .md (un PRP, un informe) quiere leerlo
+ * armado; el texto crudo con `#` y `|` queda a un clic. Se mira también la
+ * extensión porque desde Windows llega como `application/octet-stream`.
+ */
+export function esMarkdown(adjunto: AdjuntoMensaje): boolean {
+  if (adjunto.tipo_mime === 'text/markdown') return true
+  return /\.(md|markdown)$/i.test(adjunto.nombre)
+}
+
+/**
  * Páginas HTML: se dibujan, no se leen.
  *
  * Va ANTES que `esTexto` a propósito — un `.html` cumple las dos, y quien manda
