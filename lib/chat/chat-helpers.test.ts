@@ -108,3 +108,14 @@ describe('sin límite de caracteres', () => {
     expect(debeRecortarse(null, 1200)).toBe(false)
   })
 })
+
+import { describirEventoLlamada } from './evento-llamada'
+
+describe('eventos de llamada', () => {
+  it('describe JSON de sistema y deja pasar el texto normal', () => {
+    expect(describirEventoLlamada('hola')).toBeNull()
+    expect(describirEventoLlamada(null)).toBeNull()
+    expect(describirEventoLlamada('{"evento":"llamada_perdida"}')).toBe('Llamada perdida')
+    expect(describirEventoLlamada('{"texto":"Ana inició una llamada"}')).toBe('Ana inició una llamada')
+  })
+})

@@ -9,16 +9,22 @@ interface MetaBurbujaProps {
   editado?: boolean
   onReintentar?: () => void
   soloTick?: boolean
+  /** Sin posición absoluta: para el solo-emoji, que no tiene burbuja. */
+  estatico?: boolean
 }
 
-export function MetaBurbuja({ estado, hora, editado, onReintentar, soloTick }: MetaBurbujaProps) {
+/** Espacio que el texto debe reservar al final para que la meta no se monte encima. */
+export function anchoMeta(estado?: EstadoTick, editado?: boolean): string {
+  if (estado === 'fallido') return '9.5rem'
+  return editado ? '7rem' : estado ? '5rem' : '3.2rem'
+}
+
+export function MetaBurbuja({ estado, hora, editado, onReintentar, soloTick, estatico }: MetaBurbujaProps) {
   const icono = <Tick estado={estado} />
   if (soloTick) return <span className="mr-1 inline-flex align-[-2px]">{icono}</span>
-  const ancho = estado === 'fallido' ? '8.5rem' : editado ? '7.5rem' : '5rem'
   return (
     <>
-      <span className="chat-meta-spacer" style={{ width: ancho }} aria-hidden />
-      <span className="chat-bubble-meta">
+      <span className="chat-bubble-meta" style={estatico ? { position: "static", justifyContent: "flex-end" } : undefined}>
         {editado ? <span>Editado</span> : null}<time>{hora}</time>{icono}
         {estado === 'fallido' && onReintentar ? <button onClick={onReintentar} className="font-semibold text-[var(--chat-error)] underline">Reintentar</button> : null}
       </span>
