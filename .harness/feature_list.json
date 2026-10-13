@@ -205,5 +205,15 @@
       "cuerpo > 4,5 MB → error legible"
     ],
     "pasa": false
+  },
+  {
+    "id": "chat-teclado-sin-nav",
+    "descripcion": "En el teléfono, dentro de un chat no hay barra inferior y el teclado queda pegado al campo de texto",
+    "pasos": [
+      "móvil 390px: abrir conversación → bottom-nav ausente del DOM",
+      "enfocar el campo → nada entre teclado y composer",
+      "cualquier pantalla: input con foco → bottom-nav oculto"
+    ],
+    "pasa": false
   }
 ]
