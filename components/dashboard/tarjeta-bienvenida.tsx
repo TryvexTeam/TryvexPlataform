@@ -58,44 +58,71 @@ export function TarjetaBienvenida({ integrantes, miIntegranteId }: Props) {
         <X size={17} aria-hidden="true" />
       </button>
 
-      {yoNuevo ? (
-        <div className="space-y-4 pr-8">
-          <div>
-            <h2 id="bienvenida-titulo" className="text-xl font-semibold text-[var(--tx-ink-primary)]">¡Bienvenido/a a Tryvex, {yoNuevo.nombre.split(' ')[0]}!</h2>
-            <p className="mt-1 text-sm text-[var(--tx-ink-muted)]">Qué alegría tenerte en el equipo. Aquí están tus primeros atajos para empezar.</p>
-          </div>
-          {yoNuevo.saludos.length > 0 && (
-            <div className="flex items-center gap-3">
-              <div className="flex -space-x-2" aria-hidden="true">
-                {yoNuevo.saludos.slice(0, 4).map((saludo) => (
-                  <Avatar key={saludo.id} className="h-8 w-8 border-2 border-[var(--tx-surface-1)]"><AvatarImage src={saludo.avatar_url ?? undefined} /><AvatarFallback>{iniciales(saludo.nombre)}</AvatarFallback></Avatar>
-                ))}
-              </div>
-              <p className="text-sm text-[var(--tx-ink-secondary)]">{textoSaludos(yoNuevo)}</p>
-            </div>
-          )}
-          <div className="grid gap-2 sm:grid-cols-3">
-            <Atajo href="/chat" icono={<MessageCircle size={16} />} texto="Chat" />
-            <Atajo href="/tareas" icono={<ListTodo size={16} />} texto="Tareas" />
-            <Atajo href="/settings" icono={<Settings size={16} />} texto="Perfil" />
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-3 pr-8">
-          <h2 id="bienvenida-titulo" className="text-base font-semibold text-[var(--tx-ink-primary)]">Nuevos integrantes</h2>
-          {otros.map((persona) => {
-            const yaSaludo = saludados.has(persona.id)
-            return <div key={persona.id} className="flex flex-wrap items-center gap-3 border-t border-[var(--tx-border)] pt-3 first:border-0 first:pt-0">
-              <Avatar className="h-10 w-10"><AvatarImage src={persona.avatar_url ?? undefined} /><AvatarFallback>{iniciales(persona.nombre)}</AvatarFallback></Avatar>
-              <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-[var(--tx-ink-primary)]">{persona.nombre}</p><p className="text-xs text-[var(--tx-ink-muted)]">se unió {haceDias(persona.llegada_anunciada_at)}</p></div>
-              <Button type="button" size="sm" variant={yaSaludo ? 'outline' : 'default'} disabled={enviando === persona.id} onClick={() => saludar(persona.id)}>
-                {yaSaludo && <Check size={14} aria-hidden="true" />}{enviando === persona.id ? 'Abriendo…' : yaSaludo ? 'Saludaste ✓ · Abrir chat' : 'Dar la bienvenida'}
-              </Button>
-            </div>
-          })}
+      {/* Si quien mira también llegó esta semana, ve su bienvenida Y a los demás recién
+          llegados: con dos ingresos en la misma semana, ninguno debe quedar sin poder
+          saludar al otro. */}
+      {yoNuevo && <MiBienvenida yo={yoNuevo} />}
+      {otros.length > 0 && (
+        <div className={yoNuevo ? 'mt-5 space-y-3 border-t border-[var(--tx-border)] pt-4' : 'space-y-3 pr-8'}>
+          <h2 id={yoNuevo ? undefined : 'bienvenida-titulo'} className="text-base font-semibold text-[var(--tx-ink-primary)]">
+            {yoNuevo ? 'También llegaron' : 'Nuevos integrantes'}
+          </h2>
+          {otros.map((persona) => (
+            <FilaRecienLlegado
+              key={persona.id}
+              persona={persona}
+              yaSaludo={saludados.has(persona.id)}
+              enviando={enviando === persona.id}
+              onSaludar={() => saludar(persona.id)}
+            />
+          ))}
         </div>
       )}
     </section>
+  )
+}
+
+function MiBienvenida({ yo }: { yo: RecienLlegado }) {
+  return (
+    <div className="space-y-4 pr-8">
+      <div>
+        <h2 id="bienvenida-titulo" className="text-xl font-semibold text-[var(--tx-ink-primary)]">¡Bienvenido/a a Tryvex, {yo.nombre.split(' ')[0]}!</h2>
+        <p className="mt-1 text-sm text-[var(--tx-ink-muted)]">Qué alegría tenerte en el equipo. Aquí están tus primeros atajos para empezar.</p>
+      </div>
+      {yo.saludos.length > 0 && (
+        <div className="flex items-center gap-3">
+          <div className="flex -space-x-2" aria-hidden="true">
+            {yo.saludos.slice(0, 4).map((saludo) => (
+              <Avatar key={saludo.id} className="h-8 w-8 border-2 border-[var(--tx-surface-1)]"><AvatarImage src={saludo.avatar_url ?? undefined} /><AvatarFallback>{iniciales(saludo.nombre)}</AvatarFallback></Avatar>
+            ))}
+          </div>
+          <p className="text-sm text-[var(--tx-ink-secondary)]">{textoSaludos(yo)}</p>
+        </div>
+      )}
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Atajo href="/chat" icono={<MessageCircle size={16} />} texto="Chat" />
+        <Atajo href="/tareas" icono={<ListTodo size={16} />} texto="Tareas" />
+        <Atajo href="/settings" icono={<Settings size={16} />} texto="Perfil" />
+      </div>
+    </div>
+  )
+}
+
+type FilaProps = { persona: RecienLlegado; yaSaludo: boolean; enviando: boolean; onSaludar: () => void }
+
+function FilaRecienLlegado({ persona, yaSaludo, enviando, onSaludar }: FilaProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-t border-[var(--tx-border)] pt-3 first-of-type:border-0 first-of-type:pt-0">
+      <Avatar className="h-10 w-10"><AvatarImage src={persona.avatar_url ?? undefined} /><AvatarFallback>{iniciales(persona.nombre)}</AvatarFallback></Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-[var(--tx-ink-primary)]">{persona.nombre}</p>
+        <p className="text-xs text-[var(--tx-ink-muted)]">se unió {haceDias(persona.llegada_anunciada_at)}</p>
+      </div>
+      <Button type="button" size="sm" variant={yaSaludo ? 'outline' : 'default'} disabled={enviando} onClick={onSaludar}>
+        {yaSaludo && <Check size={14} aria-hidden="true" />}
+        {enviando ? 'Abriendo…' : yaSaludo ? 'Saludaste · Abrir chat' : 'Dar la bienvenida 👋'}
+      </Button>
+    </div>
   )
 }
 
