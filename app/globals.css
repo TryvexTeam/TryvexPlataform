@@ -1519,3 +1519,47 @@
     font-size: 16px !important;
   }
 }
+
+/* ── Chat estilo WhatsApp ─────────────────────────────────────────────────────
+   Geometría e interacción de WhatsApp para iPhone; colores del CRM. Todo valor del
+   chat sale de aquí para poder ajustarlo tras comparar con capturas reales. */
+:root {
+  --chat-bg: var(--tx-bg-primary);
+  --chat-doodle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' fill='none' stroke='%23fff' stroke-opacity='.035' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M14 18h16v12H18l-4 4z'/%3E%3Ccircle cx='86' cy='22' r='7'/%3E%3Cpath d='M60 56l6 6 10-12M20 82c6-8 14-8 20 0M92 78l8 8m0-8l-8 8M52 100h18M61 91v18'/%3E%3C/svg%3E");
+  --chat-burbuja-mia: color-mix(in oklch, var(--tx-accent) 30%, var(--tx-bg-secondary));
+  --chat-burbuja-mia-texto: var(--tx-ink-primary);
+  --chat-burbuja-otra: var(--tx-surface-2, oklch(100% 0 0 / 8%));
+  --chat-burbuja-otra-texto: var(--tx-ink-primary);
+  --chat-meta: var(--tx-ink-muted);
+  --chat-tick-leido: #53bdeb;
+  --chat-error: var(--tx-error);
+  --chat-radio: 18px;
+  --chat-espacio-racha: 2px;
+  --chat-espacio-autor: 8px;
+  --chat-ancho-burbuja: 75%;
+  --chat-texto: 16px;
+  --chat-texto-meta: 11px;
+  --chat-material: color-mix(in oklch, var(--tx-bg-primary) 72%, transparent);
+  --chat-desenfoque: blur(20px) saturate(180%);
+  --chat-curva-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --chat-push-ms: 350ms;
+}
+
+/* Conversación abierta en el teléfono: pantalla completa, como WhatsApp. La barra
+   inferior ni se renderiza (useNavMovilOculta); aquí se oculta la superior y se
+   devuelve al <main> el alto que reservaba para la barra. */
+@media (max-width: 767px) {
+  html[data-chat-conversation='true'] .topbar-app { display: none; }
+  html[data-chat-conversation='true'] main.pb-nav-movil { padding-bottom: 0; }
+}
+
+/* Con un campo enfocado tampoco hay barra inferior: el <main> no reserva su alto. */
+@media (max-width: 767px) {
+  html:has(:is(input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=file]), textarea):focus) main.pb-nav-movil {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --chat-push-ms: 0ms; }
+}

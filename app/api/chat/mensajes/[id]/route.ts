@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { ChatRepository } from '@/lib/repos/chat'
+import { EditarMensajeSchema } from '@/lib/types/chat'
+import { puedeEditarMensaje } from '@/lib/chat/edicion'
 
 /**
  * Elimina un mensaje.
@@ -33,14 +35,34 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
   }
 
-  const cuerpo = (await req.json().catch(() => null)) as { fijar?: boolean } | null
-  if (typeof cuerpo?.fijar !== 'boolean') {
-    return NextResponse.json({ success: false, error: 'Falta "fijar" (true o false)' }, { status: 400 })
+  const cuerpo: unknown = await req.json().catch(() => null)
+  const repo = new ChatRepository(supabase)
+
+  const edicion = EditarMensajeSchema.safeParse(cuerpo)
+  if (edicion.success) {
+    const mensaje = await repo.obtenerMensaje(id)
+    if (!mensaje) return NextResponse.json({ success: false, error: 'No existe' }, { status: 404 })
+    if (!(await repo.esMiembro(mensaje.conversacion_id, perfil.id))) {
+      return NextResponse.json({ success: false, error: 'No perteneces a esa conversación' }, { status: 403 })
+    }
+    if (mensaje.autor_id !== perfil.id) {
+      return NextResponse.json({ success: false, error: 'Solo puedes editar tus mensajes' }, { status: 403 })
+    }
+    if (!puedeEditarMensaje(mensaje.created_at, mensaje.eliminado_at)) {
+      return NextResponse.json({ success: false, error: 'La ventana de edición de 15 minutos terminó' }, { status: 400 })
+    }
+    const actualizado = await repo.editar(id, edicion.data.contenido)
+    return NextResponse.json({ success: true, data: actualizado })
+  }
+
+  const fijar = (cuerpo as { fijar?: unknown } | null)?.fijar
+  if (typeof fijar !== 'boolean') {
+    return NextResponse.json({ success: false, error: 'Cambio de mensaje inválido' }, { status: 400 })
   }
 
   try {
-    await new ChatRepository(supabase).fijar(id, cuerpo.fijar)
-    return NextResponse.json({ success: true, data: { fijado: cuerpo.fijar } })
+    await repo.fijar(id, fijar)
+    return NextResponse.json({ success: true, data: { fijado: fijar } })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'No se pudo fijar'
     const sinPermiso = msg.includes('solo_miembros_fijan') || msg.includes('42501')
