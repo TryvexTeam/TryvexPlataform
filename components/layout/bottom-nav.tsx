@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useNavMovilOculta } from '@/lib/hooks/use-nav-movil-oculta'
 
 /**
  * Los cuatro atajos de siempre + "Más".
@@ -91,6 +92,11 @@ export function BottomNav() {
   // Si la sección actual no es ninguno de los atajos, "Más" queda marcado: así
   // se ve dónde se está aunque la sección no tenga su propio botón.
   const enOtra = !ATAJOS.some((a) => enSeccion(a.href))
+
+  // Dentro de una conversación o con el teclado abierto la barra no existe:
+  // si se renderizara, subiría con el teclado y quedaría encima del campo.
+  const oculta = useNavMovilOculta()
+  if (oculta && !abierto) return null
 
   return (
     <>

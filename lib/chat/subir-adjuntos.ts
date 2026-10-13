@@ -108,7 +108,10 @@ export async function leerJSON(
     return await res.json()
   } catch {
     if (res.status === 413) {
-      return { success: false, error: 'El archivo es demasiado grande para enviarse así' }
+      return {
+        success: false,
+        error: 'El cuerpo del mensaje supera el límite de 4,5 MB de Vercel. Reduce el texto o los adjuntos.',
+      }
     }
     return { success: false, error: `El servidor respondió ${res.status} sin explicación` }
   }

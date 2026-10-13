@@ -156,9 +156,7 @@ export async function POST(req: Request) {
     // Aviso al resto: push al celular si lo tienen activado. Best-effort.
     const conversaciones = await repo.listConversaciones(perfil.id)
     const conv = conversaciones.find((c) => c.id === conversacion_id)
-    const destinatarios = (conv?.miembros ?? [])
-      .map((m) => m.integrante_id)
-      .filter((id) => id !== perfil.id)
+    const destinatarios = await repo.destinatariosPush(conversacion_id, perfil.id)
 
     if (destinatarios.length > 0) {
       // En cualquier hilo con nombre propio (grupo o canal de agentes) conviene

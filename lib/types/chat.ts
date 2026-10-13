@@ -6,7 +6,7 @@ export const EnviarMensajeSchema = z.object({
   // no venga ni texto ni archivo lo rechaza el route, que sí ve los adjuntos.
   // 4000 se quedaba corto: los agentes mandan informes largos y quedaban
   // rebotados sin poder partirlos. La columna es TEXT, el tope es de cordura.
-  contenido: z.string().trim().max(20000, 'Máximo 20.000 caracteres').optional(),
+  contenido: z.string().trim().optional(),
   /** Cita a un mensaje puntual del hilo. */
   responder_a: z.string().uuid().optional(),
   /** Cuelga el mensaje de un hilo en vez del flujo principal. */
@@ -24,10 +24,31 @@ export const ReaccionSchema = z.object({
   emoji: z.string().trim().min(1).max(16),
 })
 
+export const EditarMensajeSchema = z.object({
+  contenido: z.string().trim().min(1, 'El mensaje no puede quedar vacío'),
+})
+
+export const ReenviarMensajeSchema = z.object({
+  conversaciones: z
+    .array(z.string().uuid())
+    .min(1, 'Elige al menos una conversación')
+    .max(5, 'Puedes reenviar a un máximo de 5 conversaciones')
+    .refine((ids) => new Set(ids).size === ids.length, 'No repitas conversaciones'),
+})
+
+export const ActualizarMiembroSchema = z
+  .object({
+    fijado: z.boolean().optional(),
+    archivado: z.boolean().optional(),
+    silenciado_hasta: z.iso.datetime().nullable().optional(),
+    no_leido: z.literal(true).optional(),
+  })
+  .refine((valor) => Object.values(valor).some((v) => v !== undefined), 'No hay cambios')
+
 export type ReaccionInput = z.infer<typeof ReaccionSchema>
 
 /** Los que ofrece la barra rápida. Se puede reaccionar con cualquiera igual. */
-export const EMOJIS_RAPIDOS = ['👍', '🎉', '❤️', '😂', '👀', '🚀'] as const
+export const EMOJIS_RAPIDOS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const
 
 /** Una reacción ya agrupada para mostrar: "👍 3", y si estoy entre esos 3. */
 export type ReaccionAgrupada = {
@@ -39,9 +60,7 @@ export type ReaccionAgrupada = {
   quienes: string[]
 }
 
-export const LARGO_MAXIMO_MENSAJE = 20000
-
-/** A partir de acá la burbuja se recorta y ofrece "Ver más". */
+/** A partir de acá la burbuja se recorta visualmente y ofrece "Leer más". */
 export const LARGO_PARA_RECORTAR = 1200
 
 export const CrearConversacionSchema = z
@@ -191,6 +210,9 @@ export type MiembroChat = {
   avatar_url: string | null
   color: string | null
   ultimo_leido_at: string
+  fijado_at?: string | null
+  archivado_at?: string | null
+  silenciado_hasta?: string | null
 }
 
 export type Mensaje = {
@@ -216,6 +238,9 @@ export type Mensaje = {
   /** Cuándo se fijó al tope de la conversación. Nulo = no fijado. */
   fijado_at?: string | null
   fijado_por?: string | null
+  reenviado?: boolean
+  /** Solo existe en el cliente mientras un envío optimista se confirma. */
+  envio_estado?: 'pendiente' | 'fallido'
 }
 
 export type Conversacion = {
@@ -228,6 +253,9 @@ export type Conversacion = {
   miembros: MiembroChat[]
   ultimo_mensaje: Mensaje | null
   no_leidos: number
+  fijado_at?: string | null
+  archivado_at?: string | null
+  silenciado_hasta?: string | null
 }
 
 /** Clave canónica de un DM: el par de UUIDs ordenado, para que exista un solo hilo. */
