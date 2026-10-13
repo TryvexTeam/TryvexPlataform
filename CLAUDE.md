@@ -44,11 +44,12 @@ components/
 ├── clientes/       — Lista + detalle + formulario
 ├── proyectos/      — Kanban + detalle + formulario
 ├── tareas/         — Kanban + detalle + formulario
-└── shared/         — KanbanBoard reutilizable
+├── shared/         — KanbanBoard reutilizable
+└── dashboard/ · admin/ · chat/ · equipo/ · finanzas/ · jornada/ · llamadas/ · vex/ · cerebro/ · settings/ — dominios propios
 
 lib/
 ├── supabase/       — client.ts, server.ts, middleware.ts
-├── repos/          — Repository pattern: leads, clientes, proyectos, tareas
+├── repos/          — Repository pattern: un repo por dominio (35 archivos)
 ├── types/          — Types TS: Lead, Cliente, Proyecto, Tarea, Database
 └── utils.ts        — cn() helper
 
