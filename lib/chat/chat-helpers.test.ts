@@ -85,3 +85,26 @@ describe('helpers del chat', () => {
     expect(error?.error).toContain('4,5 MB')
   })
 })
+
+import { cuerpoDemasiadoGrande, debeRecortarse } from './limite'
+
+describe('sin límite de caracteres', () => {
+  const uuid = '00000000-0000-4000-8000-000000000001'
+
+  it('el esquema acepta mensajes muy largos', () => {
+    const largo = 'a'.repeat(300_000)
+    expect(EnviarMensajeSchema.safeParse({ conversacion_id: uuid, contenido: largo }).success).toBe(true)
+  })
+
+  it('solo rechaza cuando el cuerpo supera el tope de 4,5 MB', () => {
+    expect(cuerpoDemasiadoGrande('a'.repeat(1_000_000))).toBe(false)
+    expect(cuerpoDemasiadoGrande('a'.repeat(4_500_000))).toBe(true)
+    expect(cuerpoDemasiadoGrande('ñ'.repeat(2_300_000))).toBe(true)
+  })
+
+  it('recorta con "Leer más" pasado el umbral', () => {
+    expect(debeRecortarse('a'.repeat(1201), 1200)).toBe(true)
+    expect(debeRecortarse('a'.repeat(1200), 1200)).toBe(false)
+    expect(debeRecortarse(null, 1200)).toBe(false)
+  })
+})

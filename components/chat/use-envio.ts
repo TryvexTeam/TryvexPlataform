@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { Mensaje } from '@/lib/types/chat'
 import { subirAdjuntos, leerJSON, type AdjuntoSubido } from '@/lib/chat/subir-adjuntos'
+import { cuerpoDemasiadoGrande, MENSAJE_CUERPO_GRANDE } from '@/lib/chat/limite'
 import { toast } from '@/lib/toast'
 
 export interface DatosEnvio {
@@ -33,6 +34,10 @@ export function useEnvio({
     async (datos: DatosEnvio, idExistente?: string) => {
       const contenidoLimpio = datos.contenido.trim()
       if (!contenidoLimpio && datos.archivos.length === 0) return false
+      if (cuerpoDemasiadoGrande(contenidoLimpio)) {
+        toast.error(MENSAJE_CUERPO_GRANDE)
+        return false
+      }
 
       const localId = idExistente ?? `local-${crypto.randomUUID()}`
       pendientes.current.set(localId, datos)
@@ -82,8 +87,12 @@ export function useEnvio({
         if (!res.ok || !json?.success) throw new Error(json?.error ?? 'No se pudo enviar')
 
         const mensajeReal = json.data as Mensaje
+        // El aviso de realtime puede llegar antes que esta respuesta: si la fila real ya
+        // está, se descarta la local en vez de duplicar; si no, se reemplaza.
         setMensajes((lista) =>
-          lista.map((m) => (m.id === localId ? mensajeReal : m)),
+          lista.some((m) => m.id === mensajeReal.id)
+            ? lista.filter((m) => m.id !== localId).map((m) => (m.id === mensajeReal.id ? mensajeReal : m))
+            : lista.map((m) => (m.id === localId ? mensajeReal : m)),
         )
         pendientes.current.delete(localId)
         onEnviado?.(mensajeReal)
