@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { z } from 'zod'
 import { toast } from '@/lib/toast'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -20,7 +21,8 @@ function LoginForm() {
 
   useEffect(() => {
     const motivo = searchParams.get('motivo')
-    const esperado = searchParams.get('esperado')
+    const esperadoCrudo = searchParams.get('esperado')
+    const esperado = esperadoCrudo && z.string().email().safeParse(esperadoCrudo).success ? esperadoCrudo : null
     const mensajes: Record<string, string> = {
       google_sin_invitacion: 'Esa cuenta de Google no tiene invitación a Tryvex. Usa el correo con el que te invitaron.',
       google_correo_distinto: `La cuenta de Google no coincide con la invitación${esperado ? ` para ${esperado}` : ''}.`,

@@ -135,7 +135,7 @@ export async function marcarPendientesUsadasPorEmail(
   const { error } = await supabase
     .from('invitaciones')
     .update({ used_at: ahora })
-    .ilike('email', email.trim())
+    .eq('email', email.trim().toLowerCase())
     .is('used_at', null)
     .not('aprobado_at', 'is', null)
     .gt('expires_at', ahora)
