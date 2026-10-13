@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { BotonGoogle } from '@/components/auth/boton-google'
 
 const SignupSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -135,6 +136,14 @@ function SignupForm() {
         <CardDescription>Completa tu registro con la invitación recibida</CardDescription>
       </CardHeader>
       <CardContent>
+        <BotonGoogle
+          loginHint={form.email}
+          invitacion={token ?? undefined}
+          texto={`Entra con la cuenta de Google de ${form.email}`}
+        />
+        <div className="my-4 flex items-center gap-3 text-xs text-neutral-500" aria-hidden="true">
+          <span className="h-px flex-1 bg-neutral-200" /><span>o con tu correo</span><span className="h-px flex-1 bg-neutral-200" />
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
