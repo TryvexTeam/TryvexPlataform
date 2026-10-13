@@ -74,7 +74,10 @@ export function GestosMensaje({ onResponder, onMenu, children }: GestosMensajePr
     setDesplazado(Math.max(0, frenado))
   }
 
-  const alSoltar = () => {
+  const alSoltar = (e: React.TouchEvent) => {
+    // Si el long-press ya abrió el menú, soltar el dedo no debe "hacer clic" en el
+    // ítem del menú que quedó debajo (el navegador emite un click tras touchend).
+    if (yaDisparo.current && e.cancelable) e.preventDefault()
     cancelarEspera()
     setPresionando(false)
     if (desplazado >= UMBRAL_DESLIZAR && !yaDisparo.current) onResponder()

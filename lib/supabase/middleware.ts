@@ -125,6 +125,12 @@ export async function updateSession(request: NextRequest) {
   // lista, la regla de "usuario logueado en ruta pÃºblica â†’ dashboard" de mÃ¡s abajo
   // lo rebotarÃ­a justo cuando acaba de canjear el link.
   if (!user && !isPublicRoute) {
+    // Una llamada de API sin sesión recibe 401 en JSON, no un redirect: seguir la
+    // redirección convierte un PATCH en "PATCH /login → 405" y quien llama recibe
+    // HTML que no puede parsear ("Method Not Allowed is not valid JSON").
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ success: false, error: 'Sesión expirada. Vuelve a entrar.' }, { status: 401 })
+    }
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)

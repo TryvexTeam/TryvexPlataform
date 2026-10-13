@@ -13,6 +13,7 @@ import { useEscribiendo } from './use-escribiendo'
 import { useNavegacionChat } from './use-navegacion-chat'
 import { usePresencia } from './use-presencia'
 import { useSalasVoz } from './use-salas-voz'
+import { useIsNarrowViewport } from '@/lib/hooks/use-is-narrow-viewport'
 
 export interface IntegranteChat {
   id: string
@@ -98,7 +99,10 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
     }
   }
 
-  const detras = Boolean(nav.mostradaId) && !nav.saliendo
+  // Solo en el teléfono la conversación tapa la lista; en escritorio conviven lado a
+  // lado y la lista tiene que seguir recibiendo clics para cambiar de chat.
+  const esTelefono = useIsNarrowViewport(768)
+  const detras = esTelefono && Boolean(nav.mostradaId) && !nav.saliendo
 
   return (
     <div className="chat-workspace relative flex h-full min-h-0 md:gap-3">
