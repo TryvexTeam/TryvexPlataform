@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { BotonGoogle } from '@/components/auth/boton-google'
+import { urlApp } from '@/lib/utils/url-app'
 
 const SignupSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -77,7 +78,7 @@ function SignupForm() {
 
     setLoading(true)
     const supabase = createClient()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
+    const appUrl = urlApp(window.location.origin)
     const { error } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,

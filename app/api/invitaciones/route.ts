@@ -8,6 +8,7 @@ import {
 } from '@/lib/repos/invitaciones'
 import { PermisosRepository } from '@/lib/repos/permisos'
 import { enviarEmailInvitacion } from '@/lib/email/invitacion'
+import { urlApp } from '@/lib/utils/url-app'
 
 const CrearInvitacionSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
     const { invitacion, tokenRaw } = await crearInvitacion(supabase, email, integrante.id, invitadorEsSuperadmin)
 
     // Sin env configurada, usar el origin real del request (en prod = dominio de producción)
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin
+    const appUrl = urlApp(req.url)
     const link = `${appUrl}/signup?token=${tokenRaw}`
 
     // Se manda igual aunque quede pendiente de aprobación: el token no
