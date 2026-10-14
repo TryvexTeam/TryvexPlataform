@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/lib/toast'
+import { urlApp } from '@/lib/utils/url-app'
 
 type BotonGoogleProps = { loginHint?: string; invitacion?: string; texto?: string }
 
@@ -12,7 +13,7 @@ export function BotonGoogle({ loginHint, invitacion, texto = 'Continuar con Goog
 
   async function entrar() {
     setCargando(true)
-    const origen = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
+    const origen = urlApp(window.location.origin)
     const callback = new URL('/auth/callback', origen)
     if (invitacion) callback.searchParams.set('invitacion', invitacion)
     const queryParams: Record<string, string> = { prompt: 'select_account' }
