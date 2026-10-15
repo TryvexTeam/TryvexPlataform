@@ -76,11 +76,14 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
           enviado_por: enviadoPor ?? 'JARVIS',
         }),
       })
-      if (!res.ok) throw new Error(String(res.status))
-      toast.success('Mensaje enviado desde el CRM')
-    } catch {
-      // El backend del Botón 2 (Spike) puede no estar desplegado todavía.
-      toast.error('El envío desde el CRM aún no está disponible')
+      const d = await res.json().catch(() => ({}))
+      // El error real del servidor, no uno genérico: "aún no está disponible"
+      // escondía la causa (lead sin teléfono, sin permiso, etc.).
+      if (!res.ok) throw new Error(typeof d?.error === 'string' ? d.error : `no se pudo enviar (${res.status})`)
+      // En cola, no "enviado": lo manda el puente después, y puede fallar ahí.
+      toast.success('Mensaje en cola — sale desde el número de Tryvex')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo enviar')
     } finally {
       setEnviando(false)
     }

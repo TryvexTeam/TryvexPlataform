@@ -43,7 +43,7 @@ export function textoSugerido(lead: Lead): string {
 
 /** ¿Este estado de envío significa que el mensaje NO llegó? */
 function fallado(estado: string): boolean {
-  return /no se envió|fallido|error/i.test(estado)
+  return /no se envió|fallido|error|no lo ha tomado/i.test(estado)
 }
 
 function hora(iso: string): string {
@@ -225,7 +225,7 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
       // El borrador ya cumplio: si queda guardado, reaparece la proxima vez que
       // se abra el chat, encima de una conversacion que ya siguio.
       fetch(`/api/leads/${lead.id}/borrador`, { method: 'DELETE' }).catch(() => {})
-      toast.success('Mensaje encolado — sale en unos segundos')
+      toast.success('Mensaje en cola — su estado aparece bajo el mensaje')
       cargar()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo enviar')

@@ -18,7 +18,22 @@ describe('aJobDeEnvio', () => {
       cliente_id: null,
       es_bot: false,
       enviado_por: 'Cristian',
+      integrante_id: null,
     })
+  })
+
+  it('un telefono chileno sin el 56 se completa, no se manda a un numero inexistente', () => {
+    expect(aJobDeEnvio(fila, { telefono: '912345678' }).telefono).toBe('56912345678')
+    expect(aJobDeEnvio(fila, { telefono: '9 1234 5678' }).telefono).toBe('56912345678')
+  })
+
+  it('un telefono demasiado corto no se manda', () => {
+    expect(aJobDeEnvio(fila, { telefono: '12345' })).toBeNull()
+  })
+
+  it('pasa la autoria real hasta el envio', () => {
+    const job = aJobDeEnvio({ ...fila, integrante_id: 'cccccccc-0000-0000-0000-000000000000' }, { telefono: '56911111111' })
+    expect(job.integrante_id).toBe('cccccccc-0000-0000-0000-000000000000')
   })
 
   it('sin lead no hay envio', () => {

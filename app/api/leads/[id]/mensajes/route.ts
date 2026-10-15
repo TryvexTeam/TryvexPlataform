@@ -3,6 +3,23 @@ import { createClient } from '@/lib/supabase/server'
 import { MensajesWaRepository } from '@/lib/repos/mensajes-wa'
 
 /**
+ * Un mensaje que sigue 'encolado' después de esto es que el puente no lo está
+ * tomando (sesión de WhatsApp caída o proceso detenido): normalmente lo pasa a
+ * buscar en segundos.
+ */
+const ENCOLADO_DEMASIADO_MS = 2 * 60 * 1000
+
+function estadoVisible(o: { estado: string; error: string | null; created_at: string }): string {
+  if (o.estado === 'fallido') return `no se envió — ${o.error ?? 'sin detalle'}`
+  // Sin este aviso, el chat decía "encolado" durante horas y el equipo esperaba
+  // un mensaje que no iba a salir hasta que alguien reconectara el puente.
+  if (o.estado === 'encolado' && Date.now() - new Date(o.created_at).getTime() > ENCOLADO_DEMASIADO_MS) {
+    return 'en cola — el puente de WhatsApp no lo ha tomado (¿está desconectado?)'
+  }
+  return o.estado
+}
+
+/**
  * GET /api/leads/[id]/mensajes
  * Hilo de WhatsApp del lead (tabla `mensajes_wa`), orden cronológico.
  * Lee a través de `MensajesWaRepository` (capa de datos del wa-bridge), así la
@@ -51,7 +68,7 @@ export async function GET(
         enviado_por: null,
         // Lo que la persona necesita saber de un vistazo: si va en camino o si
         // se cayó, y por qué.
-        estado_envio: o.estado === 'fallido' ? `no se envió — ${o.error ?? 'sin detalle'}` : o.estado,
+        estado_envio: estadoVisible(o),
         created_at: o.created_at,
       })
     )
