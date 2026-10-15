@@ -5,6 +5,7 @@ import { BienvenidasRepository } from '@/lib/repos/bienvenidas'
 import { ChatRepository } from '@/lib/repos/chat'
 import { NotificacionesRepository } from '@/lib/repos/notificaciones'
 import { SaludarSchema } from '@/lib/types/bienvenida'
+import { tokenNombre } from '@/lib/chat/plantilla'
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
     const chat = new ChatRepository(supabase)
     const conversacionId = await chat.abrirDm(yo.id, nuevo.id)
     if (!yaSaludado) {
-      await chat.enviar(conversacionId, yo.id, `¡Bienvenido/a a Tryvex, ${nuevo.nombre.split(' ')[0]}! 👋`)
+      await chat.enviar(conversacionId, yo.id, `¡Bienvenido/a a Tryvex, ${tokenNombre(nuevo.id)}! 👋`)
       // El saludo se registra DESPUÉS de enviar el mensaje: si el envío falla, se puede reintentar.
       await bienvenidas.saludar(nuevo.id, yo.id)
       await new NotificacionesRepository(supabase).notificar({
