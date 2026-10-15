@@ -5,6 +5,7 @@ import { ArrowDownIcon, Loader2Icon } from 'lucide-react'
 import type { Mensaje, MiembroChat } from '@/lib/types/chat'
 import { agruparRachas } from '@/lib/chat/rachas'
 import { estadoTicks } from '@/lib/chat/ticks'
+import { resolverPlantilla } from '@/lib/chat/plantilla'
 import { abreDiaNuevo } from '@/lib/utils/fecha-santiago'
 import { BurbujaMensaje, type AccionesBurbuja, type AutorBurbuja } from './burbuja-mensaje'
 import { SeparadorFecha, SeparadorNoLeidos } from './separador-fecha'
@@ -46,10 +47,17 @@ function useIdsNuevos(mensajes: Mensaje[], cargando: boolean): Set<string> {
 }
 
 export function ListaMensajes(props: ListaMensajesProps) {
-  const { mensajes, miembros, miIntegranteId, contenedor, alScroll, bajar, lejosDelFondo, pendientes, fechaFlotante } = props
+  const { miembros, miIntegranteId, contenedor, alScroll, bajar, lejosDelFondo, pendientes, fechaFlotante } = props
+  const miembroPorId = useMemo(() => new Map(miembros.map((m) => [m.integrante_id, m])), [miembros])
+  const mensajes = useMemo(
+    () => props.mensajes.map((m) => {
+      const contenido = m.contenido && resolverPlantilla(m.contenido, (id) => miembroPorId.get(id)?.nombre)
+      return contenido === m.contenido ? m : { ...m, contenido }
+    }),
+    [props.mensajes, miembroPorId],
+  )
   const nuevos = useIdsNuevos(mensajes, props.cargando)
   const grupos = useMemo(() => agruparRachas(mensajes), [mensajes])
-  const miembroPorId = useMemo(() => new Map(miembros.map((m) => [m.integrante_id, m])), [miembros])
   const porMensaje = useMemo(() => new Map(mensajes.map((m) => [m.id, m])), [mensajes])
 
   const autorDe = (m: Mensaje): AutorBurbuja | undefined => {

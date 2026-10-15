@@ -9,6 +9,7 @@ import { pareceJson, textoPlano } from '@/lib/markdown/mini'
 import { AvatarChat } from './avatar-chat'
 import { MetaBurbuja } from './meta-burbuja'
 import { MenuConversacion } from './menu-conversacion'
+import { resolverPlantilla } from '@/lib/chat/plantilla'
 
 interface FilaConversacionProps {
   conversacion: Conversacion
@@ -104,7 +105,9 @@ function Preview({ conversacion: c, miIntegranteId }: { conversacion: Conversaci
   if (!mensaje) return <>Sin mensajes</>
   const mio = mensaje.autor_id === miIntegranteId
   const texto = mensaje.contenido?.trim()
-    ? (pareceJson(mensaje.contenido) ? 'Evento de llamada' : textoPlano(mensaje.contenido))
+    ? (pareceJson(mensaje.contenido)
+        ? 'Evento de llamada'
+        : textoPlano(resolverPlantilla(mensaje.contenido, (id) => c.miembros.find((m) => m.integrante_id === id)?.nombre)))
     : mensaje.adjuntos?.[0]?.tipo_mime.startsWith('image/') ? '📷 Imagen' : '📎 Archivo'
   return <>{mio ? <MetaBurbuja soloTick estado={estadoTicks(mensaje, c.miembros, miIntegranteId)} /> : null}{texto}</>
 }
