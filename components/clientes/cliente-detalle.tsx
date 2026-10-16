@@ -109,10 +109,13 @@ export function ClienteDetalle({ cliente, proyectos, ventas }: ClienteDetallePro
         <ArrowLeft size={14} /> Volver
       </button>
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)]">{nombreCliente(cliente)}</h1>
+      {/* Header. `flex-wrap` + `min-w-0`: mismo problema que ya se encontró y
+          arregló en lead-detalle.tsx (componente hermano, misma estructura)
+          -- sin esto, un nombre largo junto a los 3 botones (Bitácora,
+          Editar, borrar) no cabían en una fila en el teléfono. */}
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)] break-words">{nombreCliente(cliente)}</h1>
           {(cliente.nombre_negocio || cliente.nicho) && (
             <p className="text-sm text-[var(--tx-ink-muted)]">
               {[cliente.nombre_negocio, cliente.nicho].filter(Boolean).join(' · ')}
