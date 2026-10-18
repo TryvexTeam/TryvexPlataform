@@ -587,6 +587,28 @@ def id_de_google(url: str) -> Optional[str]:
     return m.group(1).lower() if m else None
 
 
+def coordenadas_de_google(url: str) -> tuple:
+    """Latitud y longitud del local, sacadas de la URL de su ficha (para el mapa).
+
+    La ficha trae la ubicacion del LOCAL en el `data=` como `!3d<lat>!4d<lng>`.
+    El `@lat,lng` del comienzo es el centro de la pantalla, no el local: solo se
+    usa si falta lo otro. Fuera de Chile continental se descarta (una URL rara no
+    puede poner un pin en el mar). Devuelve (None, None) si no hay.
+    """
+    if not url:
+        return (None, None)
+    m = (
+        re.search(r"!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)", url)
+        or re.search(r"@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)", url)
+    )
+    if not m:
+        return (None, None)
+    lat, lng = float(m.group(1)), float(m.group(2))
+    if not (-56.0 <= lat <= -17.0 and -76.0 <= lng <= -66.0):
+        return (None, None)
+    return (round(lat, 7), round(lng, 7))
+
+
 # Como Maps dice que un negocio ya no atiende, en los idiomas en que puede
 # aparecer la ficha. Se listan como frases y no como palabras sueltas: "cerrado"
 # a secas es el estado normal de cualquier negocio fuera de horario, y tomarlo
@@ -803,6 +825,7 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
     return {
         "nombre": nombre,
         "google_place_id": id_de_google(page.url),
+        **dict(zip(("lat", "lng"), coordenadas_de_google(page.url))),
         "categoria_google": await extraer_categoria(page),
         "telefono": telefono,
         "info_texto": info_texto,

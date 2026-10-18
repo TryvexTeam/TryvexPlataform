@@ -114,6 +114,19 @@ export const RUTAS: RutaManual[] = [
   },
   {
     metodo: 'GET',
+    ruta: '/api/agentes/feed',
+    para: 'Lo que el equipo publicó y guardó en el feed: ideas y referencias para tomar en cuenta.',
+    ejemplo: '?desde=2026-10-01T00:00:00Z o ?coleccion=ideas para landings',
+  },
+  {
+    metodo: 'POST',
+    ruta: '/api/agentes/noticias',
+    para: 'Publicar noticias útiles para Tryvex en la pestaña «Afuera» del feed (lo usa el radar semanal).',
+    ejemplo: { noticias: [{ url: 'https://…', titulo: 'Título de la noticia', resumen: 'Por qué le sirve a Tryvex', fuente: 'radar semanal' }] },
+    reglas: ['Hasta 30 por llamada. Una url ya publicada se salta: no hay duplicados.'],
+  },
+  {
+    metodo: 'GET',
     ruta: '/api/agentes/mensajes',
     para: 'Leer el canal del equipo ("Equipo agéntico", el antiguo #chatia).',
   },

@@ -79,3 +79,19 @@ def test_un_cierre_temporal_no_cuenta():
 def test_sin_texto_no_asume_nada():
     assert scraper.esta_cerrado_para_siempre("") is False
     assert scraper.esta_cerrado_para_siempre(None) is False
+
+
+def test_coordenadas_del_local_desde_la_url():
+    url = ("https://www.google.com/maps/place/Optica+X/@-33.4378,-70.6504,17z/data=!3m1!4b1"
+           "!4m6!3m5!1s0x9662c5a1:0x1234abcd!8m2!3d-33.4372123!4d-70.6501987!16s%2Fg%2F11")
+    assert scraper.coordenadas_de_google(url) == (-33.4372123, -70.6501987)
+
+
+def test_coordenadas_usa_el_centro_solo_si_falta_el_local():
+    assert scraper.coordenadas_de_google("https://www.google.com/maps/place/X/@-33.45,-70.66,15z") == (-33.45, -70.66)
+
+
+def test_coordenadas_fuera_de_chile_o_sin_dato_dan_none():
+    assert scraper.coordenadas_de_google("https://www.google.com/maps/place/X/@40.4,-3.7,15z") == (None, None)
+    assert scraper.coordenadas_de_google("https://www.google.com/maps/search/opticas") == (None, None)
+    assert scraper.coordenadas_de_google("") == (None, None)

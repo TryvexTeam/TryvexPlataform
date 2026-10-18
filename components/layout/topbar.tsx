@@ -28,6 +28,8 @@ const routeLabels: Record<string, string> = {
   '/tareas':              'Tareas',
   '/reuniones':           'Reuniones',
   '/cerebro':             'Cerebro',
+  '/feed':                'Feed',
+  '/mapa':                'Mapa',
   '/settings':            'Configuración',
   '/admin/invitaciones':  'Invitaciones',
 }

@@ -8,6 +8,8 @@ import { useHasMounted } from '@/lib/hooks/use-has-mounted'
 import { useIsNarrowViewport } from '@/lib/hooks/use-is-narrow-viewport'
 import {
   LayoutDashboard,
+  Map as MapIcon,
+  Newspaper,
   Users,
   Building2,
   FolderKanban,
@@ -34,10 +36,12 @@ const primaryNav = [
   { href: '/chat',                label: 'Chat',          icon: MessagesSquare,  count: null },
   { href: '/dashboard',           label: 'Dashboard',     icon: LayoutDashboard, count: null },
   { href: '/leads',               label: 'Leads',         icon: Users,           count: null },
+  { href: '/mapa',                label: 'Mapa',          icon: MapIcon,           count: null },
   { href: '/clientes',            label: 'Clientes',      icon: Building2,       count: null },
   { href: '/proyectos',           label: 'Proyectos',     icon: FolderKanban,    count: null },
   { href: '/tareas',              label: 'Tareas',        icon: CheckSquare,     count: null },
   { href: '/reuniones',           label: 'Equipo',        icon: CalendarDays,    count: null },
+  { href: '/feed',                label: 'Feed',          icon: Newspaper,       count: null },
   { href: '/cerebro',             label: 'Cerebro',       icon: BookOpen,        count: null },
   { href: '/vex',                 label: 'Vex',           icon: Bot,             count: null },
   { href: '/jornada',             label: 'Jornada',       icon: Clock,           count: null },
