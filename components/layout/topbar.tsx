@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useHasMounted } from '@/lib/hooks/use-has-mounted'
-import { Clock, LogOut, Settings } from 'lucide-react'
+import { Clock, LogOut, Settings, UserRound } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
@@ -72,9 +72,11 @@ interface TopbarProps {
   avatarUrl: string | null
   /** Para avisar al salir si quedó la jornada corriendo. */
   jornadaAbierta?: boolean
+  /** Para el atajo "Mi perfil" (`/equipo/[id]`). */
+  integranteId?: string | null
 }
 
-export function Topbar({ nombre, email, avatarUrl, jornadaAbierta = false }: TopbarProps) {
+export function Topbar({ nombre, email, avatarUrl, jornadaAbierta = false, integranteId }: TopbarProps) {
   // Irse con la jornada abierta deja una jornada de 30 horas al día siguiente,
   // y ahí las horas del equipo dejan de servir para nada. El navegador no deja
   // poner un texto propio al cerrar la pestaña —solo un cartel genérico del
@@ -239,6 +241,15 @@ export function Topbar({ nombre, email, avatarUrl, jornadaAbierta = false }: Top
               </button>
             </div>
             <div className="py-1">
+              {integranteId && (
+                <DropdownMenuItem
+                  onClick={() => router.push(`/equipo/${integranteId}`)}
+                  className="cursor-pointer text-[13px] gap-2"
+                >
+                  <UserRound size={13} />
+                  Mi perfil
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={() => router.push('/settings')}
                 className="cursor-pointer text-[13px] gap-2"

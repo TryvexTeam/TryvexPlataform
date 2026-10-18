@@ -115,6 +115,7 @@ export function MarcadorEquipo({ metricas }: MarcadorEquipoProps) {
                   color={aporte.color}
                   size={36}
                   destacado={aporte.esMio}
+                  integranteId={aporte.integranteId}
                 />
 
                 <div className="min-w-0 flex-1">

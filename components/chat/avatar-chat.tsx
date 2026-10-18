@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { PRESENCIA_COLOR, PRESENCIA_LABEL, type EstadoPresencia } from '@/lib/types/presencia'
 
 interface AvatarChatProps {
@@ -11,6 +12,8 @@ interface AvatarChatProps {
   /** Disponibilidad real. Si viene, manda sobre `enLinea`. */
   estado?: EstadoPresencia
   size?: number
+  /** Con el id, la foto lleva al perfil del integrante (igual que AvatarIntegrante). */
+  integranteId?: string | null
 }
 
 function iniciales(nombre: string): string {
@@ -28,12 +31,12 @@ function iniciales(nombre: string): string {
  * El punto ya no es verde-o-nada: distingue disponible, en reunión y en pausa.
  * Fuera de turno no lleva punto — un gris permanente es ruido, no información.
  */
-export function AvatarChat({ nombre, avatarUrl, color, enLinea = false, estado, size = 44 }: AvatarChatProps) {
+export function AvatarChat({ nombre, avatarUrl, color, enLinea = false, estado, size = 44, integranteId }: AvatarChatProps) {
   const punto = Math.max(10, Math.round(size * 0.28))
   const resuelto: EstadoPresencia | null = estado ?? (enLinea ? 'disponible' : null)
   const muestraPunto = resuelto !== null && resuelto !== 'fuera_de_turno' && resuelto !== 'inactivo'
 
-  return (
+  const avatar = (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       {avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -73,5 +76,17 @@ export function AvatarChat({ nombre, avatarUrl, color, enLinea = false, estado, 
         />
       )}
     </div>
+  )
+
+  if (!integranteId) return avatar
+
+  return (
+    <Link
+      href={`/equipo/${integranteId}`}
+      aria-label={`Ver el perfil de ${nombre}`}
+      className="shrink-0 rounded-full transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tx-accent)]"
+    >
+      {avatar}
+    </Link>
   )
 }

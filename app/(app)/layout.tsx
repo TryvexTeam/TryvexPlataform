@@ -129,7 +129,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
           {/* Main content */}
           <div className="flex flex-col flex-1 min-w-0 relative z-10">
-            <Topbar nombre={nombre} email={email} avatarUrl={avatarUrl} jornadaAbierta={jornadaAbierta} />
+            <Topbar nombre={nombre} email={email} avatarUrl={avatarUrl} jornadaAbierta={jornadaAbierta} integranteId={integrante?.id ?? null} />
             <main className="flex-1 overflow-y-auto overflow-x-hidden pb-nav-movil md:pb-0 h-full">
               <PageTransition>
                 <FrenoJornada jornadaAbierta={jornadaAbierta}>{children}</FrenoJornada>
