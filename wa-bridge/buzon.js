@@ -17,14 +17,20 @@
 export function normalizarTelefono(telefono) {
   if (!telefono) return null
   const d = String(telefono).replace(/\D/g, '')
-  if (d.length < 8) return null
-  if (d.startsWith('56')) return d
-  if (d.length === 9) return '56' + d
+  // Chile: 9 digitos nacionales, el primero de 2 a 9 (9 = movil, 2 = fijo de
+  // Santiago, 3-8 = otras zonas). Se valida la FORMA, no solo el largo: un
+  // "123456789" o un "56" seguido de cualquier cosa no es un numero chileno, y
+  // mandarle ahi es mandarle a alguien que no es el lead.
+  if (/^56[2-9]\d{8}$/.test(d)) return d
+  if (/^[2-9]\d{8}$/.test(d)) return '56' + d
   // 8 digitos: NO se completa con '569'. En Chile casi siempre es un fijo sin
   // codigo de area, y ese 9 convertia un fijo en el celular de otra persona.
   // Mismo criterio que lib/vex/telefono.ts: adivinar el numero es decidir a
   // quien le llega el mensaje.
-  if (d.length === 8) return null
+  if (d.length <= 9) return null
+  // 10+ digitos que no empiezan con 56: numero extranjero con su codigo de
+  // pais. Empezar con 56 y no calzar arriba es un chileno mal escrito: null.
+  if (d.startsWith('56')) return null
   return d
 }
 

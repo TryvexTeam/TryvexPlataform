@@ -31,6 +31,21 @@ describe('aJobDeEnvio', () => {
     expect(aJobDeEnvio(fila, { telefono: '12345' })).toBeNull()
   })
 
+  it('9 digitos que no son un numero chileno no se mandan', () => {
+    expect(aJobDeEnvio(fila, { telefono: '123456789' })).toBeNull()
+    expect(aJobDeEnvio(fila, { telefono: '012345678' })).toBeNull()
+  })
+
+  it('56 seguido de un largo que no calza no se manda', () => {
+    expect(aJobDeEnvio(fila, { telefono: '5691234567' })).toBeNull()
+    expect(aJobDeEnvio(fila, { telefono: '569123456789' })).toBeNull()
+    expect(aJobDeEnvio(fila, { telefono: '56112345678' })).toBeNull()
+  })
+
+  it('un numero extranjero con su codigo de pais pasa tal cual', () => {
+    expect(aJobDeEnvio(fila, { telefono: '+54 9 11 2345 6789' }).telefono).toBe('5491123456789')
+  })
+
   it('8 digitos no se completa: seria inventarle un celular a un fijo', () => {
     expect(aJobDeEnvio(fila, { telefono: '22345678' })).toBeNull()
   })
