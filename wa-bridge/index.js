@@ -671,64 +671,53 @@ async function marcarFila(id, cambios) {
 }
 
 // Si el proceso murio a mitad de un envio —o no pudo anotar que el mensaje
-// salio—, la fila quedo en 'enviando'. Al arrancar se resuelve cada una:
-//   - Si su texto esta en mensajes_wa como saliente, SALIO: el puente escribe
-//     ahi solo despues de que WhatsApp acepto el envio. Se cierra 'enviado'.
-//   - Si no esta, no hay evidencia de que haya salido: 'fallido' con el motivo,
-//     para que se vea en el chat. NO se reenvia sola: un mensaje repetido a un
-//     cliente no se puede deshacer.
+// salio—, la fila quedo en 'enviando'. Al arrancar se cierran como 'fallido',
+// diciendo la verdad: pudo haber salido o no. No hay referencia unica entre
+// outreach_messages y mensajes_wa para saberlo, y adivinar por el texto es
+// peor: dos "Hola" al mismo lead se confunden y uno que nunca salio quedaria
+// como enviado. NO se reenvia sola: un mensaje repetido a un cliente no se
+// puede deshacer; lo decide una persona mirando el chat.
 //
-// Corre UNA vez, recien arrancado, y el buzon no toma nada hasta que termina:
-// en ese momento la cola en memoria esta vacia, asi que todo 'enviando' es
-// huerfano. Si el buzon arrancara en paralelo, podria reservar una fila y esta
-// limpieza marcarla 'fallido' mientras sale de verdad. ('ready' vuelve a
-// dispararse en cada reconexion, con envios vivos en la cola: por eso `once`.)
+// El buzon no toma nada hasta que esta limpieza TERMINA BIEN. Si falla (base
+// caida al arrancar), se reintenta en la vuelta siguiente: mientras el buzon
+// no arranco no hay envios suyos vivos, asi que todo 'enviando' es huerfano.
+// Si corriera en paralelo con el buzon, podria marcar 'fallido' una fila que
+// esta saliendo de verdad.
 let trabadosRevisados = false
+let revisandoTrabados = false
 async function liberarTrabados() {
-  const { data: trabadas, error } = await supabase
+  const { data, error } = await supabase
     .from('outreach_messages')
-    .select('id, lead_id, texto, created_at')
+    .update({
+      estado: 'fallido',
+      error: 'el puente se reinicio durante el envio: pudo haber salido o no. Revisar el chat de WhatsApp antes de reintentar',
+    })
     .eq('estado', 'enviando')
     .eq('canal', 'whatsapp')
+    .select('id')
   if (error) {
-    console.error('[wa-bridge] no pude leer los envios trabados:', error)
-    return
+    console.error('[wa-bridge] no pude liberar los envios trabados (se reintenta en la proxima vuelta):', error)
+    return false
   }
-
-  for (const fila of trabadas ?? []) {
-    const { data: salio, error: errorBusqueda } = await supabase
-      .from('mensajes_wa')
-      .select('id, created_at')
-      .eq('lead_id', fila.lead_id)
-      .eq('direccion', 'out')
-      .eq('texto', fila.texto)
-      .gte('created_at', fila.created_at)
-      .limit(1)
-    if (errorBusqueda) {
-      // Sin poder mirar, no se decide nada: queda 'enviando', que es visible.
-      console.error(`[wa-bridge] buzon: no pude revisar si ${fila.id} salio:`, errorBusqueda)
-      continue
-    }
-    if (salio?.length) {
-      await marcarFila(fila.id, { estado: 'enviado', enviado_at: salio[0].created_at })
-      console.warn(`[wa-bridge] buzon: ${fila.id} estaba trabado pero SI salio; cerrado como 'enviado'`)
-    } else {
-      await marcarFila(fila.id, {
-        estado: 'fallido',
-        error: 'el puente se reinicio durante el envio; revisar el chat antes de reintentar',
-      })
-      console.warn(`[wa-bridge] buzon: ${fila.id} trabado sin evidencia de envio; pasado a 'fallido'`)
-    }
-  }
+  if (data?.length) console.warn(`[wa-bridge] buzon: ${data.length} envio(s) trabado(s) en 'enviando' pasados a 'fallido'`)
+  return true
 }
-waClient.once('ready', () => {
-  liberarTrabados()
-    .catch((err) => console.error('[wa-bridge] liberarTrabados fallo:', err))
-    .finally(() => { trabadosRevisados = true })
-})
 
 async function vaciarBuzon() {
-  if (!sesionLista || !trabadosRevisados) return
+  if (!sesionLista) return
+  if (!trabadosRevisados) {
+    // Una limpieza a la vez: si tarda mas que el intervalo, una segunda en
+    // paralelo podria terminar DESPUES de que el buzon reservo una fila nueva
+    // y marcarla 'fallido' mientras sale.
+    if (revisandoTrabados) return
+    revisandoTrabados = true
+    try {
+      trabadosRevisados = await liberarTrabados()
+    } finally {
+      revisandoTrabados = false
+    }
+    return
+  }
 
   // Una por vuelta: el envio real ya tiene su propio throttle de un mensaje por
   // minuto, no tiene sentido acumular aca.
@@ -794,7 +783,8 @@ async function vaciarBuzon() {
     } else {
       // El mensaje SALIO pero la fila sigue en 'enviando'. No se dice "enviado"
       // en el log como si todo estuviera bien. Al proximo arranque,
-      // liberarTrabados() la encuentra en mensajes_wa y la cierra como enviada.
+      // liberarTrabados() la cierra como fallida-pudo-haber-salido: por eso
+      // este log CRITICO es la evidencia de que en realidad si salio.
       console.error(`[wa-bridge] CRITICO: ${fila.id} salio a ${job.telefono} pero no se pudo marcar 'enviado'; queda en 'enviando' hasta el proximo arranque`)
     }
   } catch (err) {
