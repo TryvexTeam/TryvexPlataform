@@ -82,10 +82,15 @@ export function ProyectoDetalle({
         <ArrowLeft size={14} /> Volver
       </button>
 
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)]">{proyecto.nombre}</h1>
-          <div className="flex items-center gap-2 mt-1">
+      {/* `flex-wrap` + `min-w-0`: mismo patrón que lead-detalle.tsx,
+          cliente-detalle.tsx y tarea-detalle.tsx -- las 4 fichas hermanas
+          tenían el mismo header sin apilar en el teléfono. Acá además el
+          subtítulo (estado + tipo + cliente) es la línea más larga de las
+          cuatro, así que también necesita poder partirse en dos líneas. */}
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-[var(--tx-ink-primary)] break-words">{proyecto.nombre}</h1>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-medium">
               <span className="h-2 w-2 rounded-full" style={{ background: estadoConf?.color }} />
               {estadoConf?.label}
