@@ -20,7 +20,11 @@ export function normalizarTelefono(telefono) {
   if (d.length < 8) return null
   if (d.startsWith('56')) return d
   if (d.length === 9) return '56' + d
-  if (d.length === 8) return '569' + d
+  // 8 digitos: NO se completa con '569'. En Chile casi siempre es un fijo sin
+  // codigo de area, y ese 9 convertia un fijo en el celular de otra persona.
+  // Mismo criterio que lib/vex/telefono.ts: adivinar el numero es decidir a
+  // quien le llega el mensaje.
+  if (d.length === 8) return null
   return d
 }
 

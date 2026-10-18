@@ -31,6 +31,10 @@ describe('aJobDeEnvio', () => {
     expect(aJobDeEnvio(fila, { telefono: '12345' })).toBeNull()
   })
 
+  it('8 digitos no se completa: seria inventarle un celular a un fijo', () => {
+    expect(aJobDeEnvio(fila, { telefono: '22345678' })).toBeNull()
+  })
+
   it('pasa la autoria real hasta el envio', () => {
     const job = aJobDeEnvio({ ...fila, integrante_id: 'cccccccc-0000-0000-0000-000000000000' }, { telefono: '56911111111' })
     expect(job.integrante_id).toBe('cccccccc-0000-0000-0000-000000000000')

@@ -659,14 +659,24 @@ const BUZON_INTERVALO_MS = Number(env.WA_BRIDGE_BUZON_INTERVALO_MS || 10000)
 // enviado por lead", ver migracion 097) la fila quedaba en 'enviando' para
 // siempre aunque el mensaje hubiera salido — el chat mostraba "enviando" eterno.
 async function marcarFila(id, cambios) {
-  const { error } = await supabase.from('outreach_messages').update(cambios).eq('id', id)
-  if (error) console.error(`[wa-bridge] buzon: no pude marcar ${id} como ${cambios.estado}:`, error)
+  // Un reintento: el fallo tipico es un corte de red de un instante, y dejar la
+  // fila mal marcada cuesta mas que esperar medio segundo.
+  for (let intento = 1; intento <= 2; intento++) {
+    const { error } = await supabase.from('outreach_messages').update(cambios).eq('id', id)
+    if (!error) return true
+    console.error(`[wa-bridge] buzon: no pude marcar ${id} como ${cambios.estado} (intento ${intento}):`, error)
+    if (intento === 1) await new Promise((r) => setTimeout(r, 500))
+  }
+  return false
 }
 
-// Si el proceso murio a mitad de un envio, la fila quedo en 'enviando'. Al
-// arrancar se cierran como 'fallido' con el motivo, para que se vean en el
-// chat. NO se reenvian solas: no hay forma de saber si alcanzaron a salir, y
-// un mensaje repetido a un cliente no se puede deshacer.
+// Si el proceso murio a mitad de un envio —o no pudo anotar que el mensaje
+// salio—, la fila quedo en 'enviando'. Al arrancar se resuelve cada una:
+//   - Si su texto esta en mensajes_wa como saliente, SALIO: el puente escribe
+//     ahi solo despues de que WhatsApp acepto el envio. Se cierra 'enviado'.
+//   - Si no esta, no hay evidencia de que haya salido: 'fallido' con el motivo,
+//     para que se vea en el chat. NO se reenvia sola: un mensaje repetido a un
+//     cliente no se puede deshacer.
 //
 // Corre UNA vez, recien arrancado, y el buzon no toma nada hasta que termina:
 // en ese momento la cola en memoria esta vacia, asi que todo 'enviando' es
@@ -675,17 +685,41 @@ async function marcarFila(id, cambios) {
 // dispararse en cada reconexion, con envios vivos en la cola: por eso `once`.)
 let trabadosRevisados = false
 async function liberarTrabados() {
-  const { data, error } = await supabase
+  const { data: trabadas, error } = await supabase
     .from('outreach_messages')
-    .update({ estado: 'fallido', error: 'el puente se reinicio durante el envio; revisar el chat antes de reintentar' })
+    .select('id, lead_id, texto, created_at')
     .eq('estado', 'enviando')
     .eq('canal', 'whatsapp')
-    .select('id')
   if (error) {
-    console.error('[wa-bridge] no pude liberar los envios trabados:', error)
+    console.error('[wa-bridge] no pude leer los envios trabados:', error)
     return
   }
-  if (data?.length) console.warn(`[wa-bridge] buzon: ${data.length} envio(s) trabado(s) en 'enviando' pasados a 'fallido'`)
+
+  for (const fila of trabadas ?? []) {
+    const { data: salio, error: errorBusqueda } = await supabase
+      .from('mensajes_wa')
+      .select('id, created_at')
+      .eq('lead_id', fila.lead_id)
+      .eq('direccion', 'out')
+      .eq('texto', fila.texto)
+      .gte('created_at', fila.created_at)
+      .limit(1)
+    if (errorBusqueda) {
+      // Sin poder mirar, no se decide nada: queda 'enviando', que es visible.
+      console.error(`[wa-bridge] buzon: no pude revisar si ${fila.id} salio:`, errorBusqueda)
+      continue
+    }
+    if (salio?.length) {
+      await marcarFila(fila.id, { estado: 'enviado', enviado_at: salio[0].created_at })
+      console.warn(`[wa-bridge] buzon: ${fila.id} estaba trabado pero SI salio; cerrado como 'enviado'`)
+    } else {
+      await marcarFila(fila.id, {
+        estado: 'fallido',
+        error: 'el puente se reinicio durante el envio; revisar el chat antes de reintentar',
+      })
+      console.warn(`[wa-bridge] buzon: ${fila.id} trabado sin evidencia de envio; pasado a 'fallido'`)
+    }
+  }
 }
 waClient.once('ready', () => {
   liberarTrabados()
@@ -754,8 +788,15 @@ async function vaciarBuzon() {
   try {
     await new Promise((resolve, reject) => encolarEnvio({ ...job, resolve, reject }))
     // Recien AHORA salio de verdad.
-    await marcarFila(fila.id, { estado: 'enviado', enviado_at: new Date().toISOString() })
-    console.log(`[wa-bridge] buzon: ${fila.id} enviado a ${job.telefono}`)
+    const marcada = await marcarFila(fila.id, { estado: 'enviado', enviado_at: new Date().toISOString() })
+    if (marcada) {
+      console.log(`[wa-bridge] buzon: ${fila.id} enviado a ${job.telefono}`)
+    } else {
+      // El mensaje SALIO pero la fila sigue en 'enviando'. No se dice "enviado"
+      // en el log como si todo estuviera bien. Al proximo arranque,
+      // liberarTrabados() la encuentra en mensajes_wa y la cierra como enviada.
+      console.error(`[wa-bridge] CRITICO: ${fila.id} salio a ${job.telefono} pero no se pudo marcar 'enviado'; queda en 'enviando' hasta el proximo arranque`)
+    }
   } catch (err) {
     await marcarFila(fila.id, { estado: 'fallido', error: String(err?.message || err) })
     console.error(`[wa-bridge] buzon: fallo ${fila.id}:`, err)
