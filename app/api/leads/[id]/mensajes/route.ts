@@ -3,31 +3,25 @@ import { createClient } from '@/lib/supabase/server'
 import { MensajesWaRepository } from '@/lib/repos/mensajes-wa'
 
 /**
- * Un mensaje que sigue 'encolado' después de esto es que el puente no lo está
- * tomando (sesión de WhatsApp caída o proceso detenido): normalmente lo pasa a
- * buscar en segundos.
+ * Pasado esto, un mensaje 'encolado' merece una mirada al puente. Se mide desde
+ * `created_at` porque la tabla no guarda cuándo cambió de estado; por eso el
+ * margen es amplio: el puente toma uno cada 10 s, así que en 10 min alcanza a
+ * tomar unos 60 de una ráfaga. Y el texto sugiere revisar, no afirma que está
+ * caído.
+ *
+ * A 'enviando' NO se le aplica: ya fue tomado y espera turno en la cola del
+ * puente (uno por minuto), y desde `created_at` no hay cómo distinguir eso de
+ * un envío trabado. Inferirlo empujaría a reenviar —y a duplicarle el mensaje
+ * al cliente— justo lo que se quiere evitar.
  */
-const ENCOLADO_DEMASIADO_MS = 2 * 60 * 1000
-
-/**
- * 'enviando' dura lo que tarda un envío más su lugar en la cola del puente
- * (un mensaje por minuto). Media hora sin cerrarse ya no es estar en camino.
- */
-const ENVIANDO_DEMASIADO_MS = 30 * 60 * 1000
+const ENCOLADO_REVISAR_MS = 10 * 60 * 1000
 
 function estadoVisible(o: { estado: string; error: string | null; created_at: string }): string {
   if (o.estado === 'fallido') return `no se envió — ${o.error ?? 'sin detalle'}`
   // Sin este aviso, el chat decía "encolado" durante horas y el equipo esperaba
   // un mensaje que no iba a salir hasta que alguien reconectara el puente.
-  if (o.estado === 'encolado' && Date.now() - new Date(o.created_at).getTime() > ENCOLADO_DEMASIADO_MS) {
-    return 'en cola — el puente de WhatsApp no lo ha tomado (¿está desconectado?)'
-  }
-  // 'enviando' viejo: el puente lo tomó y se cayó a mitad, o salió y no pudo
-  // anotarlo. A propósito NO se lo marca fallido —pudo haber salido, y
-  // reintentarlo sería mandarle dos veces lo mismo al cliente—, pero tampoco
-  // se lo deja diciendo "enviando" como si estuviera en camino.
-  if (o.estado === 'enviando' && Date.now() - new Date(o.created_at).getTime() > ENVIANDO_DEMASIADO_MS) {
-    return 'sin confirmar — pudo haber salido o no; revisá el WhatsApp antes de reenviar'
+  if (o.estado === 'encolado' && Date.now() - new Date(o.created_at).getTime() > ENCOLADO_REVISAR_MS) {
+    return 'en cola hace más de 10 min — si sigue así, revisá que el puente de WhatsApp esté conectado'
   }
   return o.estado
 }

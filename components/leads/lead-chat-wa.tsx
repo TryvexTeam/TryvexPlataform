@@ -48,7 +48,7 @@ export { textoSugerido }
 
 /** ¿Este estado de envío significa que el mensaje NO llegó? */
 function fallado(estado: string): boolean {
-  return /no se envió|fallido|error|no lo ha tomado|sin confirmar/i.test(estado)
+  return /no se envió|fallido|error/i.test(estado)
 }
 
 /**
@@ -78,6 +78,9 @@ function comoSeLee(estado: string): string {
 /** El estilo del estado: rojo si no llegó, apagado mientras nadie confirme. */
 function estiloEstado(estado: string): string | undefined {
   if (fallado(estado)) return 'text-red-400 font-medium'
+  // Merece una mirada, sin ser un fallo: ámbar y no rojo. Pintarlo como fallo
+  // invita a reenviarlo, y un mensaje que quizás sale igual no se reenvía.
+  if (/revisá/i.test(estado)) return 'text-amber-400 font-medium'
   if (estado === 'pendiente' || estado === 'enviado') return 'italic opacity-70'
   return undefined
 }
