@@ -9,12 +9,25 @@ import { MensajesWaRepository } from '@/lib/repos/mensajes-wa'
  */
 const ENCOLADO_DEMASIADO_MS = 2 * 60 * 1000
 
+/**
+ * 'enviando' dura lo que tarda un envío más su lugar en la cola del puente
+ * (un mensaje por minuto). Media hora sin cerrarse ya no es estar en camino.
+ */
+const ENVIANDO_DEMASIADO_MS = 30 * 60 * 1000
+
 function estadoVisible(o: { estado: string; error: string | null; created_at: string }): string {
   if (o.estado === 'fallido') return `no se envió — ${o.error ?? 'sin detalle'}`
   // Sin este aviso, el chat decía "encolado" durante horas y el equipo esperaba
   // un mensaje que no iba a salir hasta que alguien reconectara el puente.
   if (o.estado === 'encolado' && Date.now() - new Date(o.created_at).getTime() > ENCOLADO_DEMASIADO_MS) {
     return 'en cola — el puente de WhatsApp no lo ha tomado (¿está desconectado?)'
+  }
+  // 'enviando' viejo: el puente lo tomó y se cayó a mitad, o salió y no pudo
+  // anotarlo. A propósito NO se lo marca fallido —pudo haber salido, y
+  // reintentarlo sería mandarle dos veces lo mismo al cliente—, pero tampoco
+  // se lo deja diciendo "enviando" como si estuviera en camino.
+  if (o.estado === 'enviando' && Date.now() - new Date(o.created_at).getTime() > ENVIANDO_DEMASIADO_MS) {
+    return 'sin confirmar — pudo haber salido o no; revisá el WhatsApp antes de reenviar'
   }
   return o.estado
 }

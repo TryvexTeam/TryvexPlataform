@@ -48,7 +48,7 @@ export { textoSugerido }
 
 /** ¿Este estado de envío significa que el mensaje NO llegó? */
 function fallado(estado: string): boolean {
-  return /no se envió|fallido|error|no lo ha tomado/i.test(estado)
+  return /no se envió|fallido|error|no lo ha tomado|sin confirmar/i.test(estado)
 }
 
 /**
