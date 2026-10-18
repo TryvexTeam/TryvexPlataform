@@ -114,16 +114,19 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
           enviado_por: enviadoPor ?? 'JARVIS',
         }),
       })
-      if (!res.ok) throw new Error(String(res.status))
-      toast.success('Mensaje enviado desde el CRM')
-      // El saliente ya está en `mensajes_wa`: se pide el hilo de nuevo para que
-      // aparezca al tiro. Sin esto había que esperar al siguiente sondeo —o
-      // recargar— para ver el mensaje recién mandado, y daba la impresión de
-      // que no había salido.
+      const d = await res.json().catch(() => ({}))
+      // El error real del servidor, no uno genérico: "aún no está disponible"
+      // escondía la causa (lead sin teléfono, sin permiso, etc.).
+      if (!res.ok) throw new Error(typeof d?.error === 'string' ? d.error : `no se pudo enviar (${res.status})`)
+      // Neutral a propósito: con el agente ya salió, con el puente queda en
+      // cola. Lo que de verdad pasó lo dice el estado bajo el mensaje.
+      toast.success('Listo — el estado del envío aparece bajo el mensaje')
+      // Se pide el hilo de nuevo para que el mensaje en cola aparezca al tiro,
+      // con su estado. Sin esto había que esperar al siguiente sondeo —o
+      // recargar— y daba la impresión de que no había salido.
       await cargarMensajes()
-    } catch {
-      // El backend del Botón 2 (Spike) puede no estar desplegado todavía.
-      toast.error('El envío desde el CRM aún no está disponible')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo enviar')
     } finally {
       setEnviando(false)
     }

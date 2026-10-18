@@ -3,6 +3,30 @@ import { createClient } from '@/lib/supabase/server'
 import { MensajesWaRepository } from '@/lib/repos/mensajes-wa'
 
 /**
+ * Pasado esto, un mensaje 'encolado' merece una mirada al puente. Se mide desde
+ * `created_at` porque la tabla no guarda cuándo cambió de estado; por eso el
+ * margen es amplio: el puente toma uno cada 10 s, así que en 10 min alcanza a
+ * tomar unos 60 de una ráfaga. Y el texto sugiere revisar, no afirma que está
+ * caído.
+ *
+ * A 'enviando' NO se le aplica: ya fue tomado y espera turno en la cola del
+ * puente (uno por minuto), y desde `created_at` no hay cómo distinguir eso de
+ * un envío trabado. Inferirlo empujaría a reenviar —y a duplicarle el mensaje
+ * al cliente— justo lo que se quiere evitar.
+ */
+const ENCOLADO_REVISAR_MS = 10 * 60 * 1000
+
+function estadoVisible(o: { estado: string; error: string | null; created_at: string }): string {
+  if (o.estado === 'fallido') return `no se envió — ${o.error ?? 'sin detalle'}`
+  // Sin este aviso, el chat decía "encolado" durante horas y el equipo esperaba
+  // un mensaje que no iba a salir hasta que alguien reconectara el puente.
+  if (o.estado === 'encolado' && Date.now() - new Date(o.created_at).getTime() > ENCOLADO_REVISAR_MS) {
+    return 'en cola hace más de 10 min — si sigue así, revisá que el puente de WhatsApp esté conectado'
+  }
+  return o.estado
+}
+
+/**
  * GET /api/leads/[id]/mensajes
  * Hilo de WhatsApp del lead (tabla `mensajes_wa`), orden cronológico.
  * Lee a través de `MensajesWaRepository` (capa de datos del wa-bridge), así la
@@ -51,7 +75,7 @@ export async function GET(
         enviado_por: null,
         // Lo que la persona necesita saber de un vistazo: si va en camino o si
         // se cayó, y por qué.
-        estado_envio: o.estado === 'fallido' ? `no se envió — ${o.error ?? 'sin detalle'}` : o.estado,
+        estado_envio: estadoVisible(o),
         created_at: o.created_at,
       })
     )

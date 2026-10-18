@@ -15,6 +15,19 @@ describe('normalizarTelefono', () => {
   it('deja pasar los que ya traen código de país', () =>
     expect(normalizarTelefono('5491123456789')).toBe('5491123456789'))
   it('rechaza basura corta', () => expect(normalizarTelefono('123')).toBeNull())
+  // Misma regla que wa-bridge/buzon.js: si el CRM aceptara lo que el puente
+  // rechaza, el lead quedaría "contactado" con un envío que muere después.
+  it('rechaza 9 dígitos que no son un número chileno', () => {
+    expect(normalizarTelefono('123456789')).toBeNull()
+    expect(normalizarTelefono('012345678')).toBeNull()
+  })
+  it('rechaza un 56 con un largo que no calza', () => {
+    expect(normalizarTelefono('5691234567')).toBeNull()
+    expect(normalizarTelefono('569123456789')).toBeNull()
+    expect(normalizarTelefono('56112345678')).toBeNull()
+  })
+  it('acepta un fijo de Santiago con 9 dígitos', () =>
+    expect(normalizarTelefono('223456789')).toBe('56223456789'))
   it('rechaza null', () => expect(normalizarTelefono(null)).toBeNull())
 })
 

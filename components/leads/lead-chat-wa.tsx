@@ -78,6 +78,9 @@ function comoSeLee(estado: string): string {
 /** El estilo del estado: rojo si no llegó, apagado mientras nadie confirme. */
 function estiloEstado(estado: string): string | undefined {
   if (fallado(estado)) return 'text-red-400 font-medium'
+  // Merece una mirada, sin ser un fallo: ámbar y no rojo. Pintarlo como fallo
+  // invita a reenviarlo, y un mensaje que quizás sale igual no se reenvía.
+  if (/revisá/i.test(estado)) return 'text-amber-400 font-medium'
   if (estado === 'pendiente' || estado === 'enviado') return 'italic opacity-70'
   return undefined
 }
@@ -270,7 +273,7 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
       // El borrador ya cumplio: si queda guardado, reaparece la proxima vez que
       // se abra el chat, encima de una conversacion que ya siguio.
       fetch(`/api/leads/${lead.id}/borrador`, { method: 'DELETE' }).catch(() => {})
-      toast.success('Mensaje encolado — sale en unos segundos')
+      toast.success('Listo — el estado del envío aparece bajo el mensaje')
       cargar()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo enviar')

@@ -19,7 +19,7 @@ import qrcodeImage from 'qrcode'
 import { createClient } from '@supabase/supabase-js'
 import { parsearPermitidos, estaPermitido } from './permitidos.js'
 import { crearFila } from './fila.js'
-import { aJobDeEnvio } from './buzon.js'
+import { aJobDeEnvio, normalizarTelefono } from './buzon.js'
 
 const { Client, LocalAuth } = pkg
 const env = process['env']
@@ -93,19 +93,6 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 // que puede hacer cualquier poseedor del token, sea legitimo o filtrado).
 // ---------------------------------------------------------------------------
 
-// Misma heuristica que lib/vex/telefono.ts del lado Next.js (duplicada a
-// proposito: wa-bridge es un proceso Node separado, con su propio
-// package.json, no comparte modulos con la app).
-function normalizarTelefono(telefono) {
-  if (!telefono) return null
-  let d = String(telefono).replace(/\D/g, '')
-  if (d.length < 8) return null
-  if (d.startsWith('56')) return d
-  if (d.length === 9) return '56' + d
-  if (d.length === 8) return '569' + d
-  return d
-}
-
 const TEXTO_MAX_LEN = 4096 // limite practico de WhatsApp, ver hallazgo "texto sin limite de longitud"
 const AGENTES_ENVIADOR = ['JARVIS', 'ARIEL', 'SPIKE']
 // enviado_por tambien acepta nombre de humano (migracion 015 lo documenta asi:
@@ -152,9 +139,16 @@ async function procesarCola() {
   procesandoCola = false
 }
 
-async function enviarMensajeReal({ telefono, texto, lead_id, cliente_id, es_bot, enviado_por, resolve, reject }) {
-  const numeroWid = `${telefono}@c.us`
-  const sentMsg = await waClient.sendMessage(numeroWid, texto)
+async function enviarMensajeReal({ telefono, texto, lead_id, cliente_id, es_bot, enviado_por, integrante_id, resolve, reject }) {
+  // Se le pregunta a WhatsApp a quien corresponde el numero ANTES de mandar.
+  // Armar `${telefono}@c.us` a mano dejo de servir cuando WhatsApp paso a los
+  // LID (el mismo cambio que rompio los entrantes, ver el handler de 'message'):
+  // con un numero con el que nunca se hablo — o sea, todo primer contacto — la
+  // libreria falla con "No LID for user" o deja el mensaje sin entregar.
+  // getNumberId devuelve el destino real, o null si el numero no usa WhatsApp.
+  const destino = await waClient.getNumberId(telefono)
+  if (!destino) throw new Error('ese numero no tiene WhatsApp')
+  const sentMsg = await waClient.sendMessage(destino._serialized, texto)
 
   const { data, error } = await supabase
     .from('mensajes_wa')
@@ -167,6 +161,7 @@ async function enviarMensajeReal({ telefono, texto, lead_id, cliente_id, es_bot,
       chip_id: CHIP_ID,
       es_bot: Boolean(es_bot),
       enviado_por,
+      integrante_id: integrante_id ?? null,
     })
     .select('id')
     .single()
@@ -659,6 +654,22 @@ const server = http.createServer(async (req, res) => {
 // ---------------------------------------------------------------------------
 const BUZON_INTERVALO_MS = Number(env.WA_BRIDGE_BUZON_INTERVALO_MS || 10000)
 
+// Marca una fila del buzon. El error se revisa SIEMPRE: antes se ignoraba, y
+// cuando el update chocaba (por ejemplo con el indice unico de "un solo
+// enviado por lead", ver migracion 097) la fila quedaba en 'enviando' para
+// siempre aunque el mensaje hubiera salido — el chat mostraba "enviando" eterno.
+async function marcarFila(id, cambios) {
+  // Un reintento: el fallo tipico es un corte de red de un instante, y dejar la
+  // fila mal marcada cuesta mas que esperar medio segundo.
+  for (let intento = 1; intento <= 2; intento++) {
+    const { error } = await supabase.from('outreach_messages').update(cambios).eq('id', id)
+    if (!error) return true
+    console.error(`[wa-bridge] buzon: no pude marcar ${id} como ${cambios.estado} (intento ${intento}):`, error)
+    if (intento === 1) await new Promise((r) => setTimeout(r, 500))
+  }
+  return false
+}
+
 async function vaciarBuzon() {
   if (!sesionLista) return
 
@@ -666,7 +677,7 @@ async function vaciarBuzon() {
   // minuto, no tiene sentido acumular aca.
   const { data: filas, error } = await supabase
     .from('outreach_messages')
-    .select('id, lead_id, texto, enviado_por')
+    .select('id, lead_id, texto, enviado_por, integrante_id')
     .eq('estado', 'encolado')
     .eq('canal', 'whatsapp')
     .order('created_at')
@@ -686,13 +697,19 @@ async function vaciarBuzon() {
   //
   // 'enviando' y no 'enviado': todavia no salio, y decir que salio seria
   // mentir. Si el proceso muere aca, la fila queda trabada en 'enviando' — es
-  // visible y se puede revisar, que es mucho mejor que un duplicado silencioso.
-  const { data: tomada } = await supabase
+  // visible en el chat y la revisa una persona. No se cierra sola al arrancar:
+  // no hay forma de saber si alcanzo a salir, y marcarla 'fallido' invita a
+  // reintentarla y a mandarle dos veces lo mismo a un cliente.
+  const { data: tomada, error: errorReserva } = await supabase
     .from('outreach_messages')
     .update({ estado: 'enviando' })
     .eq('id', fila.id)
     .eq('estado', 'encolado')
     .select('id')
+  if (errorReserva) {
+    console.error(`[wa-bridge] buzon: no pude reservar ${fila.id}:`, errorReserva)
+    return
+  }
   if (!tomada || tomada.length === 0) return   // otra vuelta se lo llevo
 
   const { data: lead } = await supabase
@@ -703,19 +720,13 @@ async function vaciarBuzon() {
 
   const job = aJobDeEnvio(fila, lead)
   if (!job) {
-    await supabase
-      .from('outreach_messages')
-      .update({ estado: 'fallido', error: 'el lead no tiene un telefono usable' })
-      .eq('id', fila.id)
+    await marcarFila(fila.id, { estado: 'fallido', error: 'el lead no tiene un telefono usable' })
     console.warn(`[wa-bridge] buzon: ${fila.id} sin telefono usable`)
     return
   }
 
   if (!estaPermitido(job.telefono, SOLO_NUMEROS)) {
-    await supabase
-      .from('outreach_messages')
-      .update({ estado: 'fallido', error: 'modo prueba: numero no autorizado' })
-      .eq('id', fila.id)
+    await marcarFila(fila.id, { estado: 'fallido', error: 'modo prueba: numero no autorizado' })
     console.warn(`[wa-bridge] buzon: ${fila.id} bloqueado por modo prueba`)
     return
   }
@@ -723,16 +734,17 @@ async function vaciarBuzon() {
   try {
     await new Promise((resolve, reject) => encolarEnvio({ ...job, resolve, reject }))
     // Recien AHORA salio de verdad.
-    await supabase
-      .from('outreach_messages')
-      .update({ estado: 'enviado', enviado_at: new Date().toISOString() })
-      .eq('id', fila.id)
-    console.log(`[wa-bridge] buzon: ${fila.id} enviado a ${job.telefono}`)
+    const marcada = await marcarFila(fila.id, { estado: 'enviado', enviado_at: new Date().toISOString() })
+    if (marcada) {
+      console.log(`[wa-bridge] buzon: ${fila.id} enviado a ${job.telefono}`)
+    } else {
+      // El mensaje SALIO pero la fila sigue en 'enviando'. No se dice "enviado"
+      // en el log como si todo estuviera bien: este log CRITICO es la evidencia
+      // de que si salio, para quien revise la fila trabada.
+      console.error(`[wa-bridge] CRITICO: ${fila.id} salio a ${job.telefono} pero no se pudo marcar 'enviado'; queda en 'enviando' hasta el proximo arranque`)
+    }
   } catch (err) {
-    await supabase
-      .from('outreach_messages')
-      .update({ estado: 'fallido', error: String(err?.message || err) })
-      .eq('id', fila.id)
+    await marcarFila(fila.id, { estado: 'fallido', error: String(err?.message || err) })
     console.error(`[wa-bridge] buzon: fallo ${fila.id}:`, err)
   }
 }
