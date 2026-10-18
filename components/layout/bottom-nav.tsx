@@ -17,12 +17,12 @@ import {
   MessageSquare,
   MoreHorizontal,
   Settings,
-  Sun,
   Users,
   Wallet,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useNavMovilOculta } from '@/lib/hooks/use-nav-movil-oculta'
 
 /**
  * Los cuatro atajos de siempre + "Más".
@@ -32,7 +32,10 @@ import { cn } from '@/lib/utils'
  * era inalcanzable. El quinto lugar pasa a ser la puerta a todo lo demás.
  */
 const ATAJOS = [
-  { href: '/hoy', label: 'Hoy', icon: Sun },
+  // El Panel hereda la ranura que tenía "Hoy": esa página se fusionó con él y
+  // sus tres secciones viven ahora ahí, así que el acceso rápido del teléfono
+  // sigue llevando al mismo sitio en espíritu.
+  { href: '/dashboard', label: 'Panel', icon: LayoutDashboard },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/tareas', label: 'Tareas', icon: CheckSquare },
   { href: '/leads', label: 'Leads', icon: Users },
@@ -40,7 +43,6 @@ const ATAJOS = [
 
 const TODAS = [
   { grupo: 'Gestión', items: [
-    { href: '/hoy', label: 'Hoy', icon: Sun },
     { href: '/chat', label: 'Chat', icon: MessageSquare },
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/leads', label: 'Leads', icon: Users },
@@ -66,7 +68,15 @@ export function BottomNav() {
   const [abierto, setAbierto] = useState(false)
 
   // Navegar cierra el panel. Sin esto queda tapando la pantalla a la que se fue.
-  useEffect(() => setAbierto(false), [pathname])
+  // Ajuste de estado durante el render (patrón recomendado por React para
+  // "resetear estado cuando cambia una prop") en vez de un efecto: evita el
+  // setState síncrono dentro de un effect y cierra el panel en el mismo
+  // render en el que cambia la ruta, sin un frame de por medio.
+  const [pathnamePrevia, setPathnamePrevia] = useState(pathname)
+  if (pathname !== pathnamePrevia) {
+    setPathnamePrevia(pathname)
+    setAbierto(false)
+  }
 
   // Con el panel abierto, el fondo no debe scrollear detrás.
   useEffect(() => {
@@ -82,6 +92,11 @@ export function BottomNav() {
   // Si la sección actual no es ninguno de los atajos, "Más" queda marcado: así
   // se ve dónde se está aunque la sección no tenga su propio botón.
   const enOtra = !ATAJOS.some((a) => enSeccion(a.href))
+
+  // Dentro de una conversación o con el teclado abierto la barra no existe:
+  // si se renderizara, subiría con el teclado y quedaría encima del campo.
+  const oculta = useNavMovilOculta()
+  if (oculta && !abierto) return null
 
   return (
     <>

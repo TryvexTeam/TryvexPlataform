@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, Fragment, useContext, useState } from 'react'
-import { parsearInline, parsearMarkdown, type BloqueMd, type NodoInline } from '@/lib/markdown/mini'
+import { pareceJson, parsearInline, parsearMarkdown, type BloqueMd, type NodoInline } from '@/lib/markdown/mini'
 
 interface MarkdownProps {
   /** Texto de la entrada tal cual quedó guardado. */
@@ -14,15 +14,58 @@ interface MarkdownProps {
   heredaColor?: boolean
   /** Modo chat, como Discord: cada salto de línea se respeta tal cual se escribió. */
   chat?: boolean
+  /**
+   * Un archivo .md abierto en el visor: se lee como página, no como tarjeta.
+   * Los títulos recuperan su jerarquía de verdad (un h1 es un h1).
+   */
+  documento?: boolean
 }
 
 const HeredaColor = createContext(false)
+const EsDocumento = createContext(false)
+
+/**
+ * Formatea el JSON crudo para mostrarlo legible. Si viene doblemente
+ * serializado (una STRING que contiene JSON), se desenvuelve una capa antes
+ * de imprimir -- de lo contrario se ven backslashes de escape por todos lados.
+ * Si algo falla, se devuelve el texto tal cual: mejor eso que romper el chat.
+ */
+function formatearJsonCrudo(texto: string): string {
+  try {
+    const t = texto.trim()
+    const primero = JSON.parse(t)
+    const objeto = typeof primero === 'string' ? JSON.parse(primero) : primero
+    return JSON.stringify(objeto, null, 2)
+  } catch {
+    return texto
+  }
+}
 
 /**
  * Pinta markdown. Arma nodos de React a partir del parser: nada de HTML crudo,
  * así que un mensaje de Discord o del chat no puede inyectar nada.
  */
-export function Markdown({ children, className, heredaColor = false, chat = false }: MarkdownProps) {
+export function Markdown({
+  children,
+  className,
+  heredaColor = false,
+  chat = false,
+  documento = false,
+}: MarkdownProps) {
+  // Contenido de sistema (evento de llamada, webhook) que quedó como
+  // JSON.stringify crudo en `contenido`: no es texto para leer como párrafo,
+  // así que va en un bloque monoespaciado con su propio scroll horizontal en
+  // vez de estirar la burbuja o mostrarse como prosa con llaves sueltas.
+  if (pareceJson(children)) {
+    return (
+      <pre
+        className={`tx-md max-w-full overflow-x-auto rounded-lg bg-black/25 p-2.5 text-[12px] leading-snug font-mono whitespace-pre-wrap break-words ${className ?? ''}`}
+      >
+        {formatearJsonCrudo(children)}
+      </pre>
+    )
+  }
+
   const bloques = parsearMarkdown(children, { chat })
   const base = heredaColor
     ? 'tx-md leading-relaxed min-w-0 break-words'
@@ -30,27 +73,38 @@ export function Markdown({ children, className, heredaColor = false, chat = fals
 
   return (
     <HeredaColor.Provider value={heredaColor}>
-      <div className={`${base} ${className ?? ''}`}>
-        {bloques.map((bloque, i) => (
-          <Bloque key={i} bloque={bloque} />
-        ))}
-      </div>
+      <EsDocumento.Provider value={documento}>
+        <div className={`${base} ${className ?? ''}`}>
+          {bloques.map((bloque, i) => (
+            <Bloque key={i} bloque={bloque} />
+          ))}
+        </div>
+      </EsDocumento.Provider>
     </HeredaColor.Provider>
   )
 }
 
 function Bloque({ bloque }: { bloque: BloqueMd }) {
   const hereda = useContext(HeredaColor)
+  const documento = useContext(EsDocumento)
 
   switch (bloque.tipo) {
     case 'titulo': {
       // Dentro de una tarjeta del timeline, un h1 de página sería ruido: se
-      // escalan como subtítulos del propio bloque.
-      const tamano = { 1: 'text-[15px]', 2: 'text-[14px]', 3: 'text-[13px]' }[bloque.nivel]
-      const Etiqueta = (['h4', 'h5', 'h6'] as const)[bloque.nivel - 1]
+      // escalan como subtítulos del propio bloque. En un documento, no.
+      const tamano = documento
+        ? {
+            1: 'text-[24px] mt-6 mb-2',
+            2: 'text-[19px] mt-6 mb-2 pb-1 border-b border-[var(--tx-ink-muted)]/20',
+            3: 'text-[16px] mt-4 mb-1.5',
+          }[bloque.nivel]
+        : { 1: 'text-[15px] mt-3 mb-1', 2: 'text-[14px] mt-3 mb-1', 3: 'text-[13px] mt-3 mb-1' }[bloque.nivel]
+      const Etiqueta = documento
+        ? (['h1', 'h2', 'h3'] as const)[bloque.nivel - 1]
+        : (['h4', 'h5', 'h6'] as const)[bloque.nivel - 1]
       return (
         <Etiqueta
-          className={`${tamano} font-semibold ${hereda ? '' : 'text-[var(--tx-ink-primary)]'} mt-3 first:mt-0 mb-1`}
+          className={`${tamano} font-semibold ${hereda ? '' : 'text-[var(--tx-ink-primary)]'} first:mt-0`}
         >
           <Inline nodos={bloque.contenido} />
         </Etiqueta>

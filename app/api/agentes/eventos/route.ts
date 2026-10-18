@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { tokenCoincide, tokenDeCabecera } from '@/lib/agentes/token'
+import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
+import { excedeLimite } from '@/lib/agentes/rate-limit'
 import { EventosRepository } from '@/lib/repos/eventos'
 import { EventoInsertSchema } from '@/lib/types/evento'
 import { crearEventoEnGoogle } from '@/lib/google/calendar-write'
@@ -35,6 +36,7 @@ interface Agente {
   nombre: string
   creado_por: string | null
   token_hash: string
+  expira_at: string | null
 }
 
 /** Devuelve el agente del token, o null. Nunca dice cuál de las dos cosas falló. */
@@ -48,7 +50,7 @@ async function autenticar(req: Request): Promise<Agente | null> {
   // Se recorren todos y se compara el hash: buscar por hash directo sería más
   // rápido, pero entonces la consulta misma revelaría si el token existe.
   const agente = ((data ?? []) as Agente[]).find((a) => tokenCoincide(token, a.token_hash))
-  if (!agente) return null
+  if (!agente || tokenExpirado(agente.expira_at)) return null
 
   await admin.from('agentes').update({ ultimo_uso_at: new Date().toISOString() }).eq('id', agente.id)
   return agente
@@ -75,12 +77,20 @@ export async function POST(req: Request) {
   const agente = await autenticar(req)
   if (!agente) return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })
 
+  const espera = excedeLimite(agente.id)
+  if (espera !== null) {
+    return NextResponse.json(
+      { success: false, error: 'Demasiadas solicitudes' },
+      { status: 429, headers: { 'Retry-After': String(espera) } },
+    )
+  }
+
   const cuerpo = await req.json().catch(() => null)
   if (!cuerpo) return NextResponse.json({ success: false, error: 'Cuerpo inválido' }, { status: 400 })
 
   const result = EventoInsertSchema.safeParse(cuerpo)
   if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ success: false, error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   // Un agente no es integrante: el evento se atribuye a quien lo dio de alta.
@@ -97,6 +107,11 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient() as SB
 
+  // El SELECT de eventoYaExiste es solo un atajo para el caso común (evita
+  // llamar a Google de nuevo en un reintento obvio); la garantía real contra
+  // la carrera TOCTOU es el unique (titulo, inicio) de la migración 071 — dos
+  // reintentos simultáneos pueden pasar este SELECT a la vez, pero solo uno
+  // de los dos INSERT de más abajo va a tener éxito.
   const yaExiste = await eventoYaExiste(admin, result.data.titulo, result.data.inicio)
   if (yaExiste) {
     return NextResponse.json({
@@ -111,9 +126,31 @@ export async function POST(req: Request) {
   try {
     id = await repo.create(result.data, creadoPor)
   } catch (error: unknown) {
+    // repo.create() envuelve el PostgrestError en un Error genérico y pierde
+    // el .code (lib/repos/eventos.ts), así que el duplicado se detecta por
+    // mensaje — mismo patrón que ya usa /api/vex/whatsapp/send.
+    const esDuplicado =
+      error instanceof Error && error.message.toLowerCase().includes('duplicate key')
+    if (esDuplicado) {
+      const duplicadoId = await eventoYaExiste(admin, result.data.titulo, result.data.inicio)
+      if (duplicadoId) {
+        return NextResponse.json({
+          success: true,
+          data: { id: duplicadoId, meet_link: null, google_sync: false, duplicado: true },
+        })
+      }
+    }
     const message = error instanceof Error ? error.message : 'Error creando el evento'
     return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
+
+  // Deja constancia de que lo agendó un agente. Sin esto el evento queda
+  // atribuido solo al integrante dueño del agente y Métricas no puede contar
+  // cuántas reuniones consiguen los agentes. Si falla, el evento ya existe y es
+  // lo que importa: se registra y se sigue, en vez de devolverle un error al
+  // agente por una etiqueta.
+  const { error: errorMarca } = await admin.from('eventos').update({ agente_id: agente.id }).eq('id', id)
+  if (errorMarca) console.error('[agentes/eventos] no se pudo marcar el agente del evento', errorMarca.message)
 
   // Espejo en Google Calendar con Meet e invitaciones. Best-effort:
   // si Google falla, el evento vive igual en el CRM.

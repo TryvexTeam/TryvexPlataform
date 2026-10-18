@@ -188,13 +188,15 @@ export function ChatLlamada({
 
   return (
     /*
-      En el teléfono es una hoja sobre la llamada, no una columna apilada: abajo
-      del video dejaba a la gente en una franja donde no se distinguía a nadie.
-      Va sobre el video y bajo la botonera, como el chat de Meet en móvil. En
-      escritorio vuelve a ser la columna de siempre.
+      En el teléfono ocupa toda la fila (la pestaña "Chat" de panel-llamada.tsx
+      ya esconde el video y la música mientras esta está activa, así que no
+      hace falta flotar sobre nada) -- antes era una hoja `fixed` de 58vh
+      sobre el video, y compartir esa franja con video+gente hacía que no se
+      distinguiera bien ninguno de los dos. En escritorio es la columna
+      angosta de siempre, al lado del video.
     */
     <aside
-      className="fixed inset-x-0 bottom-[84px] top-auto z-[82] h-[58vh] md:static md:z-auto md:h-auto md:inset-auto flex flex-col min-h-0 w-full md:w-[320px] shrink-0"
+      className="flex flex-1 min-h-0 flex-col w-full md:w-[320px] md:flex-none md:shrink-0"
       style={{ borderLeft: '1px solid var(--tx-border)', background: 'oklch(10% 0.004 240 / 96%)' }}
       aria-label="Chat de la llamada"
     >

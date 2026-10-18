@@ -187,7 +187,7 @@ Eliminar `fact_leads.responsable_id` y sus referencias tras confirmar el backfil
 |---|---|---|---|
 | D1 | Librería de gráficos | Agregar dependencia vs. SVG/CSS propio | **RESUELTA por T-003: SVG/CSS propio**, sin dependencia nueva. Costo: mantener esos componentes a mano |
 | D6 | Vista equipo: tab o ruta propia | Segmented en la misma página vs. `/dashboard/equipo` | **DECIDIDA por el señor Ignacio (2026-08-18): segmented en la misma página.** Sin cambio de ruta; el estado de la vista se mantiene en la URL como search param para que sea compartible |
-| D7 | Quién ve finanzas y jornadas del equipo | Permisos `ver_finanzas`, `ver_jornadas_equipo`, `gestionar_finanzas` | Definir el reparto antes de la fase 5 |
+| D7 | Quién ve finanzas y jornadas del equipo | Permisos `ver_finanzas`, `ver_jornadas_equipo`, `gestionar_finanzas` | **DECIDIDA por el señor Ignacio (2026-08-18): no se define un reparto nuevo.** El admin ya gestiona esos permisos en la sección de permisos; el dashboard solo los *respeta*, tile por tile (cada gráfica o interacción se oculta si `puede(perfil, permiso)` es falso). Usar `puede()` de `lib/repos/permisos.ts:69`; `gestionar_finanzas` implica `ver_finanzas` |
 | D2 | Deuda de los 24 endpoints | Reconciliar ahora vs. PRP aparte | **PRP aparte** — no mezclar refactor con feature |
 | D3 | Historial de transiciones (G1) | Ahora vs. después | Después, pero saberlo: sin él no hay velocidad de pipeline |
 | D4 | Drop de `responsable_id` (fase 6) | Sí vs. mantener por compatibilidad | Decidir recién con la fase 1 en producción |

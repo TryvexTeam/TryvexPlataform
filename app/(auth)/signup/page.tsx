@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { BotonGoogle } from '@/components/auth/boton-google'
+import { urlApp } from '@/lib/utils/url-app'
 
 const SignupSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -28,15 +30,15 @@ function SignupForm() {
   const [form, setForm] = useState({ email: '', password: '', confirmPassword: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
-  const [tokenValido, setTokenValido] = useState<boolean | null>(null)
-  const [tokenError, setTokenError] = useState<string | null>(null)
+  // Sin token no hay nada que verificar: se sabe de entrada, sin pasar por el
+  // efecto, que la invitación es inválida.
+  const [tokenValido, setTokenValido] = useState<boolean | null>(token ? null : false)
+  const [tokenError, setTokenError] = useState<string | null>(
+    token ? null : 'Se requiere una invitación válida para registrarse.',
+  )
 
   useEffect(() => {
-    if (!token) {
-      setTokenValido(false)
-      setTokenError('Se requiere una invitación válida para registrarse.')
-      return
-    }
+    if (!token) return
 
     fetch(`/api/invitaciones/${token}`)
       .then((r) => r.json())
@@ -76,7 +78,7 @@ function SignupForm() {
 
     setLoading(true)
     const supabase = createClient()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
+    const appUrl = urlApp(window.location.origin)
     const { error } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
@@ -135,6 +137,14 @@ function SignupForm() {
         <CardDescription>Completa tu registro con la invitación recibida</CardDescription>
       </CardHeader>
       <CardContent>
+        <BotonGoogle
+          loginHint={form.email}
+          invitacion={token ?? undefined}
+          texto={`Entra con la cuenta de Google de ${form.email}`}
+        />
+        <div className="my-4 flex items-center gap-3 text-xs text-neutral-500" aria-hidden="true">
+          <span className="h-px flex-1 bg-neutral-200" /><span>o con tu correo</span><span className="h-px flex-1 bg-neutral-200" />
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>

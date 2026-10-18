@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ListMusicIcon,
   Maximize2Icon,
-  MicIcon,
   Minimize2Icon,
   MusicIcon,
   PauseIcon,
@@ -16,6 +15,7 @@ import {
   SkipBackIcon,
   SkipForwardIcon,
   SquareIcon,
+  UsersIcon,
   Volume2Icon,
   XIcon,
 } from 'lucide-react'
@@ -45,8 +45,12 @@ import type { Musica } from './use-musica'
  * `posicionActual` a partir de la sala y corrige solo cuando el desfase se nota.
  */
 
-/** Mínimo exigido por los términos de la API. No bajar de acá. */
-const LADO_MINIMO = 200
+/**
+ * Mínimo exigido por los términos de la API. No bajar de acá -- ni siquiera
+ * dentro de la tarjeta minimizada (`PipLlamada`, que importa esta constante
+ * para no achicar el video de música por debajo de esto al calcular su alto).
+ */
+export const LADO_MINIMO = 200
 
 /**
  * En iOS el volumen de cualquier audio web lo manda el botón físico y nada más:
@@ -87,6 +91,14 @@ interface ReproductorMusicaProps {
    */
   tamano: TamanoMusica
   onTamano: (valor: TamanoMusica) => void
+  /**
+   * Dentro de la tarjeta minimizada (`PipLlamada`): solo el video, sin
+   * cabecera ni controles. `tamano` sigue siendo el que tenía antes de
+   * minimizar -- sin este modo aparte, un video en `encogido`/`normal`
+   * mostraría cabecera + título + volúmenes + cola apretados en una tarjeta
+   * de 124px de alto en vez del video solo.
+   */
+  compacto?: boolean
 }
 
 export type TamanoMusica = 'encogido' | 'normal' | 'grande'
@@ -145,7 +157,7 @@ function cargarApiYouTube(): Promise<YTApi> {
   if (window.YT?.Player) return Promise.resolve(window.YT)
   if (cargando) return cargando
 
-  cargando = new Promise<YTApi>((resolver, rechazar) => {
+  const promesa = new Promise<YTApi>((resolver, rechazar) => {
     const anterior = window.onYouTubeIframeAPIReady
     window.onYouTubeIframeAPIReady = () => {
       anterior?.()
@@ -160,7 +172,14 @@ function cargarApiYouTube(): Promise<YTApi> {
     document.head.appendChild(tag)
   })
 
-  return cargando
+  // Si falla (hipo de red, script bloqueado), hay que soltar la promesa
+  // cacheada: si no, un fallo transitorio deja la música rota para siempre
+  // en esta pestaña, porque la próxima llamada reusaría la misma promesa
+  // ya rechazada.
+  promesa.catch(() => { cargando = null })
+
+  cargando = promesa
+  return promesa
 }
 
 export function ReproductorMusica({
@@ -170,11 +189,30 @@ export function ReproductorMusica({
   onVolumenVoces,
   tamano,
   onTamano,
+  compacto = false,
 }: ReproductorMusicaProps) {
   const encogido = tamano === 'encogido'
   const grande = tamano === 'grande'
+  // Todo lo que es cabecera/título/volúmenes/cola se oculta igual en
+  // `grande` que en `compacto` -- las dos apuestan el espacio entero al
+  // video. La diferencia es que `grande` sigue mostrando sus propios
+  // controles flotantes (achicar, pantalla completa, cerrar); `compacto`
+  // no muestra ninguno, porque vive dentro de la tarjeta minimizada, que ya
+  // tiene los suyos.
+  const chromeMinimo = grande || compacto
   const { sala, aviso, limpiarAviso, ejecutar, poner, alTerminar } = musica
 
+  /**
+   * `grande` agranda el video DENTRO del panel de la llamada, pero el panel
+   * mismo comparte pantalla con la grilla de gente y el chat -- nunca llega
+   * a ocupar todo. Pantalla completa real es otra cosa: mismo mecanismo que
+   * ya se usa para la pantalla compartida (`panel-llamada.tsx`, `Recuadro`),
+   * sobre este `<aside>` entero para que los controles (que viven adentro)
+   * sigan alcanzables en fullscreen -- si fuera solo sobre el iframe, la
+   * Fullscreen API muestra nada más que el subárbol de ESE elemento y los
+   * controles quedan inalcanzables.
+   */
+  const raizRef = useRef<HTMLElement>(null)
   const contenedorRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<YTPlayer | null>(null)
   const [listo, setListo] = useState(false)
@@ -192,6 +230,7 @@ export function ReproductorMusica({
    */
   const [necesitaGesto, setNecesitaGesto] = useState(false)
   const [errorApi, setErrorApi] = useState<string | null>(null)
+  const [enFullscreen, setEnFullscreen] = useState(false)
   const [buscador, setBuscador] = useState(false)
 
   const actual = pistaActual(sala)
@@ -334,26 +373,59 @@ export function ReproductorMusica({
     return () => clearTimeout(t)
   }, [aviso, limpiarAviso])
 
+  // Se puede salir de pantalla completa con Esc, no solo con el botón -- hay
+  // que enterarse igual para volver a mostrar la cabecera y los controles.
+  useEffect(() => {
+    const alCambiar = () => setEnFullscreen(document.fullscreenElement === raizRef.current)
+    document.addEventListener('fullscreenchange', alCambiar)
+    return () => document.removeEventListener('fullscreenchange', alCambiar)
+  }, [])
+
+  // Si el panel se desmonta (se cierra la música, o toda la llamada) estando
+  // en pantalla completa, sin esto el navegador queda "atrapado" mostrando
+  // un elemento que React ya se llevó -- mismo caso que ya se arregló para
+  // la pantalla compartida (panel-llamada.tsx).
+  useEffect(() => {
+    const el = raizRef.current
+    return () => {
+      if (document.fullscreenElement === el) void document.exitFullscreen().catch(() => {})
+    }
+  }, [])
+
   const posicion = actual ? Math.floor(posicionActual(sala, new Date())) : 0
 
   return (
     /* Sin ancho propio: lo decide el hueco que le reserva el panel de la llamada,
        que es el que sabe cuánto espacio le queda a la grilla de video. */
     <aside
-      className="flex flex-col min-h-0 size-full shrink-0 overflow-y-auto"
+      ref={raizRef}
+      className="relative flex flex-col min-h-0 size-full shrink-0 overflow-y-auto"
       style={{ borderLeft: '1px solid var(--tx-border)', background: 'oklch(10% 0.004 240 / 92%)' }}
       aria-label="Música de la llamada"
     >
+      {/* En grande la cabecera se reduce a lo esencial (cerrar, achicar,
+          pantalla completa) y sin fondo -- el video es lo que importa, no
+          los botones. En encogido/normal se queda como estaba. En compacto
+          (dentro de la tarjeta minimizada) no hay cabecera de ningún tipo:
+          esa tarjeta ya tiene sus propios controles. */}
+      {!compacto && (
       <header
-        className="flex items-center justify-between px-3 py-2.5 shrink-0"
-        style={{ borderBottom: '1px solid var(--tx-border)' }}
+        className={`flex items-center justify-between px-3 shrink-0 ${grande ? 'absolute inset-x-0 top-0 z-10 pb-6 pt-3' : 'py-2.5'}`}
+        style={{
+          borderBottom: grande ? 'none' : '1px solid var(--tx-border)',
+          background: grande
+            ? 'linear-gradient(to bottom, oklch(0% 0 0 / 85%) 0%, oklch(0% 0 0 / 85%) 40%, transparent 100%)'
+            : undefined,
+        }}
       >
-        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--tx-ink-primary)]">
-          <MusicIcon className="size-4" aria-hidden />
-          Música
-        </p>
-        <div className="flex items-center gap-1">
-          {!encogido && (
+        {!grande && (
+          <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--tx-ink-primary)]">
+            <MusicIcon className="size-4" aria-hidden />
+            Música
+          </p>
+        )}
+        <div className="flex items-center gap-1 ml-auto">
+          {!encogido && !grande && (
             <button
               onClick={() => setBuscador((v) => !v)}
               aria-label={buscador ? 'Cerrar el buscador' : 'Buscar música'}
@@ -363,19 +435,40 @@ export function ReproductorMusica({
               <SearchIcon className="size-4" />
             </button>
           )}
+          {/* Pantalla completa real (Fullscreen API), aparte de "grande": ver
+              el comentario de `raizRef`. Solo tiene sentido con el video ya
+              agrandado. */}
+          {grande && (
+            <button
+              onClick={() => {
+                if (enFullscreen) {
+                  void document.exitFullscreen().catch(() => {})
+                } else {
+                  raizRef.current?.requestFullscreen().catch(() => {
+                    /* el navegador negó el pedido; se sigue viendo en grande igual. */
+                  })
+                }
+              }}
+              aria-label={enFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+              className="p-1 text-white/80 hover:text-white"
+            >
+              <Maximize2Icon className="size-4" />
+            </button>
+          )}
           {/* Achicar y agrandar son dos botones y no un ciclo de tres estados:
               con un solo botón hay que acordarse de qué viene después, y la
               mitad de las veces se pasa de largo y hay que dar la vuelta. */}
           {!encogido && (
             <button
               onClick={() => {
+                if (enFullscreen) void document.exitFullscreen().catch(() => {})
                 onTamano(grande ? 'normal' : 'encogido')
                 // Con el panel encogido el buscador no se ve; dejarlo abierto haría
                 // que reapareciera solo al extender, sin que nadie lo pidiera.
                 setBuscador(false)
               }}
               aria-label={grande ? 'Volver el video a la columna' : 'Encoger el panel de música'}
-              className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+              className={`p-1 ${grande ? 'text-white/80 hover:text-white' : 'text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]'}`}
             >
               <Minimize2Icon className="size-4" />
             </button>
@@ -390,27 +483,35 @@ export function ReproductorMusica({
             </button>
           )}
           <button
-            onClick={onCerrar}
+            onClick={() => {
+              if (enFullscreen) void document.exitFullscreen().catch(() => {})
+              onCerrar()
+            }}
             aria-label="Cerrar el panel de música"
-            className="p-1 text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+            className={`p-1 ${grande ? 'text-white/80 hover:text-white' : 'text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]'}`}
           >
             <XIcon className="size-4" />
           </button>
         </div>
       </header>
+      )}
 
       {/*
         El reproductor. 200×200 px visibles: es el mínimo que exigen los términos
         de la YouTube API, no una decisión estética. No reducir, no ocultar.
       */}
-      <div className={`flex justify-center px-3 pt-3 ${grande ? 'flex-1 min-h-0 pb-3' : 'shrink-0'}`}>
+      <div className={chromeMinimo ? 'flex-1 min-h-0 flex' : 'px-3 pt-3 shrink-0'}>
         <div
-          className={`relative overflow-hidden rounded-lg ${grande ? 'w-full h-full' : ''}`}
+          className={`relative overflow-hidden rounded-lg w-full ${chromeMinimo ? 'h-full' : ''}`}
           style={{
-            // En grande el video toma todo el hueco; en los otros dos tamaños se
-            // queda en el cuadrado mínimo, que es el piso que exigen los términos.
-            width: grande ? undefined : LADO_MINIMO,
-            height: grande ? undefined : LADO_MINIMO,
+            // El video toma todo el hueco disponible en grande/compacto. En
+            // encogido/normal, antes era un cuadrado fijo de 200×200 -- el
+            // piso que exigen los términos de YouTube, pero un video 16:9
+            // metido en un cuadrado deja franjas negras arriba y abajo, se ve
+            // chico y con mucho margen muerto. Ahora usa todo el ancho
+            // disponible con la proporción real del video (16:9); el piso de
+            // 200 sigue ahí como mínimo, no como forma obligada.
+            aspectRatio: chromeMinimo ? undefined : '16 / 9',
             minWidth: LADO_MINIMO,
             minHeight: LADO_MINIMO,
             background: 'oklch(14% 0.004 240)',
@@ -453,7 +554,7 @@ export function ReproductorMusica({
         </div>
       </div>
 
-      {actual && (
+      {actual && !chromeMinimo && (
         <div className="px-3 pt-3 shrink-0">
           {/* Encogido queda solo el título: es lo único que se pregunta de un
               vistazo ("¿qué está sonando?"). El canal y el reloj están en el
@@ -477,8 +578,33 @@ export function ReproductorMusica({
       )}
 
       {/* `flex-wrap`: encogido son 224 px y los seis botones quedan al filo. Que
-          bajen a una segunda fila es mejor que verlos recortados. */}
-      <div className="flex flex-wrap items-center justify-center gap-1 px-3 py-3 shrink-0">
+          bajen a una segunda fila es mejor que verlos recortados.
+          En grande, flota sobre el borde inferior del video en vez de
+          ocupar una fila propia -- eso es lo que le devuelve al video el
+          alto entero, en vez de repartirlo con cabecera + título + estos
+          controles + volumen + cola, todo apilado y comiéndose el video. */}
+      {/* En compacto (tarjeta minimizada) no hay controles de ningún tipo:
+          esa tarjeta pidió ver solo el video, sus propios botones son los de
+          la llamada (mic, cámara, colgar), no los de la música. */}
+      {!compacto && (
+      <div
+        className={`flex flex-wrap items-center justify-center gap-1 px-3 shrink-0 ${
+          grande ? 'absolute inset-x-0 bottom-0 z-10 pt-6 pb-3' : 'py-3'
+        }`}
+        style={
+          grande
+            ? {
+                // Un video puede traer subtítulos quemados cerca del borde
+                // inferior (pasó en vivo: tapaban los botones y viceversa).
+                // Degradé más largo y sólido del todo al final, no solo un
+                // tinte parejo, para que los controles se lean pase lo que
+                // pase debajo.
+                background:
+                  'linear-gradient(to top, oklch(0% 0 0 / 85%) 0%, oklch(0% 0 0 / 85%) 40%, transparent 100%)',
+              }
+            : undefined
+        }
+      >
         <BotonMini onClick={() => void ejecutar('previous')} etiqueta="Anterior">
           <SkipBackIcon className="size-4" />
         </BotonMini>
@@ -495,22 +621,41 @@ export function ReproductorMusica({
           <SkipForwardIcon className="size-4" />
         </BotonMini>
 
-        <BotonMini onClick={() => void ejecutar('shuffle')} etiqueta="Mezclar la cola">
-          <ShuffleIcon className="size-4" />
-        </BotonMini>
+        {/* Mezclar y detener se ocultan en encogido -- con los seis botones
+            ahí, el sexto (Detener) quedaba solo en una segunda fila, apretado
+            y desbalanceado. Los cuatro esenciales (anterior/pausa/
+            siguiente/repetir) entran cómodos en una sola fila; mezclar y
+            detener siguen disponibles en normal/grande. */}
+        {!encogido && (
+          <>
+            <BotonMini onClick={() => void ejecutar('shuffle')} etiqueta="Mezclar la cola">
+              <ShuffleIcon className="size-4" />
+            </BotonMini>
 
-        <BotonMini
-          onClick={() => void ejecutar('loop')}
-          etiqueta={`Repetición: ${sala.modo_loop}`}
-          activo={sala.modo_loop !== 'off'}
-        >
-          {sala.modo_loop === 'pista' ? <Repeat1Icon className="size-4" /> : <RepeatIcon className="size-4" />}
-        </BotonMini>
+            <BotonMini
+              onClick={() => void ejecutar('loop')}
+              etiqueta={`Repetición: ${sala.modo_loop}`}
+              activo={sala.modo_loop !== 'off'}
+            >
+              {sala.modo_loop === 'pista' ? <Repeat1Icon className="size-4" /> : <RepeatIcon className="size-4" />}
+            </BotonMini>
 
-        <BotonMini onClick={() => void ejecutar('stop')} etiqueta="Detener y vaciar la cola">
-          <SquareIcon className="size-4" />
-        </BotonMini>
+            <BotonMini onClick={() => void ejecutar('stop')} etiqueta="Detener y vaciar la cola">
+              <SquareIcon className="size-4" />
+            </BotonMini>
+          </>
+        )}
+        {encogido && (
+          <BotonMini
+            onClick={() => void ejecutar('loop')}
+            etiqueta={`Repetición: ${sala.modo_loop}`}
+            activo={sala.modo_loop !== 'off'}
+          >
+            {sala.modo_loop === 'pista' ? <Repeat1Icon className="size-4" /> : <RepeatIcon className="size-4" />}
+          </BotonMini>
+        )}
       </div>
+      )}
 
       {/*
         Volumen propio, aparte del de las voces. La música es de fondo: si
@@ -525,6 +670,7 @@ export function ReproductorMusica({
         WebAudio y no por el volumen del sistema.
       */}
       {!encogido &&
+        !chromeMinimo &&
         (sinControlDeVolumen ? (
           <p className="px-3 pb-3 shrink-0 text-[11px] text-[var(--tx-ink-muted)]">
             El volumen de la música lo maneja el botón del teléfono: iOS no deja que
@@ -560,9 +706,14 @@ export function ReproductorMusica({
         persona sigue mandando encima de éste -- a quien no se le entiende se le
         puede subir igual.
       */}
-      {!encogido && (
+      {!encogido && !chromeMinimo && (
         <div className="flex items-center gap-2 px-3 pb-3 shrink-0">
-          <MicIcon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
+          {/* No es un ícono de micrófono a propósito: esto no controla el
+              propio mic, atenúa la voz de TODOS los demás para escuchar la
+              música mejor. Con MicIcon (como estaba antes) parecía un
+              control del propio micrófono, y Vicho lo reportó como "no
+              sirve para nada" -- confundido con qué hacía. */}
+          <UsersIcon className="size-4 shrink-0 text-[var(--tx-ink-muted)]" aria-hidden />
           <input
             type="range"
             min={0}
@@ -578,7 +729,7 @@ export function ReproductorMusica({
         </div>
       )}
 
-      {aviso && (
+      {aviso && !chromeMinimo && (
         <p
           role="status"
           className="mx-3 mb-3 shrink-0 rounded-lg px-2.5 py-2 text-[12px]"
@@ -588,12 +739,13 @@ export function ReproductorMusica({
         </p>
       )}
 
-      {buscador && !encogido && <Buscador onElegir={(p) => void poner(p)} />}
+      {buscador && !encogido && !chromeMinimo && <Buscador onElegir={(p) => void poner(p)} />}
 
       {/* La cola es lo primero que sobra cuando se necesita espacio: dice qué
           viene después, no qué está pasando. Los comandos del chat la siguen
-          manejando con el panel encogido. */}
-      <div className={`px-3 pb-4 ${encogido ? 'hidden' : ''}`}>
+          manejando con el panel encogido -- y ni en grande/compacto, que
+          apuestan todo el alto al video. */}
+      <div className={`px-3 pb-4 ${encogido || chromeMinimo ? 'hidden' : ''}`}>
         <p className="flex items-center gap-1.5 mb-2 text-[12px] font-semibold text-[var(--tx-ink-primary)]">
           <ListMusicIcon className="size-3.5" aria-hidden />
           En cola ({sala.cola.length})

@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/server'
 import type {
   AdjuntoMensaje,
@@ -8,28 +10,45 @@ import type {
   TipoConversacion,
 } from '@/lib/types/chat'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 interface MiembroRow {
   conversacion_id: string
   integrante_id: string
   ultimo_leido_at: string
-  dim_integrantes: { nombre: string; avatar_url: string | null; color: string | null } | null
+  fijado_at: string | null
+  archivado_at: string | null
+  silenciado_hasta: string | null
+  dim_integrantes: DatosIntegrante | DatosIntegrante[] | null
+}
+
+interface DatosIntegrante {
+  nombre: string
+  avatar_url: string | null
+  color: string | null
+}
+
+/** PostgREST devuelve el embed como objeto o como arreglo según la relación. */
+function datosIntegrante(embed: MiembroRow['dim_integrantes']): DatosIntegrante | null {
+  if (Array.isArray(embed)) return embed[0] ?? null
+  return embed
 }
 
 export class ChatRepository {
   private sb: SB
+  /** Cliente sin esquema generado: la migración 120 aún no está en database.ts. */
+  private raw: SupabaseClient
 
   constructor(supabase: Awaited<ReturnType<typeof createClient>>) {
     this.sb = supabase as SB
+    this.raw = supabase as unknown as SupabaseClient
   }
 
   /** Bandeja: hilos del integrante, con miembros, último mensaje y no leídos. */
   async listConversaciones(integranteId: string): Promise<Conversacion[]> {
-    const { data: mias, error: errMias } = await this.sb
+    const { data: mias, error: errMias } = await this.raw
       .from('conversacion_miembros')
-      .select('conversacion_id, ultimo_leido_at')
+      .select('conversacion_id, ultimo_leido_at, fijado_at, archivado_at, silenciado_hasta')
       .eq('integrante_id', integranteId)
     if (errMias) throw new Error(errMias.message)
 
@@ -45,9 +64,9 @@ export class ChatRepository {
 
     const [convs, miembros, ultimos] = await Promise.all([
       this.sb.from('conversaciones').select('*').in('id', ids).order('ultimo_mensaje_at', { ascending: false }),
-      this.sb
+      this.raw
         .from('conversacion_miembros')
-        .select('conversacion_id, integrante_id, ultimo_leido_at, dim_integrantes(nombre, avatar_url, color)')
+        .select('conversacion_id, integrante_id, ultimo_leido_at, fijado_at, archivado_at, silenciado_hasta, dim_integrantes(nombre, avatar_url, color)')
         .in('conversacion_id', ids),
       this.sb
         .from('mensajes')
@@ -61,12 +80,16 @@ export class ChatRepository {
     const porConv = new Map<string, MiembroChat[]>()
     for (const m of (miembros.data ?? []) as MiembroRow[]) {
       const lista = porConv.get(m.conversacion_id) ?? []
+      const datos = datosIntegrante(m.dim_integrantes)
       lista.push({
         integrante_id: m.integrante_id,
-        nombre: m.dim_integrantes?.nombre ?? 'Sin nombre',
-        avatar_url: m.dim_integrantes?.avatar_url ?? null,
-        color: m.dim_integrantes?.color ?? null,
+        nombre: datos?.nombre ?? 'Sin nombre',
+        avatar_url: datos?.avatar_url ?? null,
+        color: datos?.color ?? null,
         ultimo_leido_at: m.ultimo_leido_at,
+        fijado_at: m.fijado_at,
+        archivado_at: m.archivado_at,
+        silenciado_hasta: m.silenciado_hasta,
       })
       porConv.set(m.conversacion_id, lista)
     }
@@ -79,7 +102,7 @@ export class ChatRepository {
       if (!ultimoPorConv.has(msj.conversacion_id)) ultimoPorConv.set(msj.conversacion_id, msj)
 
       const leido = leidoPorConv.get(msj.conversacion_id)
-      if (msj.autor_id !== integranteId && leido && msj.created_at > leido) {
+      if (!msj.hilo_padre && msj.autor_id !== integranteId && leido && msj.created_at > leido) {
         noLeidosPorConv.set(msj.conversacion_id, (noLeidosPorConv.get(msj.conversacion_id) ?? 0) + 1)
       }
     }
@@ -91,7 +114,9 @@ export class ChatRepository {
       avatar_url: string | null
       ultimo_mensaje_at: string
     }
-    return ((convs.data ?? []) as ConvRow[]).map((c) => ({
+    return ((convs.data ?? []) as ConvRow[]).map((c) => {
+      const mia = (mias ?? []).find((m) => m.conversacion_id === c.id)
+      return {
       id: c.id,
       tipo: c.tipo,
       nombre: c.nombre,
@@ -100,7 +125,11 @@ export class ChatRepository {
       miembros: porConv.get(c.id) ?? [],
       ultimo_mensaje: ultimoPorConv.get(c.id) ?? null,
       no_leidos: noLeidosPorConv.get(c.id) ?? 0,
-    }))
+      fijado_at: mia?.fijado_at ?? null,
+      archivado_at: mia?.archivado_at ?? null,
+      silenciado_hasta: mia?.silenciado_hasta ?? null,
+    }
+    })
   }
 
   /**
@@ -138,7 +167,9 @@ export class ChatRepository {
     if (error) throw new Error(error.message)
 
     // Se piden los más nuevos, se muestran en orden cronológico.
-    const mensajes = ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[])
+    // `as unknown` primero: cuando el embed falla, PostgREST devuelve
+    // `GenericStringError[]`, que no se solapa con el tipo del dominio.
+    const mensajes = ((data ?? []) as unknown as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[])
       .map(({ mensaje_adjuntos, ...m }) => ({ ...m, adjuntos: mensaje_adjuntos ?? [] }))
       .reverse()
 
@@ -155,6 +186,7 @@ export class ChatRepository {
       .select('*, mensaje_adjuntos(id, nombre, tipo_mime, bytes, ancho, alto)')
       .eq('hilo_padre', padreId)
       .order('created_at', { ascending: true })
+      .limit(500)
     if (error) throw new Error(error.message)
 
     const mensajes = ((data ?? []) as (Mensaje & { mensaje_adjuntos?: AdjuntoMensaje[] })[]).map(
@@ -341,31 +373,32 @@ export class ChatRepository {
   }
 
   /**
-   * Borra el mensaje de verdad: la fila desaparece de la base.
-   *
-   * Consecuencias que vienen de las claves foráneas de la 026, y son deliberadas:
-   *   · `responder_a` es ON DELETE SET NULL → la respuesta que lo citaba sobrevive
-   *     y muestra "Mensaje eliminado" en la cita.
-   *   · `hilo_padre` es ON DELETE CASCADE → borrar el mensaje que abrió un hilo
-   *     se lleva todas sus respuestas. Un hilo sin su origen no se entiende.
+   * Borrado suave, como documenta la 026: marca `eliminado_at` y vacía el
+   * texto. La fila queda — si abrió un hilo, sus respuestas siguen existiendo
+   * (nunca hubo CASCADE que dispare acá, porque nunca se llega al DELETE) y si
+   * era una respuesta citada, la cita sigue apuntando a algo real en vez de a
+   * un hueco. `contenido` no puede quedar vacío (CHECK de la 019), así que se
+   * reemplaza por un placeholder — la UI ya decide qué mostrar mirando
+   * `eliminado_at`, no el texto.
    */
   async eliminar(mensajeId: string): Promise<void> {
-    const { error } = await this.sb.from('mensajes').delete().eq('id', mensajeId)
+    const { error } = await this.sb
+      .from('mensajes')
+      .update({ eliminado_at: new Date().toISOString(), contenido: '[mensaje eliminado]' })
+      .eq('id', mensajeId)
     if (error) throw new Error(error.message)
+
+    await this.sb.from('mensaje_adjuntos').delete().eq('mensaje_id', mensajeId)
   }
 
   /**
-   * Las rutas de storage de un mensaje y de todo lo que caiga con él.
-   *
-   * Se piden ANTES de borrar: una vez que la fila se va, el CASCADE se lleva las
-   * de `mensaje_adjuntos` y ya no hay forma de saber qué archivos quedaron
-   * colgados en el bucket. Nadie los ve, pero siguen ocupando espacio.
+   * Rutas de storage de los adjuntos de ESTE mensaje (no de sus hijos de hilo:
+   * con borrado suave el hilo sigue vivo, así que sus adjuntos no se tocan).
+   * Se piden antes de eliminar() para poder limpiar el bucket después de que
+   * la fila de `mensaje_adjuntos` ya no exista.
    */
   async rutasAdjuntosDe(mensajeId: string): Promise<string[]> {
-    const { data: hijos } = await this.sb.from('mensajes').select('id').eq('hilo_padre', mensajeId)
-    const ids = [mensajeId, ...((hijos ?? []) as { id: string }[]).map((h) => h.id)]
-
-    const { data } = await this.sb.from('mensaje_adjuntos').select('ruta').in('mensaje_id', ids)
+    const { data } = await this.sb.from('mensaje_adjuntos').select('ruta').eq('mensaje_id', mensajeId)
     return ((data ?? []) as { ruta: string }[]).map((a) => a.ruta)
   }
 
@@ -373,10 +406,10 @@ export class ChatRepository {
     conversacionId: string,
     autorId: string,
     contenido: string | null,
-    extra?: { responder_a?: string; hilo_padre?: string },
+    extra?: { responder_a?: string; hilo_padre?: string; reenviado?: boolean },
   ): Promise<Mensaje> {
     const texto = contenido?.trim() || null
-    const { data, error } = await this.sb
+    const { data, error } = await this.raw
       .from('mensajes')
       .insert({
         conversacion_id: conversacionId,
@@ -384,6 +417,7 @@ export class ChatRepository {
         contenido: texto,
         responder_a: extra?.responder_a ?? null,
         hilo_padre: extra?.hilo_padre ?? null,
+        reenviado: extra?.reenviado ?? false,
       })
       .select()
       .single()
@@ -400,6 +434,83 @@ export class ChatRepository {
       .eq('conversacion_id', conversacionId)
       .eq('integrante_id', integranteId)
     if (error) throw new Error(error.message)
+  }
+
+  async obtenerMensaje(mensajeId: string): Promise<(Mensaje & { rutas: AdjuntoConRuta[] }) | null> {
+    const { data, error } = await this.raw
+      .from('mensajes')
+      .select('*, mensaje_adjuntos(id, ruta, nombre, tipo_mime, bytes, ancho, alto)')
+      .eq('id', mensajeId)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    if (!data) return null
+    const fila = data as Mensaje & { mensaje_adjuntos?: AdjuntoConRuta[] }
+    const { mensaje_adjuntos, ...mensaje } = fila
+    return { ...mensaje, adjuntos: mensaje_adjuntos ?? [], rutas: mensaje_adjuntos ?? [] }
+  }
+
+  async editar(mensajeId: string, contenido: string): Promise<Mensaje> {
+    const { data, error } = await this.raw
+      .from('mensajes')
+      .update({ contenido: contenido.trim(), editado_at: new Date().toISOString() })
+      .eq('id', mensajeId)
+      .select('*')
+      .single()
+    if (error) throw new Error(error.message)
+    return data as Mensaje
+  }
+
+  async actualizarMiembro(
+    conversacionId: string,
+    integranteId: string,
+    cambios: Record<string, string | null>,
+  ): Promise<void> {
+    const { data, error } = await this.raw
+      .from('conversacion_miembros')
+      .update(cambios)
+      .eq('conversacion_id', conversacionId)
+      .eq('integrante_id', integranteId)
+      .select('integrante_id')
+    if (error) throw new Error(error.message)
+    if (!data?.length) throw new Error('No perteneces a esa conversación')
+  }
+
+  async contarFijadas(integranteId: string, excepto?: string): Promise<number> {
+    let consulta = this.raw
+      .from('conversacion_miembros')
+      .select('conversacion_id', { count: 'exact', head: true })
+      .eq('integrante_id', integranteId)
+      .not('fijado_at', 'is', null)
+    if (excepto) consulta = consulta.neq('conversacion_id', excepto)
+    const { count, error } = await consulta
+    if (error) throw new Error(error.message)
+    return count ?? 0
+  }
+
+  async fechaUltimoMensaje(conversacionId: string): Promise<string | null> {
+    const { data, error } = await this.sb
+      .from('mensajes')
+      .select('created_at')
+      .eq('conversacion_id', conversacionId)
+      .is('hilo_padre', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    return data?.created_at ?? null
+  }
+
+  async destinatariosPush(conversacionId: string, autorId: string): Promise<string[]> {
+    const { data, error } = await this.raw
+      .from('conversacion_miembros')
+      .select('integrante_id, silenciado_hasta')
+      .eq('conversacion_id', conversacionId)
+      .neq('integrante_id', autorId)
+    if (error) throw new Error(error.message)
+    const ahora = Date.now()
+    return (data ?? [])
+      .filter((m) => !m.silenciado_hasta || new Date(m.silenciado_hasta).getTime() <= ahora)
+      .map((m) => m.integrante_id as string)
   }
 
   /** Abre el DM con esa persona o devuelve el que ya existía. */
@@ -446,4 +557,8 @@ export class ChatRepository {
     if (error) throw new Error(error.message)
     return ((data ?? []) as { integrante_id: string }[]).map((m) => m.integrante_id)
   }
+}
+
+interface AdjuntoConRuta extends AdjuntoMensaje {
+  ruta: string
 }

@@ -49,11 +49,14 @@ export async function DELETE(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 })
 
+  const perfil = await new IntegrantesRepository(supabase).getByAuthUser(user.id)
+  if (!perfil) return NextResponse.json({ success: false, error: 'No eres integrante activo' }, { status: 403 })
+
   const body = await req.json().catch(() => ({})) as { endpoint?: string }
   if (!body.endpoint) return NextResponse.json({ success: false, error: 'Falta endpoint' }, { status: 400 })
 
   try {
-    await new PushRepository(supabase).eliminar(body.endpoint)
+    await new PushRepository(supabase).eliminar(body.endpoint, perfil.id)
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Error borrando la suscripción' },

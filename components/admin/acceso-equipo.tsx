@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from '@/lib/toast'
 import type { IntegranteAcceso, ResultadoAcceso } from '@/lib/types/acceso'
+import { DesvincularDialog } from '@/components/admin/desvincular-dialog'
 
 interface AccesoEquipoProps {
   equipoInicial: IntegranteAcceso[]
@@ -26,6 +27,7 @@ interface AccesoEquipoProps {
 export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProps) {
   const [equipo, setEquipo] = useState<IntegranteAcceso[]>(equipoInicial)
   const [aRevocar, setARevocar] = useState<IntegranteAcceso | null>(null)
+  const [aDesvincular, setADesvincular] = useState<IntegranteAcceso | null>(null)
   const [confirmacion, setConfirmacion] = useState('')
   const [motivo, setMotivo] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -79,8 +81,23 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
     }
   }
 
+  async function permitirReingreso(integrante: IntegranteAcceso) {
+    setEnviando(true)
+    try {
+      const res = await fetch('/api/admin/acceso/reingreso', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ integrante_id: integrante.id }),
+      })
+      const cuerpo = await res.json()
+      if (!res.ok || !cuerpo.success) throw new Error(cuerpo.error ?? 'No se pudo permitir el reingreso')
+      setEquipo((actual) => actual.map((fila) => fila.id === integrante.id ? { ...fila, desvinculado_at: null } : fila))
+      toast.success('Reingreso permitido', { description: 'Ahora necesita una invitación nueva.' })
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo permitir el reingreso') }
+    finally { setEnviando(false) }
+  }
+
   if (equipo.length === 0) {
-    return <p className="text-sm text-neutral-500">Todavía no hay integrantes.</p>
+    return <p className="text-sm text-[var(--tx-ink-muted)]">Todavía no hay integrantes.</p>
   }
 
   return (
@@ -91,48 +108,48 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
           return (
             <li
               key={integrante.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-neutral-200 p-4"
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[var(--tx-border)] p-4"
               style={{ opacity: integrante.activo ? 1 : 0.65 }}
             >
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 text-sm font-semibold text-[var(--tx-ink-primary)]">
                   <span className="truncate">{integrante.nombre}</span>
                   {integrante.es_superadmin && (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--tx-border-strong)] px-2 py-0.5 text-[11px] font-medium text-[var(--tx-ink-secondary)]">
                       <ShieldCheck size={11} /> Dueño
                     </span>
                   )}
                 </p>
-                <p className="truncate text-xs text-neutral-500">{integrante.email}</p>
+                <p className="truncate text-xs text-[var(--tx-ink-muted)]">{integrante.email}</p>
               </div>
 
               <span
                 className={
                   integrante.activo
-                    ? 'inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700'
-                    : 'inline-flex shrink-0 items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-medium text-neutral-600'
+                    ? 'inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400'
+                    : 'inline-flex shrink-0 items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-[var(--tx-ink-secondary)]'
                 }
               >
                 {integrante.activo ? <UserCheck size={12} /> : <ShieldOff size={12} />}
-                {integrante.activo ? 'Con acceso' : 'Sin acceso'}
+                {integrante.desvinculado_at ? 'Desvinculado' : integrante.activo ? 'Con acceso' : 'Sin acceso'}
               </span>
 
               {integrante.activo ? (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
                   /* Uno no se revoca a sí mismo: dejaría la cuenta sin quien
                      pueda revertirlo. El endpoint lo rechaza igual. */
                   disabled={soyYo || enviando}
                   title={soyYo ? 'No puedes quitarte el acceso a ti mismo' : undefined}
-                  onClick={() => {
-                    setARevocar(integrante)
-                    setConfirmacion('')
-                    setMotivo('')
-                  }}
+                  onClick={() => setADesvincular(integrante)}
                 >
-                  <UserX size={14} /> Quitar acceso
+                  <UserX size={14} /> Desvincular de Tryvex
+                </Button>
+              ) : integrante.desvinculado_at ? (
+                <Button variant="outline" size="sm" className="shrink-0" disabled={enviando} onClick={() => permitirReingreso(integrante)}>
+                  <UserCheck size={14} /> Permitir reingreso
                 </Button>
               ) : (
                 <Button
@@ -206,6 +223,11 @@ export function AccesoEquipo({ equipoInicial, miIntegranteId }: AccesoEquipoProp
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DesvincularDialog
+        integrante={aDesvincular}
+        onClose={() => setADesvincular(null)}
+        onDone={(id) => setEquipo((actual) => actual.map((fila) => fila.id === id ? { ...fila, activo: false, desvinculado_at: new Date().toISOString(), auth_user_id: null } : fila))}
+      />
     </>
   )
 }

@@ -52,7 +52,16 @@ export async function POST(req: Request) {
   } catch (err) {
     const clave = err instanceof Error ? err.message : ''
     const conocido = ERRORES[clave]
-    if (conocido) return NextResponse.json({ success: false, error: conocido.mensaje }, { status: conocido.status })
+    if (conocido) {
+      // Un 409 casi siempre es una pantalla desfasada (marcó en otra pestaña, o
+      // la jornada se cerró sola a las 12 h). Se devuelve el estado REAL para
+      // que el reloj se ponga al día en vez de quedarse mostrando un error.
+      const real = await repo.getAbierta(perfil.id).catch(() => undefined)
+      return NextResponse.json(
+        { success: false, error: conocido.mensaje, codigo: clave, ...(real !== undefined && { data: real }) },
+        { status: conocido.status },
+      )
+    }
     return NextResponse.json({ success: false, error: clave || 'Error al marcar' }, { status: 500 })
   }
 }

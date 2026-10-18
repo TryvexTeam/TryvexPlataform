@@ -66,6 +66,9 @@ export function ScraperPanel({ nichos }: ScraperPanelProps) {
     }
   }, [router])
 
+  // `mirar` es async: en este tick solo arranca el fetch, y el setState
+  // pasa recien cuando responde. La regla no puede ver a traves del await.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void mirar() }, [mirar])
 
   useEffect(() => {

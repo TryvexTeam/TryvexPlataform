@@ -20,6 +20,18 @@ function groq(): Groq {
  */
 export const MODELO = process.env.VEX_MODEL || "openai/gpt-oss-120b";
 
+/**
+ * Segundo modelo a probar si el primario falla por algo que reintentar no
+ * arregla (404 de modelo retirado, 400, etc.): la caida del 18-ago fue
+ * justamente eso, `llama-3.3-70b-versatile` dejo de existir de un dia para
+ * otro y no habia a que mas recurrir. `openai/gpt-oss-20b` es la variante
+ * chica de la misma familia que ya usamos como primaria — mismo formato de
+ * salida, menor probabilidad de que Groq la retire al mismo tiempo que la de
+ * 120b. Configurable por `VEX_MODEL_FALLBACK` sin necesitar deploy, igual
+ * que `VEX_MODEL`.
+ */
+export const MODELO_FALLBACK = process.env.VEX_MODEL_FALLBACK || "openai/gpt-oss-20b";
+
 /** Se acabó la cuota del día. No se arregla esperando unos segundos. */
 export class CuotaAgotada extends Error {
   /** Lo que Groq dice que hay que esperar, si lo dice ("14m4s"). */
@@ -85,13 +97,40 @@ export async function conReintento<T>(
 }
 
 /**
+ * Corre `fn` con el modelo primario y, si falla con algo que `conReintento`
+ * ya agoto (o que no es reintentable, como un 404 de modelo retirado), lo
+ * intenta una vez mas con `MODELO_FALLBACK` antes de rendirse.
+ *
+ * Es la lección del 18-ago: Groq retiro `llama-3.3-70b-versatile` sin avisar
+ * y Vex quedo devolviendo 404 en cada mensaje hasta que alguien lo noto y
+ * cambio `VEX_MODEL` a mano. Con esto, ese mismo fallo se cae solo a otro
+ * modelo en vez de tumbar Vex en produccion.
+ */
+async function conFallback<T>(fn: (modelo: string) => Promise<T>): Promise<T> {
+  try {
+    return await conReintento(() => fn(MODELO));
+  } catch (primarioErr) {
+    if (primarioErr instanceof CuotaAgotada) throw primarioErr;
+    if (MODELO_FALLBACK === MODELO) throw primarioErr;
+    try {
+      return await conReintento(() => fn(MODELO_FALLBACK), 1);
+    } catch {
+      // Si el fallback tambien falla, lo que se reporta es el error del
+      // modelo primario: es el que de verdad esta configurado, y el que hay
+      // que arreglar.
+      throw primarioErr;
+    }
+  }
+}
+
+/**
  * Pide a la IA una respuesta en JSON. El prompt debe describir las claves esperadas.
  * Devuelve el string JSON (el caller hace JSON.parse).
  */
 export async function llmJSON(prompt: string): Promise<string> {
-  const r = await conReintento(() =>
+  const r = await conFallback((modelo) =>
     groq().chat.completions.create({
-      model: MODELO,
+      model: modelo,
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0.4,
@@ -102,9 +141,9 @@ export async function llmJSON(prompt: string): Promise<string> {
 
 /** Pide a la IA una respuesta en texto plano (conversacional). */
 export async function llmTexto(prompt: string): Promise<string> {
-  const r = await conReintento(() =>
+  const r = await conFallback((modelo) =>
     groq().chat.completions.create({
-      model: MODELO,
+      model: modelo,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.6,
     })

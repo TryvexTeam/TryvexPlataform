@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { useHasMounted } from '@/lib/hooks/use-has-mounted'
 
 /* ── Theme Token Types ── */
 export type GlowMode = 'off' | 'ambient' | 'cinematic'
@@ -100,6 +101,12 @@ function applyTheme(t: ThemeTokens) {
   root.style.setProperty('--primary', t.accentColor)
   root.style.setProperty('--primary-foreground', accentFg)
   root.style.setProperty('--accent', t.accentColor)
+  // --accent-foreground quedaba fijo en casi-blanco (pensado para el rojo
+  // Tryvex por defecto): con un acento claro (p. ej. blanco en "Modo
+  // Minimalista"), el texto resaltado de <Select>/<DropdownMenu> —que usan
+  // este token genérico de shadcn, no --tx-accent-fg— se volvía invisible al
+  // pasar el mouse o seleccionar una opción.
+  root.style.setProperty('--accent-foreground', accentFg)
   root.style.setProperty('--sidebar-primary', t.accentColor)
 
   root.style.setProperty('--tx-glow-color', hexToRgba(t.glowColor, 0.35 * intensity))
@@ -136,13 +143,16 @@ const ThemeContext = createContext<ThemeCtx>({
 })
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<ThemeTokens>(DEFAULT_THEME)
+  // Lazy initializer: lee localStorage una sola vez, antes del primer render,
+  // en vez de arrancar en DEFAULT_THEME y pisarlo en un efecto (evita el flash
+  // de tema por defecto y el setState síncrono dentro de un effect).
+  const [theme, setTheme] = useState<ThemeTokens>(() => loadTheme())
 
-  // Load from localStorage once on mount
+  // Aplicar el tema al DOM (CSS vars) al montar. No es un setState — es
+  // sincronizar con el sistema externo (document.documentElement).
   useEffect(() => {
-    const saved = loadTheme()
-    setTheme(saved)
-    applyTheme(saved)
+    applyTheme(theme)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const set = useCallback(<K extends keyof ThemeTokens>(key: K, value: ThemeTokens[K]) => {
@@ -171,8 +181,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const [panelOpen, setPanelOpen] = useState(false)
 
+  // `theme` viene de localStorage vía lazy initializer: el servidor siempre
+  // renderiza DEFAULT_THEME (sin acceso a localStorage). Cualquier consumidor
+  // que pinte `theme.*` directo en el JSX (fondo, glow, etc.) necesita seguir
+  // viendo el default hasta que el cliente termine de hidratar, o React marca
+  // mismatch. Se gatea acá, una sola vez, para que ningún consumidor nuevo
+  // tenga que acordarse de hacerlo por su cuenta.
+  const mounted = useHasMounted()
+  const themeExpuesto = mounted ? theme : DEFAULT_THEME
+
   return (
-    <ThemeContext.Provider value={{ theme, set, updateTheme, reset, panelOpen, setPanelOpen }}>
+    <ThemeContext.Provider value={{ theme: themeExpuesto, set, updateTheme, reset, panelOpen, setPanelOpen }}>
       {children}
     </ThemeContext.Provider>
   )

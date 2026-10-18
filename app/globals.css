@@ -98,6 +98,12 @@
   --tx-accent-hover:       oklch(56% 0.25 24.3);
   --tx-accent-fg:          #ffffff;  /* texto sobre fondos de acento — lo recalcula applyTheme por luminancia */
   --tx-accent-subtle:      oklch(58% 0.24 24.3 / 12%);
+  /* Rojo profundo para SUPERFICIES RELLENAS con texto encima. El acento
+     normal (58%) da 4.22:1 contra blanco: pasa para texto grande, falla para
+     texto pequeño. Este baja a 50% y sube a 5.8:1, que cubre cualquier
+     tamaño. Se usa solo como fondo — bordes, cifras y barras siguen con
+     --tx-accent, que ahí no lleva texto encima. */
+  --tx-accent-surface:     oklch(50% 0.22 24.3);
   --tx-accent-glow:        oklch(58% 0.24 24.3 / 25%);
   --tx-border:             oklch(100% 0 0 / 6%);
   --tx-border-strong:      oklch(100% 0 0 / 12%);
@@ -187,6 +193,38 @@
     0 8px 24px rgba(0,0,0,.45),
     inset 0 1px 0 rgba(255,255,255,.06);
   border-radius: 32px;
+}
+
+/*
+  Acá vivieron `.cara-parpadeo` y `.cara-respira`, de la primera versión de las
+  caras de los agentes. Ya no existen: el avatar actual (`avatar-bot.tsx`) anima
+  con transiciones sobre `transform`, interpolando entre expresiones reales de
+  la definición, y el parpadeo lo gobierna la propia animación con intervalos
+  irregulares. Se quitan en vez de dejarlas "por si acaso": CSS muerto que nadie
+  puede rastrear es exactamente lo que después nadie se atreve a borrar.
+*/
+
+/*
+  `.glass` es un velo blanco de 3.5% que se apoya ENTERAMENTE en el desenfoque:
+  sin `backdrop-filter` no hay superficie, solo un vidrio limpio. Eso funciona
+  en el monitor, pero se rompe en dos casos reales:
+
+  1. En el celular el contenido va al centro de la pantalla, justo encima del
+     fondo, y no a los lados como en escritorio. Cristian abrió una ficha desde
+     el teléfono y estaba leyendo el texto sobre el dibujo del wallpaper.
+  2. Donde el navegador NO pinta `backdrop-filter` —WebView de Android, GPUs
+     sin soporte, ahorro de batería— el velo se queda solo y no tapa nada.
+
+  No se toca el aspecto de escritorio: se le pone piso solo donde falla.
+*/
+@media (max-width: 900px) {
+  .glass { background: rgba(20, 18, 26, 0.74); }
+  .glass-strong { background: rgba(20, 18, 26, 0.92); }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: rgba(20, 18, 26, 0.82); }
+  .glass-strong { background: rgba(20, 18, 26, 0.95); }
 }
 
 /* ── Grain overlay ── */
@@ -558,10 +596,9 @@
   background: rgba(255, 255, 255, 0.05);
   color: var(--tx-ink-primary);
 }
-.leads-categories__item.is-active {
-  background: rgba(232, 53, 42, 0.10);
-  color: var(--tx-accent-2);
-}
+/* El estado activo lo pinta el componente en línea (chip blanco): la regla
+   que había aquí quedó muerta al hacerlo, y dejarla invitaba a editarla
+   creyendo que seguía mandando. */
 .leads-categories__dot {
   width: 7px;
   height: 7px;
@@ -588,7 +625,11 @@
 /* ── Reader Panel ── */
 .reader {
   position: relative;
-  padding: 18px 26px 0;
+  /* El 0 de abajo dejaba la barra de acciones —Ganado, Perdido, Llamé,
+     Registrar Contacto, WhatsApp, Pitch— pegada al filo del panel, sin nada
+     de aire. Cristian: «los botones abajo apegados... no es profesional».
+     El mismo respiro que ya tenía arriba. */
+  padding: 18px 26px 18px;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -601,6 +642,10 @@
 }
 .reader__bar {
   display: flex;
+  /* `align-items: center` porque el botón de eliminar vive FUERA del grupo de
+     acciones —para que no se toque con "editar"— y sin esto se estiraría al
+     alto del grupo en vez de quedar centrado con él. */
+  align-items: center;
   justify-content: flex-start;
   margin-bottom: 22px;
 }
@@ -1154,6 +1199,9 @@
     border-radius: 100px;
     border: 1px solid rgba(255, 255, 255, 0.10);
     padding: 5px 12px;
+    /* El chip se ajusta al contenido: sin gap, el número queda pegado a la
+       etiqueta ("Todos558"). */
+    gap: 6px;
   }
 
   /* Workspace apilado: chips arriba, lista debajo */
@@ -1221,9 +1269,49 @@
   height: 100svh;
 }
 
+/* El `max-h` que DialogContent trae por defecto (calc(100svh - 2rem), para que
+   los formularios largos no se salgan de la pantalla) le robaría esos 2rem a
+   los modales que SÍ quieren ocupar todo — el chat de WhatsApp y el pitch.
+   Acá se les devuelve. El selector lleva el data-slot para ganar por
+   especificidad (0,2,0) a la utilidad de Tailwind (0,1,0) sin recurrir a
+   !important, que dependería del orden de las capas. */
+[data-slot='dialog-content'].modal-pantalla-movil {
+  max-height: 100svh;
+}
+
 @media (min-width: 640px) {
   .modal-pantalla-movil {
     height: 85vh;
+  }
+  [data-slot='dialog-content'].modal-pantalla-movil {
+    max-height: 85vh;
+  }
+}
+
+/* El fondo oscuro de un visor a pantalla completa (el de adjuntos del chat).
+
+   Es el mismo golpe que .modal-pantalla-movil, en otra pantalla:
+   - `svh` y no `dvh` ni `inset-0`/`100vh`: mientras la barra de Safari está a
+     la vista —que es como se abre— el viewport GRANDE mide más que la pantalla
+     y el visor se corta por abajo. `svh` mide el chico y nunca se corta.
+   - El padding devuelve la zona segura (env(safe-area-*)): el layout declara
+     viewportFit:'cover', o sea dibuja POR DEBAJO de la Dynamic Island y de la
+     barra de gestos. Sin esto la cabecera del visor —con la X, los modos y
+     descargar— queda tapada bajo el notch: se ve, pero no se puede tocar.
+   A diferencia del modal, el fondo cubre TODO también en desktop (no se recorta
+   a 85vh): solo cambia el padding, más holgado cuando no hay notch. */
+.overlay-pantalla-movil {
+  height: 100vh;
+  height: 100svh;
+  padding: calc(0.5rem + env(safe-area-inset-top, 0px))
+    calc(0.5rem + env(safe-area-inset-right, 0px))
+    calc(0.5rem + env(safe-area-inset-bottom, 0px))
+    calc(0.5rem + env(safe-area-inset-left, 0px));
+}
+
+@media (min-width: 640px) {
+  .overlay-pantalla-movil {
+    padding: 1.5rem;
   }
 }
 
@@ -1272,4 +1360,327 @@
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Muesca del Panel de Mando
+ *
+ * La esquina superior derecha del card se recorta con una curva cóncava y el
+ * botón de acción queda alojado ahí, encima del fondo. La geometría vive en
+ * una pieza SVG de 100x100 px anclada a esa esquina: mide igual en un card de
+ * 300 o de 900 px de ancho, así que el card sigue siendo fluido y no hace
+ * falta medirlo en JavaScript.
+ *
+ * La máscara son tres capas que se suman:
+ *   1. la pieza SVG, que rellena el cuadrado de la esquina con la curva;
+ *   2. una franja horizontal opaca desde los 99 px hacia abajo;
+ *   3. una franja vertical opaca desde los 99 px hacia la izquierda.
+ * Juntas cubren todo menos el cuadrado, que rellena la pieza.
+ *
+ * Los 99 px no son un error de cuenta: el compositing de máscaras es
+ * `a + b - a*b`, no `a + b`, así que dos capas que se tocan justo en el borde
+ * dan 0.75 de alfa y dejan una costura translúcida de 1 px. Solapándolas ese
+ * píxel queda cubierto por ambas.
+ *
+ * Geometría: centro a 22 px de ambos bordes, radio de corte 34, botón de 44 —
+ * quedan 12 px de aire parejo. Los filetes de 14 px en las dos tangencias son
+ * lo que evita que el borde llegue al corte en punta.
+ * ──────────────────────────────────────────────────────────────────────────── */
+.tx-scoop {
+  -webkit-mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0L30.671 0A14 14 0 0 1 44.475 16.333A34 34 0 0 0 83.667 55.525A14 14 0 0 1 100 69.329L100 100L0 100Z' fill='%23fff'/%3E%3C/svg%3E"),
+    linear-gradient(to bottom, transparent 0 99px, #000 99px),
+    linear-gradient(to left, transparent 0 99px, #000 99px);
+  -webkit-mask-size: 100px 100px, 100% 100%, 100% 100%;
+  -webkit-mask-position: top right, 0 0, 0 0;
+  -webkit-mask-repeat: no-repeat;
+  mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0L30.671 0A14 14 0 0 1 44.475 16.333A34 34 0 0 0 83.667 55.525A14 14 0 0 1 100 69.329L100 100L0 100Z' fill='%23fff'/%3E%3C/svg%3E"),
+    linear-gradient(to bottom, transparent 0 99px, #000 99px),
+    linear-gradient(to left, transparent 0 99px, #000 99px);
+  mask-size: 100px 100px, 100% 100%, 100% 100%;
+  mask-position: top right, 0 0, 0 0;
+  mask-repeat: no-repeat;
+}
+
+/* Filo de 1 px sobre la curva. Es un trazo de 2 px dibujado DENTRO del
+   elemento enmascarado: la máscara se lleva la mitad de afuera y deja el
+   hairline justo sobre el borde. Va como hijo, no como ::after, para que
+   funcione también cuando el card ya usa ::after para otra cosa. */
+.tx-scoop-edge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100px;
+  height: 100px;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M30.671 0A14 14 0 0 1 44.475 16.333A34 34 0 0 0 83.667 55.525A14 14 0 0 1 100 69.329' fill='none' stroke='%23ffffff' stroke-opacity='.20' stroke-width='2'/%3E%3C/svg%3E");
+  background-size: 100px 100px;
+  background-repeat: no-repeat;
+}
+
+/* Trama diagonal de la tarjeta de acento. Textura sin degradado: el acento ya
+   es un plano de color y esto le da superficie sin ensuciarlo. */
+.tx-hatch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.1;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9) 0 1.5px,
+    transparent 1.5px 16px
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Sileo adaptado al CRM
+ *
+ * La librería trae su propia paleta (verdes, azules y ámbares de Tailwind) que
+ * no es la de Tryvex: un toast con el verde de otra marca se lee como una
+ * pieza invitada. Aquí se reasignan sus variables a los tokens del sistema,
+ * así los toasts hablan el mismo idioma que el resto de la interfaz.
+ *
+ * Se sobreescriben variables públicas, no clases internas: la librería puede
+ * cambiar su markup entre versiones, pero estas variables son su contrato.
+ * ──────────────────────────────────────────────────────────────────────────── */
+:root {
+  --sileo-state-success: var(--tx-success);
+  --sileo-state-error:   var(--tx-error);
+  --sileo-state-warning: var(--tx-warning);
+  --sileo-state-info:    var(--tx-ink-secondary);
+  --sileo-state-loading: var(--tx-ink-muted);
+  /* Las confirmaciones con acción son lo único que se lleva el acento: es la
+     misma regla del panel — el rojo señala lo que hay que atender. */
+  --sileo-state-action:  var(--tx-accent-2);
+
+  /* Algo más ancho y alto que el original: el CRM manda mensajes con nombres
+     de empresa y montos, no solo "Guardado". */
+  --sileo-width: 380px;
+  --sileo-height: 46px;
+}
+
+/* El botón de acción del toast, con la misma forma que los del panel. */
+[data-sileo-toast] button {
+  border-radius: 999px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* Entrada de página.
+   
+   Va en CSS y no en JS a propósito: la animación arranca sola al montarse el
+   elemento, sin depender de que otra termine antes. La versión con
+   `AnimatePresence mode="wait"` dejaba páginas enteras en `opacity: 0` cuando
+   el contenido tardaba en llegar del servidor (ver `page-transition.tsx`).
+   
+   `backwards` aplica el primer fotograma durante el retardo; sin `forwards`,
+   al acabar manda el estilo normal del elemento, así que el peor caso posible
+   es que no se anime — nunca que se quede invisible. */
+@keyframes tx-page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.tx-page-enter {
+  animation: tx-page-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* Quien pide menos movimiento recibe el contenido sin desplazamiento. */
+@media (prefers-reduced-motion: reduce) {
+  .tx-page-enter {
+    animation: none;
+  }
+}
+
+/* ── iOS: campos a 16px en móvil, para que Safari no haga zoom solo ─────────
+   Safari (y Chrome en iOS) amplían la página automáticamente al enfocar un
+   campo cuyo texto mide menos de 16px. Es una función de accesibilidad del
+   sistema, no un bug del sitio — pero hace que la app "salte" al escribir y
+   se sienta poco nativa cuando está instalada como ícono.
+
+   Va como regla global y no campo por campo a propósito: los inputs viven en
+   26 archivos entre CSS propio y clases de Tailwind, y cualquiera nuevo
+   volvería a traer el problema. Acá se cubren todos, presentes y futuros.
+
+   Solo bajo 768px: en escritorio no existe ese zoom y el diseño conserva sus
+   tamaños originales.
+
+   Fuente del umbral de 16px: https://css-tricks.com/16px-or-larger-text-prevents-ios-form-zoom/ */
+@media (max-width: 767px) {
+  /* !important a propósito: los tamaños viven repartidos en reglas de clase
+     (.search input, .field__input input, .tp__desc textarea…) y en utilidades
+     Tailwind (text-[13px]) que le ganan por especificidad a un selector de
+     elemento. Forzar 16px es la única forma de cubrirlos a todos y es lo que
+     exige WCAG 1.4.4 (no capar el zoom desde el viewport). */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* ── Chat estilo WhatsApp ─────────────────────────────────────────────────────
+   Geometría e interacción de WhatsApp para iPhone; colores del CRM. Todo valor del
+   chat sale de aquí para poder ajustarlo tras comparar con capturas reales. */
+:root {
+  --chat-bg: var(--tx-bg-primary);
+  --chat-doodle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' fill='none' stroke='%23fff' stroke-opacity='.035' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M14 18h16v12H18l-4 4z'/%3E%3Ccircle cx='86' cy='22' r='7'/%3E%3Cpath d='M60 56l6 6 10-12M20 82c6-8 14-8 20 0M92 78l8 8m0-8l-8 8M52 100h18M61 91v18'/%3E%3C/svg%3E");
+  --chat-burbuja-mia: color-mix(in oklch, var(--tx-accent) 30%, var(--tx-bg-secondary));
+  --chat-burbuja-mia-texto: var(--tx-ink-primary);
+  --chat-burbuja-otra: var(--tx-surface-2, oklch(100% 0 0 / 8%));
+  --chat-burbuja-otra-texto: var(--tx-ink-primary);
+  --chat-meta: var(--tx-ink-muted);
+  --chat-tick-leido: #53bdeb;
+  --chat-error: var(--tx-error);
+  --chat-radio: 18px;
+  --chat-espacio-racha: 2px;
+  --chat-espacio-autor: 8px;
+  --chat-ancho-burbuja: 75%;
+  --chat-texto: 16px;
+  --chat-texto-meta: 11px;
+  --chat-material: color-mix(in oklch, var(--tx-bg-primary) 72%, transparent);
+  --chat-desenfoque: blur(20px) saturate(180%);
+  --chat-curva-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --chat-push-ms: 350ms;
+}
+
+/* Conversación abierta en el teléfono: pantalla completa, como WhatsApp. La barra
+   inferior ni se renderiza (useNavMovilOculta); aquí se oculta la superior y se
+   devuelve al <main> el alto que reservaba para la barra. */
+@media (max-width: 767px) {
+  html[data-chat-conversation='true'] .topbar-app { display: none; }
+  html[data-chat-conversation='true'] main.pb-nav-movil { padding-bottom: 0; }
+}
+
+/* Con un campo enfocado tampoco hay barra inferior: el <main> no reserva su alto. */
+@media (max-width: 767px) {
+  html:has(:is(input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=file]), textarea):focus) main.pb-nav-movil {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --chat-push-ms: 0ms; }
+}
+
+/* ── Chat: variables derivadas de los tokens del CRM ── */
+:root {
+  --chat-accent: var(--tx-accent);
+  --chat-accent-soft: color-mix(in oklch, var(--tx-accent) 18%, transparent);
+  --chat-ink: var(--tx-ink-primary);
+  --chat-search: var(--tx-surface-1);
+  --chat-separator: var(--tx-border);
+  --chat-surface-soft: var(--tx-surface-1);
+  --chat-list: var(--tx-bg-primary);
+  --chat-action-read: var(--tx-blue);
+  --chat-action-more: oklch(48% 0.01 255);
+  --chat-action-archive: oklch(52% 0.14 60);
+}
+
+/* Lista de chats: título grande que colapsa a compacto con material translúcido. */
+.chat-list-header { position: relative; background: var(--chat-list); }
+.chat-list-header .chat-compact-title { opacity: 0; transition: opacity 160ms; }
+.chat-list-header.is-collapsed {
+  background: var(--chat-material);
+  -webkit-backdrop-filter: var(--chat-desenfoque);
+  backdrop-filter: var(--chat-desenfoque);
+}
+.chat-list-header.is-collapsed .chat-compact-title { opacity: 1; }
+.chat-list-header.is-collapsed .chat-large-title { opacity: 0; }
+.chat-row { touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
+.chat-sheet { background: var(--tx-bg-secondary); border-top: 1px solid var(--tx-border); }
+
+/* Cabecera de conversación y barra de fijados: material con respaldo opaco. */
+.chat-conversation-header, .chat-pinned-bar {
+  background: var(--tx-bg-secondary);
+  border-bottom: 1px solid var(--chat-separator);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .chat-conversation-header, .chat-pinned-bar {
+    background: var(--chat-material);
+    -webkit-backdrop-filter: var(--chat-desenfoque);
+    backdrop-filter: var(--chat-desenfoque);
+  }
+}
+.chat-glass-actions { border-radius: 999px; }
+
+/* Fondo doodle y lista de mensajes. */
+.chat-fondo {
+  background-color: var(--chat-bg);
+  background-image: var(--chat-doodle);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+[data-theme='light'] .chat-fondo, .light .chat-fondo { background-image: none; }
+
+/* Burbuja: cola en la primera de la racha; hora y estado dentro, abajo a la derecha. */
+.chat-burbuja {
+  --fondo: var(--chat-burbuja-otra);
+  position: relative;
+  max-width: var(--chat-ancho-burbuja);
+  padding: 6px 9px;
+  border-radius: var(--chat-radio);
+  background: var(--fondo);
+  color: var(--chat-burbuja-otra-texto);
+  font-size: var(--chat-texto);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.chat-burbuja[data-mia='true'] { --fondo: var(--chat-burbuja-mia); color: var(--chat-burbuja-mia-texto); }
+.chat-burbuja[data-cola='true'][data-mia='true'] { border-top-right-radius: 4px; }
+.chat-burbuja[data-cola='true'][data-mia='false'] { border-top-left-radius: 4px; }
+.chat-burbuja[data-cola='true']::before {
+  content: ''; position: absolute; top: 0; width: 8px; height: 12px; background: var(--fondo);
+}
+.chat-burbuja[data-cola='true'][data-mia='true']::before { right: -7px; clip-path: polygon(0 0, 100% 0, 0 100%); }
+.chat-burbuja[data-cola='true'][data-mia='false']::before { left: -7px; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+.chat-burbuja[data-media='true'] { padding: 3px; }
+.chat-texto > :last-child::after {
+  content: ''; display: inline-block; width: var(--chat-ancho-meta, 4.5rem); height: 1px;
+}
+.chat-texto-recortado { max-height: 22em; overflow: hidden; }
+.chat-bubble-meta {
+  position: absolute; right: 9px; bottom: 4px; display: inline-flex; align-items: center; gap: 3px;
+  font-size: var(--chat-texto-meta); line-height: 1; color: var(--chat-meta); white-space: nowrap;
+}
+.chat-burbuja[data-media='true'] .chat-bubble-meta {
+  right: 9px; bottom: 8px; padding: 2px 6px; border-radius: 999px;
+  background: oklch(0% 0 0 / 55%); color: #fff;
+}
+.chat-solo-emoji { font-size: 44px; line-height: 1.1; }
+.chat-date-separator span, .chat-fecha-flotante {
+  padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: var(--chat-meta); background: var(--chat-material);
+  -webkit-backdrop-filter: var(--chat-desenfoque); backdrop-filter: var(--chat-desenfoque);
+}
+.chat-resaltado { animation: chat-resaltar 1s ease-out; }
+@keyframes chat-resaltar { 0%, 60% { background: var(--chat-accent-soft); } 100% { background: transparent; } }
+@keyframes chat-entra { from { opacity: 0; transform: translateY(12px) scale(.96); } to { opacity: 1; transform: none; } }
+.chat-entra { animation: chat-entra 250ms var(--chat-curva-ios); }
+[data-presionando='true'] { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+
+/* Navegación móvil: la conversación es una pantalla que entra por la derecha. */
+@keyframes chat-push-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@media (max-width: 767px) {
+  .chat-conv-pantalla {
+    position: fixed; z-index: 60; left: 0; right: 0;
+    top: var(--chat-viewport-top, 0px);
+    height: var(--chat-viewport-height, 100svh);
+    background: var(--tx-bg-primary);
+    transform: translateX(var(--chat-arrastre, 0px));
+    animation: chat-push-in var(--chat-push-ms) var(--chat-curva-ios);
+    transition: transform var(--chat-push-ms) var(--chat-curva-ios);
+  }
+  .chat-conv-pantalla[data-arrastrando='true'] { transition: none; }
+  .chat-conv-pantalla[data-saliendo='true'] { transform: translateX(100%); }
+  .chat-lista-empuje { transition: transform var(--chat-push-ms) var(--chat-curva-ios); }
+  .chat-lista-empuje[data-detras='true'] { transform: translateX(-30%); filter: brightness(.7); }
+  html[data-chat-teclado='true'] .chat-composer { padding-bottom: 6px; }
+}
+.chat-composer { padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); }
+@media (prefers-reduced-motion: reduce) {
+  .chat-conv-pantalla { animation: none; transition: none; }
+  .chat-lista-empuje[data-detras='true'] { transform: none; }
+  .chat-entra, .chat-resaltado { animation: none; }
 }

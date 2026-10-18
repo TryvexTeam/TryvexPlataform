@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import {
+import { SelectorFecha } from '@/components/ui/selector-fecha'
+import { NEGOCIOS, NEGOCIO_POR_DEFECTO,
   CATEGORIA_LABELS,
   METODOS_PAGO,
   METODO_LABELS,
@@ -23,11 +24,22 @@ export interface ClienteOpcion {
   nombre: string
 }
 
+/** Datos de la venta que se está cobrando, para precargar el movimiento y dejarlo
+ *  enlazado vía venta_id — así caja y ventas no vuelven a desincronizarse. */
+export interface VentaACobrar {
+  id: string
+  cliente_id: string
+  descripcion: string | null
+}
+
 interface MovimientoFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Si viene, el formulario edita ese movimiento en vez de crear uno nuevo. */
   movimiento?: Movimiento
+  /** Si viene, el formulario registra el cobro de esta venta (tipo/categoría fijos,
+   *  cliente precargado, venta_id enlazado). Incompatible con `movimiento`. */
+  venta?: VentaACobrar
   clientes: ClienteOpcion[]
   onSaved: () => void
 }
@@ -54,7 +66,21 @@ function sanearNombre(nombre: string): string {
   return nombre.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120) || 'comprobante'
 }
 
-function estadoInicial(mov?: Movimiento) {
+function estadoInicial(mov?: Movimiento, venta?: VentaACobrar) {
+  if (venta) {
+    return {
+      tipo: 'ingreso' as const,
+      categoria: 'cobro_cliente',
+      descripcion: venta.descripcion || 'Cobro a cliente',
+      monto_clp: '',
+      fecha: hoySantiago(),
+      metodo_pago: NINGUNO,
+      contraparte: '',
+      cliente_id: venta.cliente_id,
+      notas: '',
+      negocio: NEGOCIO_POR_DEFECTO as string,
+    }
+  }
   return {
     tipo: mov?.tipo ?? 'egreso',
     categoria: mov?.categoria ?? '',
@@ -65,11 +91,12 @@ function estadoInicial(mov?: Movimiento) {
     contraparte: mov?.contraparte ?? '',
     cliente_id: mov?.cliente_id ?? NINGUNO,
     notas: mov?.notas ?? '',
+    negocio: (mov?.negocio ?? NEGOCIO_POR_DEFECTO) as string,
   }
 }
 
-export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSaved }: MovimientoFormProps) {
-  const [form, setForm] = useState(estadoInicial(movimiento))
+export function MovimientoForm({ open, onOpenChange, movimiento, venta, clientes, onSaved }: MovimientoFormProps) {
+  const [form, setForm] = useState(estadoInicial(movimiento, venta))
   const [archivo, setArchivo] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -143,7 +170,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
         metodo_pago: form.metodo_pago === NINGUNO ? null : form.metodo_pago,
         contraparte: form.contraparte || null,
         cliente_id: form.cliente_id === NINGUNO ? null : form.cliente_id,
+        venta_id: venta?.id ?? movimiento?.venta_id ?? null,
         notas: form.notas || null,
+        negocio: form.negocio,
         voucher_path: voucher?.path ?? movimiento?.voucher_path ?? null,
         voucher_nombre: voucher?.nombre ?? movimiento?.voucher_nombre ?? null,
       }
@@ -169,11 +198,29 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
           })
 
       if (!res.ok) throw new Error('api')
-      toast.success(movimiento ? 'Movimiento actualizado' : 'Movimiento registrado')
+
+      // El movimiento de caja es la fuente de verdad de que el dinero entró: recién
+      // ahora se marca la venta como pagada, nunca antes (dejaría un "pagado" sin caja).
+      if (venta) {
+        const resVenta = await fetch(`/api/pagos/${venta.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ estado_pago: 'pagado', fecha_pago: form.fecha }),
+        })
+        if (!resVenta.ok) throw new Error('venta')
+      }
+
+      toast.success(movimiento ? 'Movimiento actualizado' : venta ? 'Cobro registrado en caja' : 'Movimiento registrado')
       onOpenChange(false)
       onSaved()
     } catch (error: unknown) {
-      const mensaje = error instanceof Error && error.message !== 'api' ? error.message : null
+      if (error instanceof Error && error.message === 'venta') {
+        toast.error('El cobro quedó registrado en caja, pero no se pudo marcar la venta como pagada. Márcala manualmente.')
+        onOpenChange(false)
+        onSaved()
+        return
+      }
+      const mensaje = error instanceof Error && error.message !== 'api' && error.message !== 'venta' ? error.message : null
       toast.error(mensaje ? `No se pudo subir el comprobante: ${mensaje}` : 'No se pudo guardar el movimiento')
     } finally {
       setLoading(false)
@@ -186,15 +233,15 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{movimiento ? 'Editar movimiento' : 'Registrar movimiento'}</DialogTitle>
+          <DialogTitle>{venta ? 'Registrar cobro en caja' : movimiento ? 'Editar movimiento' : 'Registrar movimiento'}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Tipo *</Label>
-              <Select value={form.tipo} onValueChange={(v) => cambiarTipo(v ?? 'egreso')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Label htmlFor="mov-tipo">Tipo *</Label>
+              <Select value={form.tipo} onValueChange={(v) => cambiarTipo(v ?? 'egreso')} disabled={!!venta}>
+                <SelectTrigger id="mov-tipo"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ingreso">Ingreso</SelectItem>
                   <SelectItem value="egreso">Egreso</SelectItem>
@@ -203,9 +250,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
               {errors.tipo && <p className="text-xs text-red-500">{errors.tipo}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label>Categoría *</Label>
-              <Select value={form.categoria} onValueChange={(v) => set('categoria', v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Elegir" /></SelectTrigger>
+              <Label htmlFor="mov-categoria">Categoría *</Label>
+              <Select value={form.categoria} onValueChange={(v) => set('categoria', v ?? '')} disabled={!!venta}>
+                <SelectTrigger id="mov-categoria"><SelectValue placeholder="Elegir" /></SelectTrigger>
                 <SelectContent>
                   {categorias.map((c) => (
                     <SelectItem key={c} value={c}>{CATEGORIA_LABELS[c] ?? c}</SelectItem>
@@ -217,8 +264,21 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
           </div>
 
           <div className="space-y-1.5">
-            <Label>Descripción *</Label>
+            <Label htmlFor="mov-negocio">Negocio</Label>
+            <Select value={form.negocio} onValueChange={(v) => set('negocio', v ?? NEGOCIO_POR_DEFECTO)} disabled={!!venta}>
+              <SelectTrigger id="mov-negocio"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {NEGOCIOS.map((n) => (
+                  <SelectItem key={n} value={n}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="mov-descripcion">Descripción *</Label>
             <Input
+              id="mov-descripcion"
               value={form.descripcion}
               onChange={(e) => set('descripcion', e.target.value)}
               placeholder="Ej: hosting Vercel de agosto"
@@ -226,10 +286,11 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
             {errors.descripcion && <p className="text-xs text-red-500">{errors.descripcion}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Monto (CLP) *</Label>
+              <Label htmlFor="mov-monto">Monto (CLP) *</Label>
               <Input
+                id="mov-monto"
                 type="number"
                 step="1"
                 min="0"
@@ -240,17 +301,17 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
               {errors.monto_clp && <p className="text-xs text-red-500">{errors.monto_clp}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label>Fecha *</Label>
-              <Input type="date" value={form.fecha} onChange={(e) => set('fecha', e.target.value)} />
+              <Label htmlFor="mov-fecha">Fecha *</Label>
+              <SelectorFecha value={form.fecha} onChange={(v) => set('fecha', v)} />
               {errors.fecha && <p className="text-xs text-red-500">{errors.fecha}</p>}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Método de pago</Label>
+              <Label htmlFor="mov-metodo-pago">Método de pago</Label>
               <Select value={form.metodo_pago} onValueChange={(v) => set('metodo_pago', v ?? NINGUNO)}>
-                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectTrigger id="mov-metodo-pago"><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NINGUNO}>Sin especificar</SelectItem>
                   {METODOS_PAGO.map((m) => (
@@ -260,8 +321,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Contraparte</Label>
+              <Label htmlFor="mov-contraparte">Contraparte</Label>
               <Input
+                id="mov-contraparte"
                 value={form.contraparte}
                 onChange={(e) => set('contraparte', e.target.value)}
                 placeholder="A quién / de quién"
@@ -272,9 +334,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
 
           {clientes.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Cliente asociado</Label>
-              <Select value={form.cliente_id} onValueChange={(v) => set('cliente_id', v ?? NINGUNO)}>
-                <SelectTrigger><SelectValue placeholder="Sin cliente" /></SelectTrigger>
+              <Label htmlFor="mov-cliente">Cliente asociado</Label>
+              <Select value={form.cliente_id} onValueChange={(v) => set('cliente_id', v ?? NINGUNO)} disabled={!!venta}>
+                <SelectTrigger id="mov-cliente"><SelectValue placeholder="Sin cliente" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NINGUNO}>Sin cliente</SelectItem>
                   {clientes.map((c) => (
@@ -283,6 +345,14 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
                 </SelectContent>
               </Select>
             </div>
+          )}
+
+          {venta && (
+            <p className="text-xs text-[var(--tx-ink-muted)]">
+              Este movimiento queda enlazado a la venta que se está marcando como pagada.
+              Ingresa el monto que efectivamente entró a caja (puede diferir del cobrado por
+              tipo de cambio o comisión).
+            </p>
           )}
 
           <div className="space-y-1.5">
@@ -301,8 +371,9 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
           </div>
 
           <div className="space-y-1.5">
-            <Label>Notas</Label>
+            <Label htmlFor="mov-notas">Notas</Label>
             <Textarea
+              id="mov-notas"
               value={form.notas}
               onChange={(e) => set('notas', e.target.value)}
               rows={2}
@@ -314,7 +385,7 @@ export function MovimientoForm({ open, onOpenChange, movimiento, clientes, onSav
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Guardando…' : movimiento ? 'Guardar cambios' : 'Registrar'}
+              {loading ? 'Guardando…' : movimiento ? 'Guardar cambios' : venta ? 'Registrar cobro' : 'Registrar'}
             </Button>
           </DialogFooter>
         </form>

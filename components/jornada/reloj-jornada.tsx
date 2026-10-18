@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { LogInIcon, LogOutIcon, PauseIcon, PlayIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/lib/toast'
 import { type Jornada, enPausa, formatearDuracion, segundosTrabajados } from '@/lib/types/jornada'
+import { explicarConflicto } from '@/lib/jornada/conflicto'
 
 type Accion = 'entrada' | 'salida' | 'pausa' | 'reanudar'
 
@@ -15,7 +17,17 @@ interface RelojJornadaProps {
 }
 
 export function RelojJornada({ jornadaInicial, variante = 'completo' }: RelojJornadaProps) {
+  const router = useRouter()
   const [jornada, setJornada] = useState<Jornada | null>(jornadaInicial)
+  // Si el servidor trae otra jornada (router.refresh, una navegación), manda
+  // la del servidor. Antes el reloj se quedaba con la del primer render para
+  // siempre, y ofrecía "Marcar entrada" con la jornada ya abierta: eso era el
+  // 409 que se veía en la consola.
+  const [inicialVista, setInicialVista] = useState(jornadaInicial)
+  if (inicialVista !== jornadaInicial) {
+    setInicialVista(jornadaInicial)
+    setJornada(jornadaInicial)
+  }
   const [ocupado, setOcupado] = useState(false)
   // El contador es derivado: el tick solo marca el paso del tiempo.
   const [tick, setTick] = useState(() => Date.now())
@@ -29,6 +41,30 @@ export function RelojJornada({ jornadaInicial, variante = 'completo' }: RelojJor
     return () => clearInterval(id)
   }, [jornada])
 
+  // Al volver a la pestaña, preguntar el estado real: pudo marcar desde el
+  // celular, o la jornada se cerró sola mientras la pestaña dormía.
+  useEffect(() => {
+    let vigente = true
+    const alVolver = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const res = await fetch('/api/jornadas', { cache: 'no-store' })
+        if (!res.ok) return
+        const json = (await res.json()) as { success: boolean; data?: Jornada | null }
+        if (vigente && json.success) setJornada(json.data ?? null)
+      } catch {
+        // Sin red no se toca nada: el siguiente foco lo reintenta.
+      }
+    }
+    document.addEventListener('visibilitychange', alVolver)
+    window.addEventListener('focus', alVolver)
+    return () => {
+      vigente = false
+      document.removeEventListener('visibilitychange', alVolver)
+      window.removeEventListener('focus', alVolver)
+    }
+  }, [])
+
   const marcar = async (accion: Accion) => {
     setOcupado(true)
     try {
@@ -38,6 +74,13 @@ export function RelojJornada({ jornadaInicial, variante = 'completo' }: RelojJor
         body: JSON.stringify({ accion }),
       })
       const json = await res.json()
+      if (res.status === 409 && 'data' in json) {
+        // La pantalla estaba desfasada: se pone al día con lo que dice la base.
+        setJornada((json.data as Jornada | null) ?? null)
+        toast.info(explicarConflicto(accion, json.data ?? null))
+        router.refresh()
+        return
+      }
       if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo marcar')
 
       const actualizada = json.data as Jornada
@@ -66,7 +109,16 @@ export function RelojJornada({ jornadaInicial, variante = 'completo' }: RelojJor
   if (compacto) {
     if (!jornada) {
       return (
-        <Button size="sm" disabled={ocupado} onClick={() => marcar('entrada')}>
+        <Button
+          size="sm"
+          disabled={ocupado}
+          onClick={() => marcar('entrada')}
+          // El rojo de marca (--tx-accent) con texto blanco da 4.22:1, por
+          // debajo del 4.5:1 de WCAG 1.4.3. Se oscurece solo este botón a
+          // --tx-accent-surface (misma familia, más oscuro) en vez de tocar
+          // la variable global, que se usa en muchos otros lugares sin texto.
+          className="bg-[var(--tx-accent-surface)] hover:bg-[var(--tx-accent-surface)]"
+        >
           <LogInIcon className="size-4" />
           Marcar entrada
         </Button>

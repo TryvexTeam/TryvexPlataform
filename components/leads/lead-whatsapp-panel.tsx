@@ -1,15 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { MessageCircle, Send, ExternalLink, Bot } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { iniciarSondeoVisible, visibilidadDelNavegador } from '@/lib/ui/sondeo-visible'
+import { normalizarTelefono } from '@/lib/vex/telefono'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/lib/types/lead'
 import type { MensajeWa } from '@/lib/types/mensaje-wa'
+import { textoSugerido } from '@/lib/leads/texto-sugerido'
+
+/** Cada cuánto se vuelve a mirar si llegó algo nuevo, con el panel a la vista. */
+const CADA_MS = 10_000
 
 interface LeadWhatsappPanelProps {
   lead: Lead
@@ -33,21 +39,53 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
   const template = buildTemplate(lead)
   const waNumero = normalizarNumero(lead.telefono)
 
+  // `montado` evita escribir estado sobre un componente que ya se fue: el
+  // sondeo puede resolver después de cambiar de lead.
+  const montado = useRef(true)
   useEffect(() => {
-    let activo = true
-    fetch(`/api/leads/${lead.id}/mensajes`)
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => {
-        if (activo) setMensajes(d.data ?? [])
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (activo) setCargando(false)
-      })
+    montado.current = true
     return () => {
-      activo = false
+      montado.current = false
+    }
+  }, [])
+
+  const cargarMensajes = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/leads/${lead.id}/mensajes`)
+      const d = r.ok ? await r.json() : { data: [] }
+      if (montado.current) setMensajes(d.data ?? [])
+    } catch {
+      // Un sondeo que falla no molesta a nadie: se reintenta al siguiente
+      // ciclo. Mostrar un error por cada corte de red haría el chat inusable.
+    } finally {
+      if (montado.current) setCargando(false)
     }
   }, [lead.id])
+
+  // El hilo se mantiene solo.
+  //
+  // Antes esto era un fetch único al montar: el mensaje entrante SÍ llegaba y
+  // quedaba bien guardado en la base, pero la pantalla no se enteraba hasta
+  // recargar. Con el chat abierto delante, un cliente que contestaba se veía
+  // exactamente igual que un cliente que no contestó nunca.
+  //
+  // Se sondea en vez de usar Realtime porque `mensajes_wa` no está en la
+  // publicación de Supabase: el canal respondería SUBSCRIBED y no llegaría un
+  // solo evento. Para un hilo que alguien mira unos minutos, diez segundos de
+  // retraso no se notan.
+  //
+  // El arranque/parada por visibilidad vive en `iniciarSondeoVisible`, que es
+  // el mismo que usa el modal del chat. Estaba escrito dos veces a mano y solo
+  // una de las dos paraba.
+  useEffect(
+    () =>
+      iniciarSondeoVisible({
+        cadaMs: CADA_MS,
+        tarea: () => void cargarMensajes(),
+        visibilidad: visibilidadDelNavegador(),
+      }),
+    [cargarMensajes],
+  )
 
   function abrirWhatsapp() {
     if (!waNumero) {
@@ -80,8 +118,13 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
       // El error real del servidor, no uno genérico: "aún no está disponible"
       // escondía la causa (lead sin teléfono, sin permiso, etc.).
       if (!res.ok) throw new Error(typeof d?.error === 'string' ? d.error : `no se pudo enviar (${res.status})`)
-      // En cola, no "enviado": lo manda el puente después, y puede fallar ahí.
-      toast.success('Mensaje en cola — sale desde el número de Tryvex')
+      // Neutral a propósito: con el agente ya salió, con el puente queda en
+      // cola. Lo que de verdad pasó lo dice el estado bajo el mensaje.
+      toast.success('Listo — el estado del envío aparece bajo el mensaje')
+      // Se pide el hilo de nuevo para que el mensaje en cola aparezca al tiro,
+      // con su estado. Sin esto había que esperar al siguiente sondeo —o
+      // recargar— y daba la impresión de que no había salido.
+      await cargarMensajes()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo enviar')
     } finally {
@@ -91,7 +134,7 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
 
   return (
     <div className="mb-6">
-      <h2 className="text-sm font-semibold text-neutral-700 mb-3 flex items-center gap-1.5">
+      <h2 className="text-sm font-semibold text-[var(--tx-ink-primary)] mb-3 flex items-center gap-1.5">
         <MessageCircle size={14} className="text-emerald-600" /> WhatsApp
       </h2>
 
@@ -117,15 +160,15 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
       </div>
 
       {/* Template preview */}
-      <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 mb-4 text-xs text-neutral-600 whitespace-pre-wrap">
+      <div className="bg-[var(--tx-surface-1)] border border-[var(--tx-border)] rounded-lg p-3 mb-4 text-xs text-[var(--tx-ink-secondary)] whitespace-pre-wrap">
         {template}
       </div>
 
       {/* Hilo */}
       <div className="space-y-2">
-        {cargando && <p className="text-xs text-neutral-400">Cargando hilo...</p>}
+        {cargando && <p className="text-xs text-[var(--tx-ink-muted)]">Cargando hilo...</p>}
         {!cargando && mensajes.length === 0 && (
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-[var(--tx-ink-muted)]">
             Sin mensajes todavía. Aparecerán acá cuando se envíe o llegue una respuesta.
           </p>
         )}
@@ -158,14 +201,14 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
                   'max-w-[75%] rounded-lg px-3 py-2 text-sm',
                   saliente
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-neutral-100 text-neutral-800'
+                    : 'bg-[var(--tx-surface-1)] text-[var(--tx-ink-primary)]'
                 )}
               >
                 <p className="whitespace-pre-wrap">{m.texto}</p>
                 <div
                   className={cn(
                     'mt-1 flex items-center gap-1 text-[10px]',
-                    saliente ? 'text-emerald-100' : 'text-neutral-400'
+                    saliente ? 'text-emerald-100' : 'text-[var(--tx-ink-muted)]'
                   )}
                 >
                   {saliente && m.es_bot && <Bot size={10} />}
@@ -183,25 +226,28 @@ export function LeadWhatsappPanel({ lead, enviadoPor }: LeadWhatsappPanelProps) 
   )
 }
 
-/** Template inicial de contacto. Vex lo reemplaza con copy personalizada (PAS). */
+/**
+ * Template inicial de contacto. Vex lo reemplaza con copy personalizada (PAS).
+ *
+ * 🔴 Antes afirmaba «Vimos que {negocio} todavía no tiene sitio web» a TODOS,
+ * sin mirar un solo dato — el mismo error que estuvimos toda la tarde del
+ * 15-sep sacando del redactor con IA, escrito a mano acá. Ahora usa la
+ * plantilla compartida, que solo afirma lo que sabemos.
+ */
 function buildTemplate(lead: Lead): string {
-  const negocio = lead.nombre_negocio ?? 'tu negocio'
-  return (
-    `Hola 👋 ¿hablo con ${negocio}?\n\n` +
-    `Somos Tryvex. Vimos que ${negocio} todavía no tiene sitio web y ayudamos a ` +
-    `negocios como el tuyo a conseguir más clientes con una página lista en días. ` +
-    `¿Te muestro un ejemplo sin compromiso?`
-  )
+  return textoSugerido(lead)
 }
 
-/** Limpia el teléfono a formato wa.me (solo dígitos, con código país Chile si falta). */
+/**
+ * Limpia el teléfono a formato wa.me. Delega en `lib/vex/telefono`, que es el
+ * mismo criterio que usa el camino de envío: antes había cuatro reglas
+ * distintas conviviendo en el repo y no coincidían entre sí, así que la ficha
+ * podía mostrar un número y el botón mandar a otro. Este devolvía `digitos`
+ * crudo ante cualquier cosa que no fueran 9 dígitos empezando en 9 — o sea que
+ * abría wa.me con un número incompleto.
+ */
 function normalizarNumero(tel: string | null): string | null {
-  if (!tel) return null
-  const digitos = tel.replace(/\D/g, '')
-  if (!digitos) return null
-  // Chile: celular local de 9 dígitos → anteponer 56.
-  if (digitos.length === 9 && digitos.startsWith('9')) return `56${digitos}`
-  return digitos
+  return normalizarTelefono(tel)
 }
 
 /** Iniciales para el circulito de perfil (1-2 letras). */

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { coincideTermino } from "./texto";
+import type { WebCapacidades } from "@/lib/types/lead";
 
 /** Estados posibles de un lead en el CRM (schema 000 + migración 003 won/lost). */
 export const ESTADOS_LEAD = [
@@ -28,6 +29,10 @@ export type LeadResumen = {
   tiene_web: boolean | null;
   info_texto: string | null;
   url_web: string | null;
+  // Que OFRECE ese sitio (migracion 106). Saber que tiene web no alcanzo: a un
+  // lead cuya pagina ya tenia agenda igual se le ofrecio "agenda de horas".
+  // ⚠️ Una capacidad ausente es "no sabemos", NO "no la tiene".
+  web_capacidades: WebCapacidades | null;
   // Datos del negocio ya interpretados (migracion 047). Antes vivian aplastados
   // dentro de `notas` como texto suelto, invisibles para el redactor.
   google_rating: number | null;
@@ -65,10 +70,20 @@ export async function reporteCartera(
  * - Con `estado` explícito, lista los leads de ESE estado (ej. "quiénes son los
  *   contactados") — sin exigir canal de contacto, porque acá el usuario quiere
  *   VER quiénes son, no a quién contactar.
+ * - `excluir` saca de la lista a quienes ya se propusieron. Sin eso el orden es
+ *   determinista (score descendente) y dos pedidos seguidos devuelven los mismos
+ *   negocios: hay que repetirle el contexto entero a Vex para que pase al
+ *   siguiente, y trabajar con él se siente como empezar de cero cada vez.
  */
 export async function recomendarLeads(
   sb: SupabaseClient,
-  opts: { nicho?: string; localidad?: string; cantidad?: number; estado?: EstadoLead } = {}
+  opts: {
+    nicho?: string
+    localidad?: string
+    cantidad?: number
+    estado?: EstadoLead
+    excluir?: readonly string[]
+  } = {}
 ): Promise<LeadResumen[]> {
   const limite = Math.max(1, Math.min(opts.cantidad ?? 10, 50));
   const estado = opts.estado ?? "sin_contactar";
@@ -76,7 +91,7 @@ export async function recomendarLeads(
   // (la base es chica). ilike de Postgres no ignora acentos: "barberias" != "barberías".
   const { data, error } = await sb
     .from("fact_leads")
-    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web,google_rating,google_resenas,horario,instagram,categoria_google")
+    .select("id,nombre_negocio,nicho,localidad,score,telefono,redes_sociales,tiene_web,info_texto,url_web,web_capacidades,google_rating,google_resenas,horario,instagram,categoria_google")
     .eq("estado", estado)
     .order("score", { ascending: false })
     // TODO: tope de escaneo; revisar si la cartera supera 800 leads
@@ -88,6 +103,10 @@ export async function recomendarLeads(
   if (!opts.estado) leads = leads.filter((l) => l.telefono || l.redes_sociales);
   if (opts.nicho) leads = leads.filter((l) => coincideTermino(l.nicho, opts.nicho));
   if (opts.localidad) leads = leads.filter((l) => coincideTermino(l.localidad, opts.localidad));
+  if (opts.excluir?.length) {
+    const ya = new Set(opts.excluir);
+    leads = leads.filter((l) => !ya.has(l.id));
+  }
   return leads.slice(0, limite);
 }
 

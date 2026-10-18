@@ -2,13 +2,12 @@ import { randomUUID } from 'crypto'
 import { getCalendarClient, getCalendarId } from '@/lib/google/auth'
 import type { GoogleSyncRepository } from '@/lib/repos/google-sync'
 import type { GoogleSyncState } from '@/lib/types/evento'
+import { urlApp } from '@/lib/utils/url-app'
 
 const RENOVAR_SI_QUEDAN_MS = 48 * 3600 * 1000 // < 48 h
 
 function getWebhookUrl(): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL
-  if (!base) throw new Error('NEXT_PUBLIC_APP_URL no configurado')
-  return `${base}/api/webhook/google-calendar`
+  return `${urlApp()}/api/webhook/google-calendar`
 }
 
 export function needsRenewal(state: GoogleSyncState | null): boolean {

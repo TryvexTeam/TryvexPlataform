@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { directivasVigentes } from "@/lib/repos/directivas";
 import { generarDraftLead } from "@/lib/vex/draft";
 import type { LeadResumen } from "@/lib/vex/cartera";
 import { IntegrantesRepository } from "@/lib/repos/integrantes";
@@ -78,11 +79,16 @@ export async function POST(req: Request) {
       texto: m.texto,
     }));
 
+  // Lo que el equipo decidió en Intelligence (promociones, cambios de oferta).
+  // Si no se pueden leer, el mensaje se redacta igual con el guion de siempre.
+  const directivas = await directivasVigentes(admin, "primer_mensaje");
+
   const draft = await generarDraftLead(
     lead as LeadResumen,
     parsed.data.instrucciones,
     undefined,
-    historial
+    historial,
+    directivas
   );
   const texto = draft.whatsapp?.text?.trim() || "";
 

@@ -1,8 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { CheckSquare, FileText, MessageCircle, X, Loader2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/types/lead'
 
@@ -26,13 +33,20 @@ export function LeadTaskPanel({ lead, isOpen, onClose }: LeadTaskPanelProps) {
   const [taskPriority, setTaskPriority] = useState<'alta' | 'media' | 'baja'>('media')
   const [taskEffort, setTaskEffort] = useState<'pequeno' | 'medio' | 'grande'>('medio')
 
-  // 2. Note Form
-  const [leadNote, setLeadNote] = useState(lead?.notas || '')
-
-  // Sync note when selected lead changes
-  useEffect(() => {
-    setLeadNote(lead?.notas || '')
-  }, [lead?.id])
+  /*
+   * 2. Nota del lead.
+   *
+   * El borrador viaja junto al lead al que pertenece. Al cambiar de lead, el
+   * id deja de coincidir y el campo vuelve a mostrar la nota guardada — sin
+   * efecto que sincronice, que era lo que provocaba renders en cascada (y
+   * arrastraba lo tecleado de un lead al siguiente si el efecto llegaba tarde).
+   */
+  const [borradorNota, setBorradorNota] = useState<{ leadId: string; texto: string } | null>(null)
+  const leadNote =
+    borradorNota !== null && borradorNota.leadId === lead?.id ? borradorNota.texto : (lead?.notas || '')
+  const setLeadNote = (texto: string) => {
+    if (lead) setBorradorNota({ leadId: lead.id, texto })
+  }
 
   // 3. Contact Form
   const [contactType, setContactType] = useState<'whatsapp' | 'llamada' | 'instagram' | 'meet' | 'email'>('whatsapp')
@@ -138,60 +152,69 @@ export function LeadTaskPanel({ lead, isOpen, onClose }: LeadTaskPanelProps) {
   return (
     <aside className={`glass-strong task-panel ${isOpen ? 'is-open' : ''}`}>
       <div className="task-panel__inner">
-        {/* Header */}
-        <div className="tp__head">
-          <div className="tp__app">
-            <div
-              className="tp__logo"
-              style={{
-                background: 'linear-gradient(135deg, #FF8A5B 0%, #C77BF5 55%, #8B5CF6 100%)',
-              }}
-            >
-              T
-            </div>
-            <span>CRM Actions</span>
+        {/*
+         * Cabecera. Antes tenía una "T" en un cuadrado con degradado naranja a
+         * morado —una marca que no es la de Tryvex—, el título "CRM Actions" en
+         * inglés con el resto del CRM en español, y un botón "+ Crear" morado
+         * que solo abría la pestaña de tarea: duplicaba lo que las pestañas de
+         * abajo ya hacen, y en un color ajeno al sistema.
+         */}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--tx-ink-muted)]">
+              Añadir a este lead
+            </p>
+            <p className="mt-1.5 truncate text-[15px] font-medium tracking-[-0.01em] text-[var(--tx-ink-primary)]">
+              {lead.nombre_negocio}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('task')}
-              className="flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold text-white"
-              style={{ background: '#8B5CF6' }}
-            >
-              + Crear
-            </button>
-            <button onClick={onClose} className="icon-btn" aria-label="Close panel">
-              <X size={15} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar panel"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border
+              border-white/[0.07] text-[var(--tx-ink-muted)] transition-colors
+              hover:bg-white/[0.06] hover:text-[var(--tx-ink-primary)]"
+          >
+            <X size={15} />
+          </button>
         </div>
 
-        {/* Tabs */}
-        <div className="tp__tabs">
-          <button
-            onClick={() => setActiveTab('task')}
-            className={`tp__tab ${activeTab === 'task' ? 'is-active' : ''}`}
-          >
-            <CheckSquare size={13} />
-            <span>Tarea</span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('note')
-              setLeadNote(lead.notas || '')
-            }}
-            className={`tp__tab ${activeTab === 'note' ? 'is-active' : ''}`}
-          >
-            <FileText size={13} />
-            <span>Nota</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('contact')}
-            className={`tp__tab ${activeTab === 'contact' ? 'is-active' : ''}`}
-          >
-            <MessageCircle size={13} />
-            <span>Contacto</span>
-          </button>
+        {/* Las tres acciones en un solo carril, como el selector del Panel de
+            Mando. La activa va en blanco y no en acento: el rojo se reserva
+            para lo que hay que atender, y elegir pestaña no es una alerta. */}
+        <div
+          role="tablist"
+          aria-label="Qué añadir"
+          className="mb-5 flex gap-1 rounded-full border border-white/[0.07] bg-white/[0.03] p-1"
+        >
+          {([
+            { id: 'task', label: 'Tarea', Icono: CheckSquare },
+            { id: 'note', label: 'Nota', Icono: FileText },
+            { id: 'contact', label: 'Contacto', Icono: MessageCircle },
+          ] as const).map(({ id, label, Icono }) => {
+            const activa = activeTab === id
+            return (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={activa}
+                onClick={() => {
+                  setActiveTab(id)
+                  if (id === 'note') setLeadNote(lead.notas || '')
+                }}
+                className={`flex min-h-[38px] flex-1 items-center justify-center gap-1.5 rounded-full
+                  text-[12.5px] font-medium transition-colors ${
+                    activa
+                      ? 'bg-white text-[var(--tx-bg-primary)]'
+                      : 'text-[var(--tx-ink-secondary)] hover:text-[var(--tx-ink-primary)]'
+                  }`}
+              >
+                <Icono size={13} aria-hidden="true" />
+                {label}
+              </button>
+            )
+          })}
         </div>
 
         {/* Tab Content Panels */}
@@ -210,53 +233,53 @@ export function LeadTaskPanel({ lead, isOpen, onClose }: LeadTaskPanelProps) {
               </div>
             </div>
 
-            <div className="tp__row">
-              <div className="field">
-                <span className="field__label">Tipo</span>
-                <div className="field__input">
-                  <select
-                    value={taskType}
-                    onChange={e => setTaskType(e.target.value as any)}
-                    className="w-full bg-transparent text-[13px] outline-none border-0 text-white"
-                  >
-                    <option value="general" className="bg-[#111214]">General</option>
-                    <option value="feature" className="bg-[#111214]">Feature</option>
-                    <option value="error" className="bg-[#111214]">Error</option>
-                    <option value="pulir" className="bg-[#111214]">Pulir</option>
-                  </select>
-                </div>
+            {/* Los selectores son los del sistema, no `<select>` nativos: el
+                nativo lo dibuja el sistema operativo, ignora los tokens del
+                CRM y cambia de aspecto entre Windows, macOS y Android. */}
+            <div className="flex gap-3">
+              <div className="flex-1 space-y-1.5">
+                <label className="block text-[11px] font-medium uppercase tracking-[0.09em] text-[var(--tx-ink-muted)]">
+                  Tipo
+                </label>
+                <Select value={taskType} onValueChange={(v) => setTaskType(v as never)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="general">General</SelectItem>
+                    <SelectItem value="feature">Feature</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                    <SelectItem value="pulir">Pulir</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="field">
-                <span className="field__label">Prioridad</span>
-                <div className="field__input">
-                  <select
-                    value={taskPriority}
-                    onChange={e => setTaskPriority(e.target.value as any)}
-                    className="w-full bg-transparent text-[13px] outline-none border-0 text-white"
-                  >
-                    <option value="baja" className="bg-[#111214]">Baja</option>
-                    <option value="media" className="bg-[#111214]">Media</option>
-                    <option value="alta" className="bg-[#111214]">Alta</option>
-                  </select>
-                </div>
+              <div className="flex-1 space-y-1.5">
+                <label className="block text-[11px] font-medium uppercase tracking-[0.09em] text-[var(--tx-ink-muted)]">
+                  Prioridad
+                </label>
+                <Select value={taskPriority} onValueChange={(v) => setTaskPriority(v as never)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="baja">Baja</SelectItem>
+                    <SelectItem value="media">Media</SelectItem>
+                    <SelectItem value="alta">Alta</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
-            <div className="field">
-              <span className="field__label">Esfuerzo estimado</span>
-              <div className="field__input">
-                <select
-                  value={taskEffort}
-                  onChange={e => setTaskEffort(e.target.value as any)}
-                  className="w-full bg-transparent text-[13px] outline-none border-0 text-white"
-                >
-                  <option value="pequeno" className="bg-[#111214]">Pequeño</option>
-                  <option value="medio" className="bg-[#111214]">Medio</option>
-                  <option value="grande" className="bg-[#111214]">Grande</option>
-                </select>
+            <div className="w-full space-y-1.5">
+                <label className="block text-[11px] font-medium uppercase tracking-[0.09em] text-[var(--tx-ink-muted)]">
+                  Esfuerzo estimado
+                </label>
+                <Select value={taskEffort} onValueChange={(v) => setTaskEffort(v as never)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pequeno">Pequeño</SelectItem>
+                    <SelectItem value="medio">Medio</SelectItem>
+                    <SelectItem value="grande">Grande</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
 
             <div className="flex-1" />
 
@@ -311,21 +334,20 @@ export function LeadTaskPanel({ lead, isOpen, onClose }: LeadTaskPanelProps) {
 
         {activeTab === 'contact' && (
           <form onSubmit={handleRecordContact} className="flex flex-col gap-4 flex-1">
-            <div className="field">
-              <span className="field__label">Canal de Contacto</span>
-              <div className="field__input">
-                <select
-                  value={contactType}
-                  onChange={e => setContactType(e.target.value as any)}
-                  className="w-full bg-transparent text-[13px] outline-none border-0 text-white"
-                >
-                  <option value="whatsapp" className="bg-[#111214]">WhatsApp</option>
-                  <option value="llamada" className="bg-[#111214]">Llamada</option>
-                  <option value="instagram" className="bg-[#111214]">Instagram</option>
-                  <option value="email" className="bg-[#111214]">Email</option>
-                  <option value="meet" className="bg-[#111214]">Meet / Reunión</option>
-                </select>
-              </div>
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-medium uppercase tracking-[0.09em] text-[var(--tx-ink-muted)]">
+                Canal de contacto
+              </label>
+              <Select value={contactType} onValueChange={(v) => setContactType(v as never)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                  <SelectItem value="llamada">Llamada</SelectItem>
+                  <SelectItem value="instagram">Instagram</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="meet">Meet / Reunión</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="tp__desc flex-1 flex flex-col">

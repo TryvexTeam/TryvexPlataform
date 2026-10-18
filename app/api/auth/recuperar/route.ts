@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { RecuperacionRepository } from '@/lib/repos/recuperacion'
 import { RecuperarPasswordSchema } from '@/lib/types/auth'
 import { enviarEmailRecuperarPassword } from '@/lib/email/recuperar-password'
+import { urlApp } from '@/lib/utils/url-app'
 
 /**
  * Endpoint público: pide un link de recuperación.
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(RESPUESTA_GENERICA)
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin
+  const baseUrl = urlApp(req.url)
   const link = `${baseUrl}/auth/confirmar?token_hash=${encodeURIComponent(hashedToken)}&type=recovery`
 
   try {

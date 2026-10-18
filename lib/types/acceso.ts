@@ -25,7 +25,36 @@ export type IntegranteAcceso = {
   activo: boolean
   es_superadmin: boolean
   auth_user_id: string | null
+  desvinculado_at: string | null
 }
+
+export type IpCandidata = {
+  ip: string
+  ultima_vez: string
+  origen: 'app' | 'sesion'
+  compartida_con: string[]
+  /** Es la IP desde la que el administrador hace la petición. */
+  es_tuya?: boolean
+}
+
+export type IpBloqueada = {
+  ip: string
+  integrante_id: string | null
+  integrante_nombre: string | null
+  motivo: string | null
+  created_at: string
+}
+
+export const DesvincularSchema = z.object({
+  integrante_id: z.string().uuid(),
+  ips: z.array(z.string().trim().min(1)).max(50),
+  motivo: z.string().trim().max(500).optional(),
+  confirmacion: z.string(),
+})
+
+export const ReingresoSchema = z.object({ integrante_id: z.string().uuid() })
+
+export const IpQuerySchema = z.object({ ip: z.string().trim().min(1) })
 
 /**
  * Lo que devuelve una revocacion. `sesiones_cerradas` viaja hasta la UI a
@@ -40,4 +69,4 @@ export type ResultadoAcceso = {
   sesiones_cerradas: number
 }
 
-export const CAMPOS_ACCESO = 'id, nombre, email, activo, es_superadmin, auth_user_id'
+export const CAMPOS_ACCESO = 'id, nombre, email, activo, es_superadmin, auth_user_id, desvinculado_at'

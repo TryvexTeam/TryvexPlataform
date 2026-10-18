@@ -199,13 +199,76 @@ waClient.on('qr', (qr) => {
 waClient.on('ready', () => {
   sesionLista = true
   ultimoQr = null
+  reintentosReconexion = 0
   console.log('[wa-bridge] Sesion de WhatsApp lista.')
 })
+
+// Reconexion automatica. Sin esto, una desconexion (WhatsApp cierra la sesion
+// del lado del telefono, se cae el socket, etc.) dejaba el proceso vivo pero
+// mudo: /health seguia respondiendo 200 con sesionLista:false para siempre,
+// hasta que un humano notaba y reiniciaba el proceso a mano. `initialize()`
+// solo se llamaba una vez, al arrancar (mas abajo).
+//
+// 'LOGOUT' es un caso aparte: significa que la sesion ya no existe del lado
+// de WhatsApp (alguien la cerro desde el telefono, o WhatsApp la invalido).
+// Llamar initialize() ahi de nuevo solo generaria un QR nuevo que nadie esta
+// mirando -- no hay forma de que el reintento automatico "arregle" un logout,
+// asi que no se reintenta: se loguea fuerte para que quede claro que hace
+// falta reescanear el QR a mano (via /qr), y se deja que el heartbeat.js
+// existente avise al equipo por el webhook de que sesionLista quedo en false.
+const RECONEXION_INTERVALO_MS = Number(env.WA_BRIDGE_RECONEXION_INTERVALO_MS || 30000)
+const RECONEXION_MAX_INTENTOS = Number(env.WA_BRIDGE_RECONEXION_MAX_INTENTOS || 5)
+let reintentosReconexion = 0
+let reconectando = false
 
 waClient.on('disconnected', (reason) => {
   sesionLista = false
   console.error('[wa-bridge] Sesion desconectada:', reason)
+
+  if (reason === 'LOGOUT') {
+    console.error(
+      '[wa-bridge] LOGOUT: la sesion ya no existe del lado de WhatsApp. ' +
+      'No se reintenta automaticamente -- reescanea el QR a mano en /qr. ' +
+      'El heartbeat existente (heartbeat.js) va a alertar por webhook mientras sesionLista siga en false.'
+    )
+    return
+  }
+
+  programarReconexion(reason)
 })
+
+function programarReconexion(reason) {
+  if (reconectando) return
+  reconectando = true
+  reintentosReconexion += 1
+
+  if (reintentosReconexion > RECONEXION_MAX_INTENTOS) {
+    console.error(
+      `[wa-bridge] Se agotaron los ${RECONEXION_MAX_INTENTOS} reintentos de reconexion tras "${reason}". ` +
+      'Me rindo -- queda esperando la alerta del heartbeat existente (heartbeat.js) y una intervencion manual.'
+    )
+    reconectando = false
+    return
+  }
+
+  console.warn(
+    `[wa-bridge] Reintentando conexion en ${RECONEXION_INTERVALO_MS / 1000}s ` +
+    `(intento ${reintentosReconexion}/${RECONEXION_MAX_INTENTOS}, motivo: ${reason})`
+  )
+
+  setTimeout(async () => {
+    try {
+      await waClient.destroy()
+      await waClient.initialize()
+      // Si initialize() no tira error, el evento 'ready' (que resetea
+      // reintentosReconexion a 0 mas abajo) confirma la reconexion real.
+    } catch (err) {
+      console.error('[wa-bridge] fallo el intento de reconexion:', err)
+    } finally {
+      reconectando = false
+    }
+  }, RECONEXION_INTERVALO_MS)
+}
 
 // Mensajes entrantes: se resuelve el lead por telefono y se guarda direccion='in'.
 //
@@ -258,7 +321,32 @@ waClient.on('message', async (msg) => {
     }
 
     await enFilaPara(numero, async () => {
-      let lead = await resolverLeadPorTelefono(numero)
+      const quien = await resolverLeadPorTelefono(numero)
+
+      // Dos fichas con este numero: no se elige ninguna y no se crea una
+      // tercera. Colgar el mensaje de la ficha equivocada es peor que no
+      // guardarlo — el equipo lee esa conversacion creyendo que es de otro
+      // negocio. Queda el texto completo en el log para no perder la
+      // evidencia, y los nombres para que un humano corrija el duplicado.
+      if (quien.estado === 'ambiguo') {
+        const nombres = quien.candidatos.map((c) => c.nombre ?? c.id).join(' / ')
+        console.error(
+          `[wa-bridge] AMBIGUO: ...${numero.slice(-4)} esta en ${quien.candidatos.length} fichas (${nombres}). ` +
+            `El mensaje NO se guardo para no colgarlo de la equivocada. Corregir el telefono duplicado en el CRM. Texto: ${msg.body}`
+        )
+        return
+      }
+
+      // Un fallo de la consulta tampoco crea ficha: se reintentara cuando la
+      // base responda. Crear un lead acá seria duplicar por un problema de red.
+      if (quien.estado === 'error') {
+        console.error(
+          `[wa-bridge] no se pudo resolver el lead de ...${numero.slice(-4)}; el mensaje no se guardo. Texto: ${msg.body}`
+        )
+        return
+      }
+
+      let lead = quien.estado === 'encontrado' ? quien.lead : null
       let leadCreadoAhora = false
 
       if (!lead) {
@@ -320,23 +408,51 @@ async function crearLeadDesdeNumeroDesconocido(numero) {
   return data
 }
 
+// De quien es este numero. Devuelve uno de tres:
+//   { estado: 'encontrado', lead }  · una sola ficha, se usa
+//   { estado: 'desconocido' }       · nadie, se crea ficha nueva
+//   { estado: 'ambiguo', candidatos } · dos o mas, NO se elige
+//
+// Antes esto era un `ilike '%<ultimos 8 digitos>'` con `.limit(1)`, y tenia
+// dos fallas que se comprobaron contra la base de produccion:
+//
+//   1. ADIVINABA. Con dos fichas empatadas devolvia la primera que saliera.
+//      Hay cuatro pares de negocios DISTINTOS con el mismo numero anotado
+//      ("Urgencia electricas 24 Hrs" / "Electricista, Certificado SEC", entre
+//      otros): el mensaje quedaba en la conversacion del otro, a cara o cruz.
+//   2. NO VEIA 75 LEADS. Los que tienen el telefono guardado con 7 digitos,
+//      sin codigo de area, no pueden terminar en una cadena de 8 → nunca
+//      casaban, y a cada mensaje suyo se les abria una ficha nueva.
+//
+// La comparacion ahora la hace `buscar_por_telefono` en la base (migracion
+// 098), que compara digitos contra digitos, rescata los cortos y devuelve
+// TODAS las coincidencias. Es la misma funcion que usa el CRM: una sola
+// definicion de "de quien es este numero", no dos que se van separando.
 async function resolverLeadPorTelefono(numero) {
-  // Heuristica simple: matchea por los ultimos 8 digitos para tolerar
-  // diferencias de formato/prefijo entre lo que guarda fact_leads y lo que
-  // entrega WhatsApp.
   const sufijo = numero.replace(/\D/g, '').slice(-8)
-  const { data, error } = await supabase
-    .from('fact_leads')
-    .select('id, telefono')
-    .not('telefono', 'is', null)
-    .ilike('telefono', `%${sufijo}`)
-    .limit(1)
+  if (sufijo.length < 8) return { estado: 'desconocido' }
+
+  const { data, error } = await supabase.rpc('buscar_por_telefono', {
+    p_sufijo: sufijo,
+    p_tabla: 'fact_leads',
+  })
 
   if (error) {
     console.error('[wa-bridge] error resolviendo lead por telefono:', error)
-    return null
+    // Un fallo de la consulta NO es "no existe": tratarlo como desconocido
+    // crearia una ficha duplicada cada vez que la base tosa.
+    return { estado: 'error' }
   }
-  return data?.[0] ?? null
+
+  // La misma ficha puede venir por mas de un camino; eso es una persona, no dos.
+  const unicos = []
+  for (const fila of data ?? []) {
+    if (!unicos.some((u) => u.id === fila.id)) unicos.push(fila)
+  }
+
+  if (unicos.length === 0) return { estado: 'desconocido' }
+  if (unicos.length === 1) return { estado: 'encontrado', lead: unicos[0] }
+  return { estado: 'ambiguo', candidatos: unicos }
 }
 
 waClient.initialize()
@@ -540,7 +656,7 @@ const BUZON_INTERVALO_MS = Number(env.WA_BRIDGE_BUZON_INTERVALO_MS || 10000)
 
 // Marca una fila del buzon. El error se revisa SIEMPRE: antes se ignoraba, y
 // cuando el update chocaba (por ejemplo con el indice unico de "un solo
-// enviado por lead", ver migracion 053) la fila quedaba en 'enviando' para
+// enviado por lead", ver migracion 097) la fila quedaba en 'enviando' para
 // siempre aunque el mensaje hubiera salido — el chat mostraba "enviando" eterno.
 async function marcarFila(id, cambios) {
   const { error } = await supabase.from('outreach_messages').update(cambios).eq('id', id)

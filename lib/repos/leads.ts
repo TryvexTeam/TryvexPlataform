@@ -1,8 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
 import type { LeadInsert, LeadUpdate, Lead, Interaccion } from '@/lib/types/lead'
+import type { FilaAccionHoy, SerieDia } from '@/lib/types/dashboard'
+import { debeAvanzarAContactado, esContacto } from '@/lib/types/lead'
+import { diaSantiago } from '@/lib/utils/fecha-santiago'
+import { esperaRespuesta } from '@/lib/leads/cierre'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+/** Cuántos mensajes de WhatsApp por lead se leen para saber si espera respuesta. */
+const MENSAJES_POR_LEAD = 30
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
+
+type SB = SupabaseClient<Database>
 
 export class LeadsRepository {
   private sb: SB
@@ -18,11 +26,28 @@ export class LeadsRepository {
     origen?: string
     responsable_id?: string
     search?: string
-  }): Promise<Lead[]> {
+  }): Promise<Array<Lead & { porResponderDesde: string | null }>> {
     let query = this.sb
       .from('fact_leads')
-      .select('*')
+      .select('*, mensajes_wa(id, direccion, texto, created_at)')
+      // Un solo pedido, acotado por lead: un hilo muy activo no puede quitar
+      // del lote los mensajes de los demás, como haría un límite global.
+      // Treinta por lead alcanzan: para saber si espera respuesta basta ver lo
+      // que llegó después de nuestro último mensaje. Con más, esta lista (que
+      // se carga en cada visita a Leads) crecería con cada conversación.
+      .order('created_at', { referencedTable: 'mensajes_wa', ascending: false })
+      .order('id', { referencedTable: 'mensajes_wa', ascending: false })
+      .limit(MENSAJES_POR_LEAD, { referencedTable: 'mensajes_wa' })
       .order('created_at', { ascending: false })
+      // El kanban pinta la lista completa agrupada por estado — bajar este
+      // número truncaría columnas enteras sin avisar. Es un techo de
+      // seguridad (hoy hay ~550 leads), no paginación real; si esto se
+      // acerca, lo que hace falta es paginación de verdad en la UI, no subir
+      // el número.
+      .limit(5000)
+      // La papelera no es parte del tablero: un lead con `eliminado_at` salio
+      // de la vista pero conserva su ficha y todo su historial.
+      .is('eliminado_at', null)
 
     if (filters?.estado) query = query.eq('estado', filters.estado)
     if (filters?.nicho) query = query.eq('nicho', filters.nicho)
@@ -33,7 +58,21 @@ export class LeadsRepository {
 
     const { data, error } = await query
     if (error) throw new Error(error.message)
-    return (data ?? []) as Lead[]
+    return (data ?? []).map(({ mensajes_wa, ...lead }) => {
+      const hilo = [...mensajes_wa].reverse()
+      const ultimoOut = hilo.findLastIndex((m) => m.direccion === 'out')
+      // Si los treinta son del cliente y ninguno nuestro, el lead espera
+      // respuesta: esa es la lectura honesta, y los treinta cuentan como
+      // pendientes. Nunca se lanza un error acá: un lead raro no puede tumbar
+      // la lista entera de Leads para todo el equipo.
+      const pendientes = hilo.slice(ultimoOut + 1)
+      const porResponderDesde = esperaRespuesta(
+        hilo[ultimoOut]?.texto ?? null,
+        pendientes.map((m) => m.texto),
+      ) ? pendientes[0].created_at : null
+      // Solo viaja la fecha derivada al navegador, nunca el lote de mensajes.
+      return { ...lead as Lead, porResponderDesde }
+    })
   }
 
   async getById(id: string): Promise<Lead | null> {
@@ -59,6 +98,12 @@ export class LeadsRepository {
   }
 
   async update(id: string, data: LeadUpdate): Promise<void> {
+    // Antes de marcar "ganado" en fact_leads: si convertirEnCliente falla acá
+    // (drift de columnas, RLS, lo que sea), el lead nunca llega a quedar
+    // marcado ganado sin ficha de cliente detrás — el throw corta antes del
+    // update, no después.
+    if (data.estado === 'ganado') await this.convertirEnCliente(id)
+
     const { error } = await this.sb
       .from('fact_leads')
       .update({ ...data, updated_at: new Date().toISOString() })
@@ -67,18 +112,328 @@ export class LeadsRepository {
     if (error) throw new Error(error.message)
   }
 
-  async cambiarEstado(id: string, estado: Lead['estado']): Promise<void> {
+  async cambiarEstado(id: string, estado: Lead['estado'], razonPerdida?: Lead['razon_perdida']): Promise<void> {
+    // Mismo orden que en `update`: convertir primero, marcar "ganado" después.
+    // Si convertirEnCliente tira, el estado en fact_leads nunca cambia.
+    if (estado === 'ganado') await this.convertirEnCliente(id)
+
     const { error } = await this.sb
       .from('fact_leads')
-      .update({ estado, updated_at: new Date().toISOString() })
+      .update({
+        estado,
+        // El drag&drop del kanban también manda a "perdido": sin esto la razón
+        // que ya validaba la ruta se descartaba en silencio.
+        razon_perdida: estado === 'perdido' ? razonPerdida ?? null : null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id)
 
     if (error) throw new Error(error.message)
   }
 
-  async delete(id: string): Promise<void> {
+  /**
+   * Da de alta al lead como cliente. Devuelve el id del cliente, sea el recién
+   * creado o el que ya existía.
+   *
+   * Ganar un lead ES convertirlo en cliente: obligar a rellenar otra ficha a
+   * mano con los mismos datos que ya están en el lead solo servía para que
+   * algunos clientes no llegaran a existir.
+   *
+   * Es idempotente por el índice único sobre `lead_id`: volver a marcar el lead
+   * como ganado —o arrastrarlo dos veces en el tablero— no duplica nada.
+   */
+  async convertirEnCliente(leadId: string): Promise<string | null> {
+    const { data: yaExiste } = await this.sb
+      .from('dim_clientes')
+      .select('id')
+      .eq('lead_id', leadId)
+      .maybeSingle()
+    if (yaExiste) return (yaExiste as { id: string }).id
+
+    const { data: lead, error: errorLead } = await this.sb
+      .from('fact_leads')
+      .select('nombre_negocio, nombre_contacto, telefono, email, nicho, localidad, redes_sociales')
+      .eq('id', leadId)
+      .single()
+    if (errorLead || !lead) {
+      // Antes esto devolvía null en silencio: un lead pasaba a "ganado" y la
+      // ficha de cliente simplemente no se creaba, sin log ni error visible
+      // en ningún lado. Así estuvo roto meses (drift de columnas en
+      // fact_leads) sin que nadie se enterara. Ahora se loguea y se propaga.
+      console.error('[leads] convertirEnCliente: no se pudo leer el lead para armar el cliente', leadId, errorLead)
+      throw new Error(errorLead?.message ?? `Lead ${leadId} no encontrado al convertir a cliente`)
+    }
+
+    const fuente = lead as {
+      nombre_negocio: string | null
+      nombre_contacto: string | null
+      telefono: string | null
+      email: string | null
+      nicho: string | null
+      localidad: string | null
+      redes_sociales: Record<string, string> | null
+    }
+
+    const { data: creado, error } = await this.sb
+      .from('dim_clientes')
+      .insert({
+        lead_id: leadId,
+        nombre_negocio: fuente.nombre_negocio,
+        // El scraper trae leads sin persona de contacto. El nombre del negocio
+        // es un relleno honesto: deja la ficha usable y se corrige al hablar
+        // con ellos.
+        nombre_contacto: fuente.nombre_contacto ?? fuente.nombre_negocio,
+        telefono: fuente.telefono,
+        email: fuente.email,
+        nicho: fuente.nicho,
+        localidad: fuente.localidad,
+        redes_sociales: fuente.redes_sociales,
+        // La fecha de cierre es hoy porque hoy se ganó.
+        fecha_cierre: new Date().toISOString().slice(0, 10),
+        estado: 'activo',
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      // Carrera contra otra conversión del mismo lead: el índice único hizo su
+      // trabajo, así que se devuelve el cliente que ganó en vez de fallar.
+      const { data: deLaCarrera } = await this.sb
+        .from('dim_clientes')
+        .select('id')
+        .eq('lead_id', leadId)
+        .maybeSingle()
+      if (deLaCarrera) return (deLaCarrera as { id: string }).id
+      throw new Error(error.message)
+    }
+
+    return (creado as { id: string }).id
+  }
+
+  /**
+   * Manda el lead a la papelera. Reversible y sin tocar nada mas: conserva
+   * estado, score, asignaciones, interacciones y el hilo de WhatsApp.
+   *
+   * Esto reemplaza al DELETE que habia antes detras del boton "eliminar".
+   */
+  async moverAPapelera(id: string): Promise<void> {
+    const { error } = await this.sb
+      .from('fact_leads')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({ eliminado_at: new Date().toISOString() } as any)
+      .eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  /** Saca el lead de la papelera y lo devuelve al tablero con su estado intacto. */
+  async restaurar(id: string): Promise<void> {
+    const { error } = await this.sb
+      .from('fact_leads')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({ eliminado_at: null } as any)
+      .eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  /** Leads en la papelera, los ultimos en caer primero. */
+  async listPapelera(): Promise<Lead[]> {
+    const { data, error } = await this.sb
+      .from('fact_leads')
+      .select('*')
+      .not('eliminado_at', 'is', null)
+      .order('eliminado_at', { ascending: false })
+      .limit(5000)
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Lead[]
+  }
+
+  /** Cuantos leads hay en la papelera, sin traerlos. */
+  async contarPapelera(): Promise<number> {
+    const { count, error } = await this.sb
+      .from('fact_leads')
+      .select('id', { count: 'exact', head: true })
+      .not('eliminado_at', 'is', null)
+    if (error) throw new Error(error.message)
+    return count ?? 0
+  }
+
+  /**
+   * Borra el lead de verdad, sin vuelta atras.
+   *
+   * ⚠️ Esto NO borra solo una fila. De `fact_leads` cuelgan con ON DELETE
+   * CASCADE: `interacciones_lead`, `outreach_messages`, `mensajes_wa`,
+   * `lead_asignaciones` y `vex_conversaciones`. Se va el negocio Y todo lo que
+   * alguna vez se hablo con el — incluida su respuesta, si contesto.
+   *
+   * Por eso exige que el lead ya este en la papelera: borrar es un segundo
+   * paso deliberado, nunca el efecto de un clic en la ficha.
+   */
+  async borrarDefinitivo(id: string): Promise<void> {
+    const { data, error: errorLectura } = await this.sb
+      .from('fact_leads')
+      .select('eliminado_at')
+      .eq('id', id)
+      .single()
+    if (errorLectura || !data) throw new Error('El lead no existe')
+    if (!(data as { eliminado_at: string | null }).eliminado_at) {
+      throw new Error('Primero hay que mandar el lead a la papelera')
+    }
+
     const { error } = await this.sb.from('fact_leads').delete().eq('id', id)
     if (error) throw new Error(error.message)
+  }
+
+  /**
+   * Cuantos leads hay en un estado, sin traerse las filas.
+   *
+   * Se agrego para el Panel de Mando (PRP-008 fase 5.1): el dashboard viejo hacia
+   * `.list()` completo de leads y contaba en JS. Con `head: true` la base devuelve
+   * solo el conteo. `soloIds` acota a los leads asignados a alguien ("lo mio").
+   */
+  async contarPorEstado(estado: string, soloIds?: string[]): Promise<number> {
+    if (soloIds && soloIds.length === 0) return 0
+
+    let query = this.sb
+      .from('fact_leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('estado', estado)
+      .is('eliminado_at', null)
+
+    if (soloIds) query = query.in('id', soloIds)
+
+    const { count, error } = await query
+    if (error) throw new Error(error.message)
+    return count ?? 0
+  }
+
+  /**
+   * Leads sin contactar ordenados por score de IA, para el Panel de Mando.
+   *
+   * El orden es la razon de ser del metodo: el score que ya calcula el CRM
+   * (`score` 1-10, nullable) decide a quien llamar primero, y los sin
+   * calificar caen al final — no se les inventa un cero, que los mandaria
+   * al fondo del ranking como si la IA los hubiera descartado.
+   *
+   * Sin `integranteId` cuenta como vista de equipo: todos los leads sin
+   * contactar, no solo los propios.
+   */
+  async listSinContactarPorScore(
+    integranteId: string | null,
+    limite: number,
+  ): Promise<Pick<Lead, 'id' | 'nombre_negocio' | 'nicho' | 'localidad' | 'score' | 'origen'>[]> {
+    let idsPropios: string[] | null = null
+
+    if (integranteId) {
+      // Mismo patron de dos pasos que `listarRequiereAccionHoy`: la
+      // asignacion vive en `lead_asignaciones`, no en una columna de leads.
+      const { data: asignaciones, error: errorAsig } = await this.sb
+        .from('lead_asignaciones')
+        .select('lead_id')
+        .eq('integrante_id', integranteId)
+
+      if (errorAsig) throw new Error(errorAsig.message)
+
+      idsPropios = ((asignaciones ?? []) as { lead_id: string }[]).map((a) => a.lead_id)
+      if (idsPropios.length === 0) return []
+    }
+
+    let query = this.sb
+      .from('fact_leads')
+      .select('id, nombre_negocio, nicho, localidad, score, origen')
+      .eq('estado', 'sin_contactar')
+      .is('eliminado_at', null)
+      .order('score', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: true })
+      .limit(limite)
+
+    if (idsPropios) query = query.in('id', idsPropios)
+
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Pick<
+      Lead,
+      'id' | 'nombre_negocio' | 'nicho' | 'localidad' | 'score' | 'origen'
+    >[]
+  }
+
+  /**
+   * Interacciones por dia de Santiago en [desdeISO, hastaISO), con dias vacios
+   * en 0, para el sparkline semanal del Panel de Mando (PRP-008 fase 5.2).
+   *
+   * Se agrego porque `listInteracciones` es por lead y el dashboard necesita
+   * una serie por dia de quien interactuo. No existe vista ni RPC que agrupe
+   * `interacciones_lead` por dia (gap de T-001), asi que se piden solo los
+   * `created_at` del rango (columna liviana) y la agrupacion por dia de
+   * America/Santiago se hace aca: agrupar por el dia UTC moveria al dia
+   * siguiente todo lo registrado despues de las 20:00/21:00 local
+   * (riesgo marcado en T-001 §11).
+   */
+  async contarInteraccionesPorDia(
+    desdeISO: string,
+    hastaISO: string,
+    integranteId?: string,
+  ): Promise<SerieDia[]> {
+    let query = this.sb
+      .from('interacciones_lead')
+      .select('created_at')
+      .gte('created_at', desdeISO)
+      .lt('created_at', hastaISO)
+
+    if (integranteId) query = query.eq('integrante_id', integranteId)
+
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+
+    const porDia = new Map<string, number>()
+    for (const fila of (data ?? []) as { created_at: string }[]) {
+      const dia = diaSantiago(fila.created_at)
+      porDia.set(dia, (porDia.get(dia) ?? 0) + 1)
+    }
+
+    // Dias completos del rango (el dia final es exclusivo por el `lt`),
+    // con 0 donde no hubo interacciones: el sparkline necesita la serie
+    // completa para no mentir con huecos.
+    const dias: string[] = []
+    const primerDia = diaSantiago(desdeISO)
+    const ultimoDia = diaSantiago(new Date(new Date(hastaISO).getTime() - 1))
+    const [y, m, d] = primerDia.split('-').map(Number)
+    const cursor = new Date(Date.UTC(y, m - 1, d))
+    const ultimo = new Date(`${ultimoDia}T00:00:00Z`)
+    while (cursor <= ultimo) {
+      dias.push(cursor.toISOString().slice(0, 10))
+      cursor.setUTCDate(cursor.getUTCDate() + 1)
+    }
+
+    return dias.map((dia) => ({ dia, total: porDia.get(dia) ?? 0 }))
+  }
+
+  /**
+   * Interacciones del rango agrupadas por integrante, para el marcador del
+   * equipo. Devuelve solo a quien tuvo al menos una: quien no aparece no
+   * queda expuesto con un cero público.
+   *
+   * Se piden solo los `integrante_id` del rango (columna liviana) y se
+   * agrupa aca: no hay vista ni RPC que lo haga (mismo gap de T-001 que
+   * obliga a agrupar `contarInteraccionesPorDia` en memoria).
+   */
+  async contarInteraccionesPorIntegrante(
+    desdeISO: string,
+    hastaISO: string,
+  ): Promise<Map<string, number>> {
+    const { data, error } = await this.sb
+      .from('interacciones_lead')
+      .select('integrante_id')
+      .gte('created_at', desdeISO)
+      .lt('created_at', hastaISO)
+      .not('integrante_id', 'is', null)
+
+    if (error) throw new Error(error.message)
+
+    const porIntegrante = new Map<string, number>()
+    for (const fila of (data ?? []) as { integrante_id: string }[]) {
+      porIntegrante.set(fila.integrante_id, (porIntegrante.get(fila.integrante_id) ?? 0) + 1)
+    }
+    return porIntegrante
   }
 
   async listInteracciones(leadId: string): Promise<Interaccion[]> {
@@ -87,6 +442,7 @@ export class LeadsRepository {
       .select('*, dim_integrantes ( nombre, avatar_url )')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: false })
+      .limit(200)
 
     if (error) throw new Error(error.message)
     return ((data ?? []) as (Interaccion & { dim_integrantes: { nombre: string; avatar_url: string | null } | null })[]).map((i) => ({
@@ -95,6 +451,116 @@ export class LeadsRepository {
     }))
   }
 
+  /**
+   * Leads "Requiere acción hoy" (T-012 §4): los del integrante ordenados por
+   * días sin contacto descendente, con estado y última interacción.
+   *
+   * Se agregó porque la tabla nueva del Panel de Mando necesita exactamente
+   * esa vista y nada existente la servía: `leadsDeIntegrante` solo devuelve
+   * asignaciones (sin datos del lead) y `list` no ordena por antigüedad de
+   * contacto. El `limit(10)` va en la query — `lead_asignaciones` puede
+   * tener cientos de filas por integrante y traerlas todas para recortar
+   * después es el anti-patrón marcado en T-001.
+   *
+   * Los días sin contacto se calculan en días de Santiago (`diaSantiago`),
+   * no restando timestamps UTC: la operación corre en America/Santiago y un
+   * contacto de las 22:00 local ya es "ayer" en UTC.
+   */
+  async listarRequiereAccionHoy(integranteId: string, hoy: string): Promise<FilaAccionHoy[]> {
+    // Paso 1: los lead_id asignados al integrante (mismo patrón de dos pasos
+    // que usa la vista "lo mío" de `page.tsx` con leadsDeIntegrante).
+    const { data: asignaciones, error: errorAsig } = await this.sb
+      .from('lead_asignaciones')
+      .select('lead_id')
+      .eq('integrante_id', integranteId)
+
+    if (errorAsig) throw new Error(errorAsig.message)
+
+    const leadIds = ((asignaciones ?? []) as { lead_id: string }[]).map((a) => a.lead_id)
+    if (leadIds.length === 0) return []
+
+    // Paso 2: los leads con su última interacción embebida, ordenados por
+    // antigüedad de contacto (nulls primero = nunca contactados arriba) y
+    // limitados a 10 EN LA QUERY, no en JS.
+    const { data, error } = await this.sb
+      .from('fact_leads')
+      .select(
+        `id, nombre_negocio, localidad, estado, ultimo_contacto, created_at,
+         interacciones_lead ( tipo, created_at )`
+      )
+      .in('id', leadIds)
+      // Estados cerrados no requieren acción: si ya se ganó, perdió o
+      // descartó, escribirle hoy no mueve nada.
+      .not('estado', 'in', '("ganado","perdido","descartado")')
+      .is('eliminado_at', null)
+      .order('ultimo_contacto', { ascending: true, nullsFirst: true })
+      .order('created_at', { ascending: true })
+      .limit(10)
+
+    if (error) throw new Error(error.message)
+
+    const hoyMs = new Date(`${hoy}T00:00:00Z`).getTime()
+
+    return ((data ?? []) as {
+      id: string
+      nombre_negocio: string
+      localidad: string | null
+      estado: Lead['estado']
+      ultimo_contacto: string | null
+      created_at: string
+      interacciones_lead: { tipo: Interaccion['tipo']; created_at: string }[] | null
+    }[]).map((fila) => {
+      // La última interacción: el embed no garantiza orden entre filas
+      // hijas, así que se resuelve con un máximo local — sobre las
+      // interacciones de UN lead ya acotado, no sobre la tabla completa.
+      let ultimoTipo: Interaccion['tipo'] | null = null
+      let ultimoDia: string | null = null
+      for (const inter of fila.interacciones_lead ?? []) {
+        const dia = diaSantiago(inter.created_at)
+        if (ultimoDia === null || dia > ultimoDia) {
+          ultimoDia = dia
+          ultimoTipo = inter.tipo
+        }
+      }
+
+      // Sin `ultimo_contacto` se usa created_at como referencia: un lead
+      // que llegó ayer y nunca se tocó también "requiere acción".
+      const referencia = fila.ultimo_contacto ?? fila.created_at
+      const dias = Math.floor(
+        (hoyMs - new Date(`${diaSantiago(referencia)}T00:00:00Z`).getTime()) / 86_400_000,
+      )
+
+      return {
+        lead_id: fila.id,
+        nombre_negocio: fila.nombre_negocio,
+        localidad: fila.localidad,
+        estado: fila.estado,
+        dias_sin_contacto: Number.isFinite(dias) && dias >= 0 ? dias : null,
+        ultimo_tipo: ultimoTipo,
+        ultimo_dia: ultimoDia,
+      }
+    })
+  }
+
+  /**
+   * Registra una interaccion y, si corresponde, mueve el lead.
+   *
+   * Antes esto solo insertaba la fila, y el estado habia que arrastrarlo a
+   * mano en el kanban: se registraba una llamada y el lead seguia figurando
+   * como "sin contactar". Dos datos contando lo mismo y contradiciendose.
+   *
+   * Ahora, cuando la interaccion es de un canal donde hay alguien del otro
+   * lado (no una nota interna):
+   *   - `ultimo_contacto` se pone al dia SIEMPRE. Es el campo que alimenta
+   *     "Requiere accion hoy" del panel, y casi nadie lo escribia: la tabla de
+   *     leads frios estaba midiendo contra un dato muerto.
+   *   - El estado avanza a `contactado` SOLO si aun estaba en `sin_contactar`.
+   *     Nunca retrocede: registrar una llamada sobre un lead en "interesado"
+   *     no puede devolverlo atras — ese avance lo decide una persona.
+   *
+   * El update va DESPUES del insert y en su propio try: si falla, la
+   * interaccion ya quedo registrada, que es el dato que no se puede perder.
+   */
   async createInteraccion(data: {
     lead_id: string
     integrante_id: string
@@ -104,16 +570,58 @@ export class LeadsRepository {
   }): Promise<void> {
     const { error } = await this.sb.from('interacciones_lead').insert(data)
     if (error) throw new Error(error.message)
+
+    if (!esContacto(data.tipo)) return
+
+    try {
+      const lead = await this.getById(data.lead_id)
+      if (!lead) return
+
+      const cambios: {
+        ultimo_contacto: string
+        estado?: Lead['estado']
+        ultima_llamada_respondio?: boolean | null
+      } = {
+        ultimo_contacto: new Date().toISOString(),
+      }
+      if (debeAvanzarAContactado(lead.estado, data.tipo)) cambios.estado = 'contactado'
+      // Solo las llamadas mueven este campo — es lo que pinta el icono de
+      // telefono en la tarjeta, no tiene sentido que un WhatsApp lo toque.
+      if (data.tipo === 'llamada') cambios.ultima_llamada_respondio = data.respondio ?? null
+
+      await this.sb.from('fact_leads').update(cambios).eq('id', data.lead_id)
+    } catch {
+      // La interaccion ya se guardo; que el lead quede sin mover es molesto
+      // pero recuperable a mano, y romper aqui haria creer que no se registro.
+    }
   }
 
+  /**
+   * Import masivo (webhook del scraper): antes insertaba de a uno, un
+   * round-trip por lead — con un CSV de cientos eran cientos de idas y
+   * vueltas secuenciales. Ahora inserta por lotes; si un lote entero falla
+   * (una fila mala aborta el `.insert()` en PostgREST), cae a insertar ESE
+   * lote de a uno para no perder los leads buenos que iban con el malo.
+   */
   async insertarMuchos(leads: LeadInsert[]): Promise<{ inserted: number; errors: string[] }> {
     const errors: string[] = []
     let inserted = 0
+    const LOTE = 100
 
-    for (const lead of leads) {
-      const { error } = await this.sb.from('fact_leads').insert(lead)
-      if (error) errors.push(`${lead.nombre_negocio}: ${error.message}`)
-      else inserted++
+    for (let i = 0; i < leads.length; i += LOTE) {
+      const lote = leads.slice(i, i + LOTE)
+      const { error } = await this.sb.from('fact_leads').insert(lote)
+
+      if (!error) {
+        inserted += lote.length
+        continue
+      }
+
+      for (const lead of lote) {
+        const { error: errorFila } = await this.sb.from('fact_leads').insert(lead)
+        if (errorFila) errors.push(`${lead.nombre_negocio}: ${errorFila.message}`)
+        else inserted++
+      }
     }
 
     return { inserted, errors }

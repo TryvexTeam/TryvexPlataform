@@ -13,7 +13,12 @@ export const MensajeWaSchema = z.object({
   chip_id: z.string().nullable(),
   es_bot: z.boolean(),
   enviado_por: z.string().nullable(),
-  estado_envio: z.enum(['enviado', 'entregado', 'leido', 'fallido']).nullable(),
+  // `pendiente` = salió de nuestras manos, WhatsApp no acusó recibo todavía.
+  // Es el estado que faltaba: sin él había que elegir entre afirmar una entrega
+  // que nadie confirmó o no decir nada.
+  estado_envio: z.enum(['pendiente', 'enviado', 'entregado', 'leido', 'fallido']).nullable(),
+  ack_codigo: z.string().nullable().optional(),
+  ack_at: z.string().nullable().optional(),
   created_at: z.string(),
 })
 

@@ -8,17 +8,19 @@ import { ArrowLeft, Pencil, Trash2, ExternalLink, GitBranch, Clock } from 'lucid
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { ProyectoForm } from './proyecto-form'
+import { ProyectoForm, type IntegranteElegible } from './proyecto-form'
+import { TareasKanban } from '@/components/tareas/tareas-kanban'
+
 import type { Proyecto, ProyectoInsert, Venta } from '@/lib/types/proyecto'
 import type { TareaConResponsables } from '@/lib/types/tarea'
 import { ESTADOS_PROYECTO } from '@/lib/types/proyecto'
 import { cn } from '@/lib/utils'
 
 const estadoPagoColor: Record<string, string> = {
-  pendiente: 'bg-yellow-100 text-yellow-700',
-  pagado: 'bg-green-100 text-green-700',
-  atrasado: 'bg-red-100 text-red-700',
-  cancelado: 'bg-neutral-100 text-neutral-500',
+  pendiente: 'bg-yellow-500/10 text-yellow-400',
+  pagado: 'bg-green-500/10 text-green-400',
+  atrasado: 'bg-red-500/10 text-red-400',
+  cancelado: 'bg-white/5 text-[var(--tx-ink-muted)]',
 }
 
 const prioridadColor: Record<string, string> = {
@@ -29,18 +31,32 @@ interface ProyectoDetalleProps {
   proyecto: Proyecto
   tareas: TareaConResponsables[]
   ventas: Venta[]
+  /** Los necesita el tablero: son los mismos que usa /tareas. */
+  currentUserId: string
+  currentIntegranteId: string | null
+  integrantes?: IntegranteElegible[]
+  /** Quiénes trabajan ya en este proyecto. */
+  equipo?: string[]
 }
 
-export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetalleProps) {
+export function ProyectoDetalle({
+  proyecto,
+  tareas,
+  ventas,
+  currentUserId,
+  currentIntegranteId,
+  integrantes = [],
+  equipo = [],
+}: ProyectoDetalleProps) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
   const estadoConf = ESTADOS_PROYECTO.find((e) => e.id === proyecto.estado)
 
-  async function handleEdit(data: ProyectoInsert) {
+  async function handleEdit(data: ProyectoInsert, integrantesIds: string[]) {
     const res = await fetch(`/api/proyectos/${proyecto.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, integrantes_ids: integrantesIds }),
     })
     if (!res.ok) throw new Error()
     toast.success('Proyecto actualizado')
@@ -62,7 +78,7 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
 
   return (
     <div>
-      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 mb-6">
+      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] mb-6">
         <ArrowLeft size={14} /> Volver
       </button>
 
@@ -74,9 +90,9 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
               <span className="h-2 w-2 rounded-full" style={{ background: estadoConf?.color }} />
               {estadoConf?.label}
             </span>
-            <span className="text-xs text-neutral-400 capitalize">{proyecto.tipo}</span>
+            <span className="text-xs text-[var(--tx-ink-muted)] capitalize">{proyecto.tipo}</span>
             {proyecto.cliente && (
-              <span className="text-xs text-neutral-400">
+              <span className="text-xs text-[var(--tx-ink-muted)]">
                 · {proyecto.cliente.nombre_contacto ?? proyecto.cliente.nombre_negocio}
                 {proyecto.cliente.nombre_contacto && proyecto.cliente.nombre_negocio ? ` (${proyecto.cliente.nombre_negocio})` : ''}
               </span>
@@ -87,7 +103,7 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil size={13} className="mr-1.5" /> Editar
           </Button>
-          <Button variant="outline" size="sm" onClick={handleDelete} className="text-red-600">
+          <Button variant="outline" size="sm" onClick={handleDelete} className="text-red-600" aria-label="Eliminar proyecto">
             <Trash2 size={13} />
           </Button>
         </div>
@@ -101,20 +117,20 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
           { label: 'Horas reales', value: proyecto.horas_reales ? `${proyecto.horas_reales}h` : '—' },
           { label: 'Tareas', value: `${tareasCompletadas}/${tareas.length}` },
         ].map((item) => (
-          <div key={item.label} className="bg-neutral-50 rounded-lg p-3 text-center">
-            <p className="text-xs text-neutral-500 mb-1">{item.label}</p>
-            <p className="text-sm font-semibold text-neutral-800">{item.value}</p>
+          <div key={item.label} className="bg-white/5 rounded-lg p-3 text-center">
+            <p className="text-xs text-[var(--tx-ink-muted)] mb-1">{item.label}</p>
+            <p className="text-sm font-semibold text-[var(--tx-ink-primary)]">{item.value}</p>
           </div>
         ))}
       </div>
 
       {progreso !== null && (
         <div className="mb-6">
-          <div className="flex justify-between text-xs text-neutral-500 mb-1">
+          <div className="flex justify-between text-xs text-[var(--tx-ink-muted)] mb-1">
             <span>Progreso de horas</span>
             <span>{progreso}%</span>
           </div>
-          <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+          <div className="h-2 bg-white/8 rounded-full overflow-hidden">
             <div
               className={cn('h-full rounded-full', progreso > 100 ? 'bg-red-400' : 'bg-blue-400')}
               style={{ width: `${Math.min(progreso, 100)}%` }}
@@ -136,40 +152,33 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
         )}
       </div>
 
-      <div className="flex gap-4 text-sm text-neutral-500 mb-6">
+      <div className="flex gap-4 text-sm text-[var(--tx-ink-muted)] mb-6">
         {proyecto.fecha_inicio && <span>Inicio: {format(new Date(proyecto.fecha_inicio), 'd MMM yyyy', { locale: es })}</span>}
         {proyecto.fecha_entrega && <span>Entrega: {format(new Date(proyecto.fecha_entrega), 'd MMM yyyy', { locale: es })}</span>}
       </div>
 
       <Separator className="mb-6" />
 
-      {/* Tareas */}
+      {/* Pipeline del proyecto: el mismo tablero scrum que /tareas, filtrado
+          por este proyecto. Antes era una lista plana donde no se podía mover
+          nada — para cambiar el estado había que abrir cada tarea. */}
       <div className="mb-6">
-        <h2 className="text-sm font-semibold text-neutral-700 mb-3">Tareas ({tareas.length})</h2>
-        {tareas.length === 0 ? (
-          <p className="text-sm text-neutral-400 text-center py-4">Sin tareas asociadas</p>
-        ) : (
-          <div className="space-y-2">
-            {tareas.map((t) => (
-              <div
-                key={t.id}
-                onClick={() => router.push(`/tareas/${t.id}`)}
-                className="flex items-center justify-between p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <span className={cn('text-xs font-bold', prioridadColor[t.prioridad])}>●</span>
-                  <p className="text-sm text-neutral-800">{t.titulo}</p>
-                </div>
-                <span className={cn('text-xs px-2 py-0.5 rounded-full',
-                  t.estado === 'listo' ? 'bg-green-100 text-green-700' :
-                  t.estado === 'en_curso' ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'
-                )}>
-                  {t.estado === 'listo' ? 'Listo' : t.estado === 'en_curso' ? 'En curso' : 'Sin empezar'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="mb-4 flex items-center gap-3">
+          <h2 className="text-[19px] font-medium tracking-[-0.02em] text-[var(--tx-ink-primary)]">
+            Tablero
+          </h2>
+          <span className="inline-flex h-[26px] items-center rounded-full border border-white/[0.10] px-2.5 text-[11.5px] font-medium text-[var(--tx-ink-secondary)]">
+            {tareas.filter((t) => !t.eliminado_at).length}
+          </span>
+        </div>
+        <TareasKanban
+          initialTareas={tareas}
+          currentUserId={currentUserId}
+          currentIntegranteId={currentIntegranteId}
+          proyectoId={proyecto.id}
+          papeleraCount={tareas.filter((t) => t.eliminado_at).length}
+          compacto
+        />
       </div>
 
       <ProyectoForm
@@ -177,6 +186,8 @@ export function ProyectoDetalle({ proyecto, tareas, ventas }: ProyectoDetallePro
         onOpenChange={setEditOpen}
         proyecto={proyecto}
         clientes={proyecto.cliente ? [{ id: proyecto.cliente_id!, nombre_negocio: proyecto.cliente.nombre_negocio, nombre_contacto: proyecto.cliente.nombre_contacto } as never] : []}
+        integrantes={integrantes}
+        equipoInicial={equipo}
         onSubmit={handleEdit}
       />
     </div>

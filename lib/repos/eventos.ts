@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import type { AsistenteExterno, Evento, EventoInsert, EventoDesdeGoogle } from '@/lib/types/evento'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 interface EventoRow {
   id: string
@@ -76,22 +77,67 @@ export class EventosRepository {
     }))
   }
 
+  /**
+   * Reuniones del rango contadas por integrante asistente, para el marcador
+   * del equipo. Devuelve solo a quien participo en alguna: quien no aparece
+   * no queda expuesto con un cero publico.
+   *
+   * El embed va SIN desambiguar, al reves que en `listRango`: alli el `!fkey`
+   * hace falta porque se baja hasta `dim_integrantes`, y `eventos_asistentes`
+   * tiene dos FKs hacia esa tabla (`integrante_id` y `asignado_por`). De
+   * `eventos` a `eventos_asistentes` solo hay una FK, asi que nombrar una aqui
+   * apuntaria a una relacion que no existe entre ese par de tablas.
+   */
+  async contarPorIntegrante(desdeISO: string, hastaISO: string): Promise<Map<string, number>> {
+    const { data, error } = await this.sb
+      .from('eventos')
+      .select('id, eventos_asistentes ( integrante_id )')
+      .gte('inicio', desdeISO)
+      .lt('inicio', hastaISO)
+
+    if (error) throw new Error(error.message)
+
+    const porIntegrante = new Map<string, number>()
+    for (const evento of (data ?? []) as { eventos_asistentes: { integrante_id: string }[] | null }[]) {
+      // Un evento cuenta UNA vez por persona aunque figure repetida en la
+      // tabla puente: el marcador mide reuniones, no filas.
+      const vistos = new Set<string>()
+      for (const asistente of evento.eventos_asistentes ?? []) {
+        if (!asistente.integrante_id || vistos.has(asistente.integrante_id)) continue
+        vistos.add(asistente.integrante_id)
+        porIntegrante.set(
+          asistente.integrante_id,
+          (porIntegrante.get(asistente.integrante_id) ?? 0) + 1,
+        )
+      }
+    }
+    return porIntegrante
+  }
+
+  /**
+   * Crea el evento y sus asistentes en un solo paso atómico.
+   *
+   * Antes eran dos llamadas separadas de PostgREST (insert en `eventos` +
+   * insert en `eventos_asistentes`): si la segunda fallaba, el evento quedaba
+   * creado sin nadie asignado y sin forma de deshacerlo. `crear_evento_con_asistentes`
+   * (migración 069) hace ambas dentro de la misma transacción SQL.
+   */
   async create(input: EventoInsert, creadoPorId: string): Promise<string> {
     // invitados_externos viaja a Google/email, no a la tabla eventos
     const { asistentes_ids, invitados_externos: _externos, ...evento } = input
-    const { data, error } = await this.sb
-      .from('eventos')
-      .insert({ ...evento, creado_por: creadoPorId })
-      .select('id')
-      .single()
+    const { data, error } = await this.sb.rpc('crear_evento_con_asistentes', {
+      p_titulo: evento.titulo,
+      p_tipo: evento.tipo,
+      p_inicio: evento.inicio,
+      p_fin: evento.fin,
+      p_lead_id: evento.lead_id ?? null,
+      p_cliente_id: evento.cliente_id ?? null,
+      p_notas: evento.notas ?? null,
+      p_creado_por: creadoPorId,
+      p_asistentes_ids: asistentes_ids,
+    })
     if (error) throw new Error(error.message)
-
-    const ids = asistentes_ids.length > 0 ? asistentes_ids : [creadoPorId]
-    const { error: aError } = await this.sb.from('eventos_asistentes').insert(
-      ids.map((integrante_id) => ({ evento_id: data.id, integrante_id }))
-    )
-    if (aError) throw new Error(aError.message)
-    return data.id
+    return data as string
   }
 
   /** Upsert idempotente desde Google Calendar. Si el evento nació en el CRM
@@ -106,7 +152,7 @@ export class EventosRepository {
     if (existente) {
       const { error } = await this.sb
         .from('eventos')
-        .update(evento)
+        .update(evento as never)
         .eq('id', existente.id)
       if (error) throw new Error(error.message)
       return
@@ -114,7 +160,7 @@ export class EventosRepository {
 
     const { error } = await this.sb
       .from('eventos')
-      .insert({ ...evento, origen: 'google', creado_por: null })
+      .insert({ ...evento, origen: 'google', creado_por: null } as never)
     if (error) throw new Error(error.message)
   }
 
@@ -134,7 +180,9 @@ export class EventosRepository {
       .select('google_event_id, origen')
       .eq('id', id)
       .maybeSingle()
-    return data ?? null
+    // `origen` lleva CHECK ('crm','google') en la base; el tipo generado dice
+    // `string` porque el esquema no expresa los CHECK.
+    return (data as { google_event_id: string | null; origen: Evento['origen'] } | null) ?? null
   }
 
   /** Emails de integrantes activos por id (para invitaciones de calendario) */

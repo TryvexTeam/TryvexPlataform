@@ -4,57 +4,123 @@ export type EstadoQr =
   | 'conectado'
   | 'esperando_qr'
   | 'qr_listo'
+  | 'posible_baneo'
   | 'sin_respuesta'
   | 'token_invalido'
+  /**
+   * El agente dice estar vinculado pero hace rato que no da señales de vida.
+   *
+   * Distinto de `sin_respuesta`: ahí el agente ni contesta. Acá contesta, y lo
+   * que responde es que su última confirmación es vieja — típicamente el socket
+   * de WhatsApp se cayó y quedó reintentando sin lograrlo.
+   *
+   * Merece estado propio porque la reacción es OTRA: NO hay que reescanear
+   * nada. La vinculación está bien; lo que falla es la salida a internet. Sin
+   * esto, `sin_latido` caía en el caso por defecto, se mostraba un QR, y el
+   * equipo terminaba desvinculando un número que estaba perfecto.
+   */
+  | 'sin_latido'
 
 export interface ResultadoQr {
   estado: EstadoQr
   /** Data URL de la imagen del QR. Solo presente con estado `qr_listo`. */
   imagen?: string
+  /** Número vinculado, cuando el agente lo conoce. */
+  telefono?: string
+  /** Segundos sin señal del agente. Solo con estado `sin_latido`. */
+  sinLatidoHace?: number
 }
 
-const procEnv = process['env']
+/** Lo que devuelve `GET /api/connection/status` del agente. */
+interface RespuestaAgente {
+  status?: string
+  qrPng?: string
+  phone?: string | null
+  /** Segundos desde el último latido. Solo viene con `sin_latido`. */
+  sinLatidoHace?: number
+}
 
 /**
- * Consulta el `GET /qr` del wa-bridge y traduce su HTML a un estado tipado.
+ * Cómo se llama cada estado del agente acá. Fuera de este mapa, cualquier
+ * estado desconocido cae en `esperando_qr`: el QR se regenera cada ~20s, así
+ * que esperar es la reacción correcta ante algo que no reconocemos.
+ */
+const ESTADOS: Record<string, EstadoQr> = {
+  connected: 'conectado',
+  qr: 'qr_listo',
+  posible_baneo: 'posible_baneo',
+  connecting: 'esperando_qr',
+  disconnected: 'esperando_qr',
+  sin_latido: 'sin_latido',
+}
+
+const TIEMPO_LIMITE_MS = 10_000
+
+/**
+ * Consulta el estado de vinculación al agente de WhatsApp (repo `Vex-Agente`).
  *
  * Vive acá (y no en el route handler) porque la usan dos consumidores: la página
  * de ajustes, que la llama en el servidor para pintar el QR sin esperar un
  * round-trip del cliente, y `/api/wa/qr`, que la sirve para el refresco.
  *
- * SOLO servidor: usa `WA_BRIDGE_QR_TOKEN`. El bridge recibe ese token por query
- * param (lo abre un navegador humano, no un fetch con headers), así que si
- * compartiéramos la URL directa el token quedaría en el historial del navegador
- * y en el chat donde se coordina el escaneo. Acá nunca sale del servidor.
+ * SOLO servidor: usa `VEX_AGENT_TOKEN`, que viaja en la cabecera `Authorization`
+ * y nunca llega al navegador. Antes esto apuntaba al `wa-bridge` y le mandaba el
+ * token por query param, lo que lo dejaba escrito en cualquier log de acceso
+ * intermedio; una cabecera no queda registrada así.
  */
-export async function obtenerEstadoQr(): Promise<ResultadoQr> {
-  const bridgeUrl = procEnv.WA_BRIDGE_URL
-  const qrToken = procEnv.WA_BRIDGE_QR_TOKEN
+/** ¿Este 503 lo mandó el propio agente, por arrancar sin sus claves de panel? */
+async function esElAgenteSinCredenciales(res: Response): Promise<boolean> {
+  const cuerpo = await res.text().catch(() => '')
+  return /sin credenciales/i.test(cuerpo)
+}
 
-  if (!bridgeUrl || !qrToken) return { estado: 'no_configurado' }
+export async function obtenerEstadoQr(): Promise<ResultadoQr> {
+  const urlAgente = process.env.VEX_AGENT_URL?.replace(/\/+$/, '')
+  const token = process.env.VEX_AGENT_TOKEN
+
+  if (!urlAgente || !token) return { estado: 'no_configurado' }
 
   try {
-    const res = await fetch(`${bridgeUrl}/qr?token=${encodeURIComponent(qrToken)}`, {
-      signal: AbortSignal.timeout(10000),
+    const res = await fetch(`${urlAgente}/api/connection/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(TIEMPO_LIMITE_MS),
       cache: 'no-store',
     })
 
-    if (res.status === 401) return { estado: 'token_invalido' }
-    // 503 = el bridge arrancó pero WhatsApp todavía no emitió el QR.
-    if (res.status === 503) return { estado: 'esperando_qr' }
+    // 401/403: el agente está vivo pero no acepta nuestro token.
+    if (res.status === 401 || res.status === 403) return { estado: 'token_invalido' }
+    // 503: puede venir del agente o del proxy que tiene delante, y se
+    // arreglan en lugares distintos. Solo es "credencial" si lo dice el
+    // agente (su JSON "Panel sin credenciales…"); cualquier otro 503 —el
+    // "no available server" de Traefik, uno vacío— es que no se llega a él.
+    // El 28-sep-2026 esa confusión mandó a revisar un token que estaba bien.
+    if (res.status === 503) {
+      return (await esElAgenteSinCredenciales(res)) ? { estado: 'token_invalido' } : { estado: 'sin_respuesta' }
+    }
+    if (!res.ok) return { estado: 'sin_respuesta' }
 
-    const html = await res.text()
-    if (html.includes('Sesion ya conectada')) return { estado: 'conectado' }
+    const datos = (await res.json()) as RespuestaAgente
+    const estado = ESTADOS[datos.status ?? ''] ?? 'esperando_qr'
+    const telefono = datos.phone ?? undefined
 
-    // El bridge sirve HTML porque está pensado para abrirse directo en el
-    // navegador. Si el markup cambia y no matchea, se reporta `esperando_qr` en
-    // vez de romper: el QR se regenera solo cada 20s.
-    const match = html.match(/src="(data:image\/[a-z+]+;base64,[^"]+)"/i)
-    if (!match) return { estado: 'esperando_qr' }
+    // Un `qr_listo` sin imagen no es mostrable: se degrada a espera en vez de
+    // dejar la pantalla anunciando un QR que no existe.
+    if (estado === 'qr_listo') {
+      return datos.qrPng
+        ? { estado, imagen: datos.qrPng, telefono }
+        : { estado: 'esperando_qr', telefono }
+    }
 
-    return { estado: 'qr_listo', imagen: match[1] }
+    // El "hace cuánto" viaja hasta la pantalla: "sin señal" a secas no deja
+    // distinguir un parpadeo de una caída de tres horas, y es justo esa
+    // diferencia la que dice si hay que ir a mirar el proxy.
+    if (estado === 'sin_latido') {
+      return { estado, telefono, sinLatidoHace: datos.sinLatidoHace }
+    }
+
+    return { estado, telefono }
   } catch (error: unknown) {
-    console.error('[wa/qr] wa-bridge no respondió:', error)
+    console.error('[wa/qr] el agente de WhatsApp no respondió:', error)
     return { estado: 'sin_respuesta' }
   }
 }

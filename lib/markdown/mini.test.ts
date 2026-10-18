@@ -199,3 +199,22 @@ describe('tablas', () => {
     expect(textoPlano(TABLA)).toContain('Paso · Estado')
   })
 })
+
+describe('títulos de documento', () => {
+  test('#### y más se dibujan como nivel 3, sin dejar los # sueltos', () => {
+    const [b] = parsearMarkdown('#### Fase 0: Fundaciones')
+    expect(b).toMatchObject({ tipo: 'titulo', nivel: 3 })
+    expect(textoPlano('#### Fase 0')).not.toContain('#')
+  })
+
+  test('un #### corta el párrafo anterior', () => {
+    const bloques = parsearMarkdown('texto' + String.fromCharCode(10) + '#### Sub')
+    expect(bloques.map((b) => b.tipo)).toEqual(['parrafo', 'titulo'])
+  })
+
+  test('una tabla pegada al texto de arriba no se come como párrafo', () => {
+    const md = ['Ritmo semanal:', '| Día | Evento |', '|---|---|', '| Lunes | Planificación |'].join(String.fromCharCode(10))
+    const bloques = parsearMarkdown(md)
+    expect(bloques.map((b) => b.tipo)).toEqual(['parrafo', 'tabla'])
+  })
+})

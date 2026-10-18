@@ -1,14 +1,16 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search } from 'lucide-react'
+import { Search, SlidersHorizontal, X, PhoneCall, PhoneOff, Plus } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 import type { AsignacionConIntegrante } from '@/lib/types/asignacion'
 import { AvatarStack } from '@/components/shared/avatar-stack'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { ScraperPanel } from './scraper-panel'
+import { EntrantesPanel } from './entrantes-panel'
 import { useWaNoLeidos } from '@/lib/hooks/use-wa-no-leidos'
+import { calidadLead, telefonoLlamable, COLOR_CALIDAD, ETIQUETA_CALIDAD } from '@/lib/leads/calidad'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
   sin_contactar:    { label: 'Sin contactar',   dot: 'oklch(63% 0.008 240)' },
@@ -58,8 +60,8 @@ function LeadAvatar({
         // Encima del avatar y no al lado del nombre: es el lugar donde la gente
         // ya mira sin que nadie le explique, por WhatsApp y por todo lo demas.
         <span
-          title={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin responder`}
-          aria-label={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin responder`}
+          title={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin leer`}
+          aria-label={`${noLeidos} mensaje${noLeidos === 1 ? '' : 's'} de WhatsApp sin leer`}
           style={{
             position: 'absolute',
             top: -3,
@@ -93,11 +95,48 @@ interface LeadsInboxProps {
   asignaciones?: Record<string, AsignacionConIntegrante[]>
 }
 
+/**
+ * Los filtros de la lista, aparte del texto y del estado.
+ *
+ * Se eligieron por lo que de verdad ayuda a decidir a quién llamar primero:
+ *  · nicho — agrupar por rubro para hacer tandas del mismo tipo de negocio.
+ *  · rating alto / muchas reseñas — negocios establecidos que cuidan su imagen.
+ *  · con teléfono — sin número no hay llamada en frío.
+ *  · con Instagram — activos en redes, mejor gancho ("ya tienes IG, te falta web").
+ *  · sin asignar — los que nadie del equipo tomó, para no pisarse.
+ * "Sin web" NO es filtro: hoy TODOS los leads del scraper vienen sin web, así
+ * que separaría nada. Si algún día entran con web, se agrega.
+ */
+interface Filtros {
+  nichos: Set<string>
+  soloLlamables: boolean
+  ratingAlto: boolean
+  muchasResenas: boolean
+  conTelefono: boolean
+  conInstagram: boolean
+  sinAsignar: boolean
+}
+
+const FILTROS_VACIOS: Filtros = {
+  nichos: new Set(),
+  soloLlamables: false,
+  ratingAlto: false,
+  muchasResenas: false,
+  conTelefono: false,
+  conInstagram: false,
+  sinAsignar: false,
+}
+
+const RATING_MIN = 4.5
+const RESENAS_MIN = 100
+
 export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_VACIOS)
+  const [panelAbierto, setPanelAbierto] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  // Quien escribio por WhatsApp y sigue sin respuesta.
+  // La lectura es independiente del filtro Por responder: abrir el hilo no responde.
   const { noLeidos } = useWaNoLeidos()
 
   useEffect(() => {
@@ -111,21 +150,55 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // El filtro por estado vive en la columna de categorías (un solo sistema de filtros)
+  // Los rubros que la cartera ya tiene, ordenados por cuántos leads hay de cada
+  // uno (los más numerosos primero: son los que más conviene filtrar). Sirve
+  // para el panel de filtros y para el buscador de más leads.
+  const nichosConteo = useMemo(() => {
+    const c = new Map<string, number>()
+    for (const l of leads) if (l.nicho) c.set(l.nicho, (c.get(l.nicho) ?? 0) + 1)
+    return [...c.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))
+  }, [leads])
+  const nichosDisponibles = useMemo(
+    () => [...nichosConteo].map(([n]) => n).sort((a, b) => a.localeCompare(b, 'es')),
+    [nichosConteo],
+  )
+
+  const filtrosActivos =
+    filtros.nichos.size +
+    (filtros.soloLlamables ? 1 : 0) +
+    (filtros.ratingAlto ? 1 : 0) +
+    (filtros.muchasResenas ? 1 : 0) +
+    (filtros.conTelefono ? 1 : 0) +
+    (filtros.conInstagram ? 1 : 0) +
+    (filtros.sinAsignar ? 1 : 0)
+
+  const q = search.trim().toLowerCase()
   const filtered = leads.filter((l) => {
-    return (
-      !search ||
-      l.nombre_negocio.toLowerCase().includes(search.toLowerCase()) ||
-      (l.nicho ?? '').toLowerCase().includes(search.toLowerCase())
-    )
+    if (q && !(
+      l.nombre_negocio.toLowerCase().includes(q) ||
+      (l.nicho ?? '').toLowerCase().includes(q) ||
+      (l.localidad ?? '').toLowerCase().includes(q)
+    )) return false
+    if (filtros.nichos.size > 0 && !(l.nicho && filtros.nichos.has(l.nicho))) return false
+    if (filtros.soloLlamables && !telefonoLlamable(l.telefono)) return false
+    if (filtros.ratingAlto && (l.google_rating ?? 0) < RATING_MIN) return false
+    if (filtros.muchasResenas && (l.google_resenas ?? 0) < RESENAS_MIN) return false
+    if (filtros.conTelefono && !l.telefono) return false
+    if (filtros.conInstagram && !l.instagram) return false
+    if (filtros.sinAsignar && (asignaciones[l.id]?.length ?? 0) > 0) return false
+    return true
   })
 
-  // Los rubros que la cartera ya tiene: se le ofrecen al que va a buscar mas,
-  // para que no los escriba de memoria y termine con "barberias" y "barberia"
-  // como si fueran dos rubros distintos.
-  const nichosDisponibles = Array.from(
-    new Set(leads.map(l => l.nicho).filter((n): n is string => Boolean(n))),
-  ).sort((a, b) => a.localeCompare(b, 'es'))
+  const toggleNicho = (n: string) =>
+    setFiltros((f) => {
+      const nichos = new Set(f.nichos)
+      if (nichos.has(n)) nichos.delete(n)
+      else nichos.add(n)
+      return { ...f, nichos }
+    })
+  const toggleFlag = (k: keyof Omit<Filtros, 'nichos'>) =>
+    setFiltros((f) => ({ ...f, [k]: !f[k] }))
+  const limpiarFiltros = () => setFiltros(FILTROS_VACIOS)
 
   const featuredId = (() => {
     if (filtered.length === 0) return null
@@ -147,25 +220,114 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
   return (
     <section className="glass feed w-[360px] shrink-0 flex flex-col h-full">
       {/* Search Header */}
-      <div className="feed__top">
-        <label className="search">
+      <div className="feed__top" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <label className="search" style={{ flex: 1 }}>
           <Search size={14} className="shrink-0" />
           <input
             ref={searchInputRef}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar leads, nichos..."
+            placeholder="Buscar leads, nichos, comunas..."
           />
           <kbd>Ctrl+K</kbd>
         </label>
+        <button
+          onClick={() => setPanelAbierto((v) => !v)}
+          title="Filtros"
+          aria-label="Filtros"
+          aria-pressed={panelAbierto}
+          className="relative shrink-0 grid place-items-center h-9 w-9 rounded-xl border transition-colors"
+          style={{
+            borderColor: filtrosActivos > 0 ? 'var(--tx-accent)' : 'rgba(255,255,255,.08)',
+            background: filtrosActivos > 0 ? 'color-mix(in oklab, var(--tx-accent) 14%, transparent)' : 'rgba(255,255,255,.02)',
+            color: filtrosActivos > 0 ? 'var(--tx-accent)' : 'var(--tx-ink-secondary)',
+          }}
+        >
+          <SlidersHorizontal size={15} />
+          {filtrosActivos > 0 && (
+            <span
+              className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 grid place-items-center rounded-full text-[10px] font-bold"
+              style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
+            >
+              {filtrosActivos}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* Contador + traer leads nuevos */}
+      {/* Panel de filtros */}
+      {panelAbierto && (
+        <div className="px-3 pb-3 pt-1 border-b border-white/[0.06] space-y-3">
+          {/* Filtros de calidad / estado del dato */}
+          <div className="flex flex-wrap gap-1.5">
+            <ChipFiltro activo={filtros.soloLlamables} onClick={() => toggleFlag('soloLlamables')}>
+              Solo llamables
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.ratingAlto} onClick={() => toggleFlag('ratingAlto')}>
+              ★ {RATING_MIN}+
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.muchasResenas} onClick={() => toggleFlag('muchasResenas')}>
+              {RESENAS_MIN}+ reseñas
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.conTelefono} onClick={() => toggleFlag('conTelefono')}>
+              Con teléfono
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.conInstagram} onClick={() => toggleFlag('conInstagram')}>
+              Con Instagram
+            </ChipFiltro>
+            <ChipFiltro activo={filtros.sinAsignar} onClick={() => toggleFlag('sinAsignar')}>
+              Sin asignar
+            </ChipFiltro>
+          </div>
+
+          {/* Nichos */}
+          {nichosConteo.length > 0 && (
+            <div>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--tx-ink-muted)] mb-1.5">
+                Rubro
+              </p>
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                {nichosConteo.map(([n, cnt]) => (
+                  <ChipFiltro key={n} activo={filtros.nichos.has(n)} onClick={() => toggleNicho(n)}>
+                    {n} <span className="opacity-50">{cnt}</span>
+                  </ChipFiltro>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {filtrosActivos > 0 && (
+            <button
+              onClick={limpiarFiltros}
+              className="inline-flex items-center gap-1 text-[12px] text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)]"
+            >
+              <X size={12} /> Limpiar filtros ({filtrosActivos})
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Contador + acciones: crear lead, atender entrantes, traer del scraper */}
       <div className="feed__chips" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span className="feed__count">{filtered.length} leads</span>
-        <span style={{ marginLeft: 'auto' }}>
-          <ScraperPanel nichos={nichosDisponibles} />
+        <span className="feed__count">
+          {filtered.length} {filtrosActivos > 0 || q ? `de ${leads.length}` : 'leads'}
         </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Antes este botón solo existía en el estado vacío, así que la vista
+              donde el equipo pasa el día era justo la que no dejaba agregar un
+              lead: había que cambiar a Pipeline para algo que se hace desde acá. */}
+          <button
+            type="button"
+            onClick={() => router.push('/leads?nuevo=1')}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-opacity hover:opacity-85"
+            style={{ background: 'var(--tx-accent)', color: 'var(--tx-accent-fg)' }}
+          >
+            <Plus size={13} />
+            Nuevo lead
+          </button>
+          <EntrantesPanel />
+          <ScraperPanel nichos={nichosDisponibles} />
+        </div>
       </div>
 
       {/* Feed List */}
@@ -181,12 +343,12 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
             >
               + Nuevo lead
             </button>
-            {search !== '' && (
+            {(search !== '' || filtrosActivos > 0) && (
               <button
-                onClick={() => setSearch('')}
+                onClick={() => { setSearch(''); limpiarFiltros() }}
                 className="mt-1 text-[12px] px-3 py-1.5 rounded-lg border border-white/10 text-white/70"
               >
-                Limpiar búsqueda
+                Limpiar búsqueda y filtros
               </button>
             )}
           </div>
@@ -214,8 +376,21 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
                 <div className="flex-1 min-w-0">
                   {/* Fila 1: nombre + timestamp */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] truncate leading-tight">
-                      {lead.nombre_negocio}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      {(() => {
+                        const cal = calidadLead(lead)
+                        return (
+                          <span
+                            title={`${ETIQUETA_CALIDAD[cal.nivel]}${cal.motivos.length ? ' — ' + cal.motivos.join(', ') : ''}`}
+                            aria-label={ETIQUETA_CALIDAD[cal.nivel]}
+                            className="shrink-0 h-2 w-2 rounded-full"
+                            style={{ background: COLOR_CALIDAD[cal.nivel] }}
+                          />
+                        )
+                      })()}
+                      <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] truncate leading-tight">
+                        {lead.nombre_negocio}
+                      </span>
                     </span>
                     <span className="text-[10px] text-[var(--tx-ink-muted)] shrink-0">
                       {relativeTime(lead.created_at)}
@@ -226,15 +401,39 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
                     <p className="text-[12px] text-[var(--tx-ink-muted)] leading-tight truncate min-w-0">
                       {lead.info_texto || lead.nicho || 'Sin descripción'}
                     </p>
-                    <span
-                      className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                      style={{
-                        background: `${cfg.dot}22`,
-                        color: cfg.dot,
-                        border: `1px solid ${cfg.dot}44`,
-                      }}
-                    >
-                      {cfg.label}
+                    <span className="flex items-center gap-1 shrink-0">
+                      {/* Mismo criterio que en la tarjeta del tablero
+                          (lead-card.tsx): el resultado de la última llamada
+                          se ve acá también, sin abrir la ficha — verde si
+                          contestó, apagado si no, nada si nunca se le llamó. */}
+                      {lead.ultima_llamada_respondio === true && (
+                        <PhoneCall
+                          size={11}
+                          style={{ color: 'oklch(72% 0.17 145)' }}
+                          aria-label="Última llamada: contestó"
+                        >
+                          <title>Última llamada: contestó</title>
+                        </PhoneCall>
+                      )}
+                      {lead.ultima_llamada_respondio === false && (
+                        <PhoneOff
+                          size={11}
+                          style={{ color: 'var(--tx-ink-muted)' }}
+                          aria-label="Última llamada: sin respuesta"
+                        >
+                          <title>Última llamada: sin respuesta</title>
+                        </PhoneOff>
+                      )}
+                      <span
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        style={{
+                          background: `${cfg.dot}22`,
+                          color: cfg.dot,
+                          border: `1px solid ${cfg.dot}44`,
+                        }}
+                      >
+                        {cfg.label}
+                      </span>
                     </span>
                   </div>
                   {/* Fila 3: quién tiene este lead. Abajo a la derecha, como en
@@ -252,5 +451,32 @@ export function LeadsInbox({ leads, selectedId, asignaciones = {} }: LeadsInboxP
         })}
       </div>
     </section>
+  )
+}
+
+/** Un chip on/off del panel de filtros. Verde de acento cuando está activo. */
+function ChipFiltro({
+  activo,
+  onClick,
+  children,
+}: {
+  activo: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activo}
+      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-colors"
+      style={{
+        borderColor: activo ? 'transparent' : 'rgba(255,255,255,.08)',
+        background: activo ? 'var(--tx-accent)' : 'rgba(255,255,255,.02)',
+        color: activo ? 'var(--tx-accent-fg)' : 'var(--tx-ink-secondary)',
+      }}
+    >
+      {children}
+    </button>
   )
 }

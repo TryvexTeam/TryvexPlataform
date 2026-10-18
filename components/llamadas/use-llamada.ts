@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+// Import de solo-tipo: el paquete real referencia `AudioWorkletNode` (API de
+// browser) en su nivel superior, así que un import normal rompe el SSR con
+// "AudioWorkletNode is not defined" apenas Next evalúa el módulo en el
+// servidor. El valor se importa dinámicamente donde se usa, nunca en el top-level.
+import type { RnnoiseWorkletNode } from '@sapphi-red/web-noise-suppressor'
 import { createClient } from '@/lib/supabase/client'
+import { toast } from '@/lib/toast'
 import {
   BITRATE_PANTALLA,
   EVENTO_SENAL,
@@ -33,6 +39,30 @@ export interface ParticipanteVivo {
   micro: boolean
   camara: boolean
   compartiendo: boolean
+  /**
+   * El audio de SU pantalla compartida, si trae uno. Separado del micrófono
+   * a propósito: `AudioContext.createMediaStreamSource` solo toma la primera
+   * pista de audio de un stream, así que si viajaran juntas en el mismo
+   * MediaStream, el audio de pantalla nunca sonaría -- necesita su propio
+   * elemento `<audio>`.
+   *
+   * (Se probó unmutear el `<video>` de la tarjeta y mandarle video+audio
+   * juntos para que el control de volumen del navegador en pantalla
+   * completa funcionara -- ver PR #161. Rebotó en producción: un `<video>`
+   * sin mutear con `autoPlay` cae bajo la política de autoplay del
+   * navegador y necesita un gesto del usuario para sonar, así que del otro
+   * lado simplemente no se escuchaba nada; y a quien comparte, si el
+   * navegador sí lo dejaba sonar, se le duplicaba su propio audio de
+   * pantalla -- una vez real, sonando en su equipo, y otra vez rebotada por
+   * este `<video>`. De vuelta al camino separado, que sí funciona.)
+   */
+  streamAudioPantalla: MediaStream | null
+  /**
+   * El VIDEO de su pantalla compartida, si está compartiendo. Viaja en una
+   * pista de video aparte de la cámara: no se reemplazan entre sí, y la
+   * pantalla se renderiza como una tarjeta propia, no en el mismo recuadro.
+   */
+  streamPantalla: MediaStream | null
 }
 
 interface UseLlamadaOpts {
@@ -71,6 +101,22 @@ interface Par {
    * dejar la conexión peor que el problema que intenta arreglar.
    */
   intentosRanura: number
+  /**
+   * El sender del audio de la pantalla compartida en esta conexión, si hay
+   * uno. A diferencia del video, el audio de pantalla no tiene una ranura
+   * reservada de antemano -- es opcional (el usuario puede no tocar "Compartir
+   * audio también" en el selector del navegador) y su ausencia no debe
+   * tumbar nada. Se guarda acá para poder sacarlo con `removeTrack` cuando
+   * termina de compartir.
+   */
+  senderAudioPantalla: RTCRtpSender | null
+  /**
+   * El sender del VIDEO de la pantalla compartida. Igual que el de audio: no
+   * hay una ranura reservada de antemano para esto -- es la pista extra que
+   * antes reemplazaba a la cámara en la ranura de video, y ahora viaja
+   * aparte para que las dos convivan.
+   */
+  senderVideoPantalla: RTCRtpSender | null
 }
 
 /** Cuántas veces se reintenta enderezar la ranura antes de rendirse. */
@@ -83,18 +129,33 @@ const MAX_INTENTOS_RANURA = 4
  * está vacía —llamada que empezó en audio— el sender no tiene pista y no hay
  * `kind` que mirar. El receiver sí declara 'video' desde que se crea.
  */
-function transceiversDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver[] {
+/**
+ * `excluirSender` saca de la cuenta al sender del video de pantalla
+ * compartida (`Par.senderVideoPantalla`), si hay uno. Antes solo existía UN
+ * transceiver de video por conexión; ahora, con la pantalla como pista
+ * independiente de la cámara, puede haber dos al mismo tiempo -- sin
+ * excluirlo, esta función (y todo lo que se apoya en ella: `ranuraDeVideo`,
+ * `abrirRanuraDeVideo`, `repartirVideo`, la autorreparación) confundiría uno
+ * con otro y podía terminar vaciando la pantalla compartida cada vez que se
+ * tocaba la cámara.
+ */
+function transceiversDeVideo(
+  pc: RTCPeerConnection,
+  excluirSender?: RTCRtpSender | null,
+): RTCRtpTransceiver[] {
   return pc.getTransceivers().filter(
     (t) =>
       // `stopped` como propiedad ya no existe: un transceiver detenido se
       // reconoce por su dirección actual.
       t.currentDirection !== 'stopped' &&
-      (t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video'),
+      (t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video') &&
+      t.sender !== excluirSender,
   )
 }
 
 /**
- * LA ranura de video: la que está realmente negociada.
+ * LA ranura de video de CÁMARA: la que está realmente negociada, sin contar
+ * la de pantalla (ver `excluirSender` arriba).
  *
  * Una conexión puede terminar con más de un transceiver de video -- los crea
  * `addTrack` por un lado y `addTransceiver` por el otro, y una renegociación
@@ -109,14 +170,25 @@ function transceiversDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver[] {
  * compartía ponía su pantalla en el sender equivocado: `envío 0` con la ranura
  * en `sendrecv` y nadie viéndolo.
  */
-function ranuraDeVideo(pc: RTCPeerConnection): RTCRtpTransceiver | null {
-  const todas = transceiversDeVideo(pc)
+function ranuraDeVideo(pc: RTCPeerConnection, excluirSender?: RTCRtpSender | null): RTCRtpTransceiver | null {
+  const todas = transceiversDeVideo(pc, excluirSender)
   // Sin negociar todavía no hay `mid`; ahí el primero es el que se va a usar.
   return todas.find((t) => t.mid !== null) ?? todas[0] ?? null
 }
 
-function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
-  return ranuraDeVideo(pc)?.sender ?? null
+/**
+ * El sender del micrófono, distinto del de la pantalla compartida (esa se
+ * guarda aparte en `Par.senderAudioPantalla` porque es opcional y se agrega
+ * después). El del micrófono es el otro sender de audio: el que crea el
+ * `addTrack` inicial de `crearPar`, siempre presente desde que se abre la
+ * conexión.
+ */
+function senderDeMicrofono(pc: RTCPeerConnection, par: Par): RTCRtpSender | null {
+  return (
+    pc
+      .getSenders()
+      .find((s) => s.track && s.track.kind === 'audio' && s !== par.senderAudioPantalla) ?? null
+  )
 }
 
 /**
@@ -132,8 +204,8 @@ function senderDeVideo(pc: RTCPeerConnection): RTCRtpSender | null {
  * Cambiar `direction` obliga a renegociar para que tenga efecto; devuelve si hizo
  * falta, para que quien llama dispare la oferta.
  */
-function abrirRanuraDeVideo(pc: RTCPeerConnection): boolean {
-  const tr = ranuraDeVideo(pc)
+function abrirRanuraDeVideo(pc: RTCPeerConnection, excluirSender?: RTCRtpSender | null): boolean {
+  const tr = ranuraDeVideo(pc, excluirSender)
   if (!tr) {
     pc.addTransceiver('video', { direction: 'sendrecv' })
     return true
@@ -256,12 +328,31 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   /** Falso cuando no hay TURN configurado: hay redes donde no va a conectar. */
   const [hayTurn, setHayTurn] = useState(true)
   const [diagnostico, setDiagnostico] = useState<DiagnosticoLlamada | null>(null)
+  /**
+   * Supresión de ruido tipo Discord (RNNoise, red neuronal liviana vía WASM),
+   * no el `noiseSuppression` básico del navegador que ya pide `arrancar` --
+   * ese ayuda con eco y ruido estacionario, pero no con teclado, ventilador o
+   * calle. Empieza apagada: correr un modelo por WASM tiene un costo de CPU
+   * real y no todos los equipos del canal lo necesitan.
+   */
+  const [ruidoSuprimido, setRuidoSuprimido] = useState(false)
+  const [cargandoSupresionRuido, setCargandoSupresionRuido] = useState(false)
 
   const pares = useRef(new Map<string, Par>())
   const canal = useRef<RealtimeChannel | null>(null)
   const local = useRef<MediaStream | null>(null)
   const pantalla = useRef<MediaStream | null>(null)
   const iceServers = useRef<RTCIceServer[]>([])
+  /** La pista del micrófono tal como la entrega el navegador, sin procesar.
+   *  Se guarda aparte porque, con la supresión activa, `local.current` lleva
+   *  la pista PROCESADA -- sin esta referencia no habría forma de volver a
+   *  la cruda, ni de pararla al colgar (parar la procesada no apaga el
+   *  micrófono físico, solo el nodo de salida del grafo de audio). */
+  const pistaMicCrudaRef = useRef<MediaStreamTrack | null>(null)
+  const ctxRuidoRef = useRef<AudioContext | null>(null)
+  const nodoRuidoRef = useRef<RnnoiseWorkletNode | null>(null)
+  const fuenteRuidoRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const destinoRuidoRef = useRef<MediaStreamAudioDestinationNode | null>(null)
   // Se leen dentro de callbacks que no se recrean; un ref evita reconectar la
   // malla entera cada vez que alguien silencia el micrófono.
   const microRef = useRef(micro)
@@ -287,6 +378,8 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
             micro: true,
             camara: false,
             compartiendo: false,
+            streamAudioPantalla: null,
+            streamPantalla: null,
             ...cambio,
           },
         ]
@@ -306,13 +399,20 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     const cuantos = pares.current.size + 1
     const perfil = perfilVideo(cuantos)
 
-    for (const { pc } of pares.current.values()) {
-      for (const sender of pc.getSenders()) {
+    for (const par of pares.current.values()) {
+      for (const sender of par.pc.getSenders()) {
         if (sender.track?.kind !== 'video') continue
+        // Cámara y pantalla son pistas separadas ahora, cada una con su
+        // propio sender -- antes, cuando compartir reemplazaba a la cámara
+        // en la misma ranura, "hay pantalla" alcanzaba para saber a cuál de
+        // las dos calidades aplicar. Ahora hay que distinguir CUÁL sender es
+        // el de pantalla, o compartir le bajaría la calidad a la cámara
+        // también.
+        const esPantalla = sender === par.senderVideoPantalla
         const params = sender.getParameters()
         if (!params.encodings || params.encodings.length === 0) params.encodings = [{}]
-        params.encodings[0].maxBitrate = pantalla.current ? BITRATE_PANTALLA : perfil.maxBitrate
-        params.encodings[0].maxFramerate = pantalla.current ? 15 : perfil.fps
+        params.encodings[0].maxBitrate = esPantalla ? BITRATE_PANTALLA : perfil.maxBitrate
+        params.encodings[0].maxFramerate = esPantalla ? 15 : perfil.fps
         // Falla en navegadores viejos y no es motivo para cortar la llamada: sin
         // esto la calidad no se adapta, pero se sigue oyendo y viendo.
         sender.setParameters(params).catch(() => {})
@@ -343,7 +443,15 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         bundlePolicy: 'max-bundle',
       })
 
-      const par: Par = { pc, pistas: new Map(), pendientes: [], negociando: false, intentosRanura: 0 }
+      const par: Par = {
+        pc,
+        pistas: new Map(),
+        pendientes: [],
+        negociando: false,
+        intentosRanura: 0,
+        senderAudioPantalla: null,
+        senderVideoPantalla: null,
+      }
       pares.current.set(otroId, par)
 
       for (const track of local.current?.getTracks() ?? []) {
@@ -370,21 +478,26 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
        * Si ya se está compartiendo pantalla, la conexión nueva tiene que nacer
        * con ella puesta.
        *
-       * La pantalla NO vive en `local.current` -- vive en `pantalla.current` y se
-       * reparte con `replaceTrack` sobre los pares que existían en ese momento.
-       * Una conexión creada después se quedaba con la ranura de video vacía para
-       * siempre: nadie volvía a llenarla. El que comparte seguía viéndose bien,
-       * porque lee su propia pantalla en local, y el otro veía negro mientras el
-       * cartel de "está transmitiendo" sí aparecía, porque eso viaja por la
-       * señalización y no por la media.
+       * La pantalla NO vive en `local.current` -- vive en `pantalla.current`. Va
+       * como pista de video APARTE de la ranura de cámara (que arriba se abrió
+       * vacía o con lo que haya en `local.current`) -- antes esto hacía
+       * `replaceTrack` sobre la ranura de cámara, y por eso compartir apagaba
+       * la cara de quien compartía para el resto. Entra gratis en la primera
+       * oferta/respuesta de esta conexión nueva, sin renegociar aparte.
        *
        * Pasa con quien entra tarde a la llamada, y también en cada reconexión:
        * `presence sync` cierra el par caído y crea uno nuevo.
        */
-      const pistaPantalla = pantalla.current?.getVideoTracks()[0]
-      if (pistaPantalla) {
-        const sender = senderDeVideo(pc)
-        if (sender) void sender.replaceTrack(pistaPantalla).catch(() => {})
+      const pistaVideoPantalla = pantalla.current?.getVideoTracks()[0]
+      if (pistaVideoPantalla) {
+        par.senderVideoPantalla = pc.addTrack(pistaVideoPantalla, pantalla.current!)
+      }
+
+      // El audio de la pantalla (si el usuario lo compartió) va como pista
+      // aparte también, no reemplaza al micrófono.
+      const pistaAudioPantalla = pantalla.current?.getAudioTracks()[0]
+      if (pistaAudioPantalla) {
+        par.senderAudioPantalla = pc.addTrack(pistaAudioPantalla, pantalla.current!)
       }
 
       pc.onicecandidate = (ev) => {
@@ -398,16 +511,39 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         if (!p) return
 
         // Una por tipo: si llega una pista de video nueva reemplaza a la vieja,
-        // no se acumulan.
-        p.pistas.set(ev.track.kind, ev.track)
+        // no se acumulan. El audio Y el video de pantalla son la excepción: son
+        // pistas SEGUNDAS que conviven con las del micrófono/cámara, así que
+        // necesitan su propia clave -- si compartieran 'audio'/'video', se
+        // pisarían según el orden en que lleguen los eventos. La ranura de
+        // cámara siempre llega primero (se reserva desde `crearPar`), así que
+        // la segunda pista de cada tipo es siempre la de pantalla.
+        const esSegunda = (tipo: 'audio' | 'video') =>
+          ev.track.kind === tipo && p.pistas.has(tipo) && p.pistas.get(tipo)!.id !== ev.track.id
+        const clave = esSegunda('audio') ? 'audioPantalla' : esSegunda('video') ? 'videoPantalla' : ev.track.kind
+        p.pistas.set(clave, ev.track)
 
         // Un MediaStream NUEVO en cada cambio, a propósito: mutar el existente no
-        // le avisa a React ni al elemento <video>, que ya tiene ese objeto en
-        // `srcObject` y no vuelve a mirarlo.
+        // le avisa a React ni al elemento <video>/<audio>, que ya tiene ese
+        // objeto en `srcObject` y no vuelve a mirarlo.
         const rehacer = () => {
           const vivo = pares.current.get(otroId)
           if (!vivo) return
-          actualizar(otroId, { stream: new MediaStream([...vivo.pistas.values()]) })
+          const audioPantalla = vivo.pistas.get('audioPantalla')
+          const videoPantalla = vivo.pistas.get('videoPantalla')
+          actualizar(otroId, {
+            // Sin las pistas de pantalla: la cámara/mic van en su propia
+            // tarjeta, la pantalla en la suya. Separadas entre sí también:
+            // `createMediaStreamSource` (el mic pasa por ahí) solo toma la
+            // primera pista de audio de un stream, así que mezclarlas dejaría
+            // muda a una de las dos.
+            stream: new MediaStream(
+              [...vivo.pistas.entries()]
+                .filter(([k]) => k !== 'audioPantalla' && k !== 'videoPantalla')
+                .map(([, t]) => t),
+            ),
+            streamAudioPantalla: audioPantalla ? new MediaStream([audioPantalla]) : null,
+            streamPantalla: videoPantalla ? new MediaStream([videoPantalla]) : null,
+          })
         }
 
         rehacer()
@@ -425,8 +561,31 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         ev.track.onended = () => {
           const vivo = pares.current.get(otroId)
           if (!vivo) return
-          vivo.pistas.delete(ev.track.kind)
+          // Por la clave con la que se guardó, no por `kind`: borrar por
+          // 'audio' cuando termina el audio de pantalla se llevaría puesto al
+          // micrófono, que quedó guardado con esa misma clave.
+          vivo.pistas.delete(clave)
           rehacer()
+        }
+
+        // Solo para las pistas de PANTALLA: cuando quien comparte deja de
+        // hacerlo, `repartirPantalla` saca el sender con `removeTrack` y
+        // renegocia -- del lado de acá eso no
+        // dispara `ended`, dispara `mute` (la pista sigue "existiendo" en el
+        // transceiver, solo que sin datos). Sin este handler la tarjeta de
+        // pantalla se quedaba pegada con el último cuadro congelado, como si
+        // esa persona siguiera compartiendo para siempre. La cámara/mic NO
+        // entran acá a propósito: para esas dos, "muted" es un estado normal
+        // (cámara apagada, silenciado) que ya maneja el propio recuadro
+        // mostrando el avatar -- ahí sí tiene que seguir existiendo la
+        // tarjeta.
+        if (clave === 'videoPantalla' || clave === 'audioPantalla') {
+          ev.track.onmute = () => {
+            const vivo = pares.current.get(otroId)
+            if (!vivo) return
+            vivo.pistas.delete(clave)
+            rehacer()
+          }
         }
       }
 
@@ -503,14 +662,21 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const repartirVideo = useCallback(
     async (pista: MediaStreamTrack | null) => {
       for (const [otroId, { pc }] of pares.current) {
-        const hayQueRenegociar = abrirRanuraDeVideo(pc)
-        const ranura = ranuraDeVideo(pc)
+        const par = pares.current.get(otroId)
+        if (!par) continue
 
-        // La pista va en la ranura negociada y en ninguna otra. Si hay más de un
-        // transceiver de video, dejar la pista colgada en el que no está atado a
-        // una m-line es exactamente lo que producía `envío 0` mientras la ranura
-        // decía `sendrecv`: el video salía hacia un tubo que no existe.
-        for (const t of transceiversDeVideo(pc)) {
+        // Excluyendo el sender de pantalla en las tres llamadas: sin esto,
+        // tocar la cámara mientras se comparte pantalla confundía una ranura
+        // con la otra y podía terminar vaciando la pantalla compartida.
+        const hayQueRenegociar = abrirRanuraDeVideo(pc, par.senderVideoPantalla)
+        const ranura = ranuraDeVideo(pc, par.senderVideoPantalla)
+
+        // La pista va en la ranura de CÁMARA negociada y en ninguna otra. Si
+        // hay más de un transceiver de video, dejar la pista colgada en el
+        // que no está atado a una m-line es exactamente lo que producía
+        // `envío 0` mientras la ranura decía `sendrecv`: el video salía hacia
+        // un tubo que no existe.
+        for (const t of transceiversDeVideo(pc, par.senderVideoPantalla)) {
           const destino = t === ranura ? pista : null
           if (t.sender.track === destino) continue
           await t.sender.replaceTrack(destino).catch(() => {})
@@ -521,6 +687,83 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
         if (hayQueRenegociar && pc.signalingState === 'stable') {
           void ofrecer(otroId)
         }
+      }
+    },
+    [ofrecer],
+  )
+
+  /**
+   * Agregar o sacar el video Y el audio de la pantalla compartida juntos, en
+   * las conexiones que ya existían cuando se empieza o termina de compartir.
+   *
+   * Antes eran dos funciones separadas (`repartirVideoPantalla` y
+   * `repartirAudioPantalla`), cada una con su propio `addTrack` + "si está
+   * estable, ofrecer". Se llamaban una después de la otra desde
+   * `alternarPantalla`/`dejarDeCompartir` -- y ahí estaba la carrera real que
+   * dejaba el audio de pantalla mudo para siempre: la primera (`video`)
+   * dispara `createOffer()`, que es async y no cambia `signalingState` hasta
+   * que `setLocalDescription()` termina. En esa ventana, la segunda
+   * (`audio`) todavía ve `signalingState === 'stable'`, así que TAMBIÉN
+   * intenta ofrecer -- pero `ofrecer()` se descarta solo si ya hay una
+   * negociación en curso (`par.negociando`), que la primera llamada ya puso
+   * en `true` de forma síncrona. Resultado: el `addTrack` del audio sí pasa,
+   * pero llega tarde para la oferta que ya se estaba armando, y su propio
+   * intento de generar una oferta nueva se tira al piso en silencio. La
+   * pista de audio queda agregada a la conexión pero nunca viaja en ningún
+   * SDP -- confirmado en vivo: llegaba al otro lado como pista "viva" pero
+   * `muted: true` para siempre, mientras el video (que sí iba en la primera
+   * oferta) andaba bien.
+   *
+   * Ahora es UNA sola función que agrega/saca las dos pistas primero y
+   * renegocia una sola vez por conexión, así una única oferta cubre a las
+   * dos.
+   *
+   * A diferencia de la ranura de cámara, ninguna de las dos tiene una ranura
+   * reservada de antemano -- compartir pantalla (con o sin audio) es
+   * opcional y no vale la pena reservarle un lugar a algo que la mayoría de
+   * las veces no está. Si la renegociación falla, el peor caso es que no se
+   * vea/escuche la pantalla -- el micrófono y la cámara siguen andando
+   * igual, no es una falla que se propague.
+   */
+  const repartirPantalla = useCallback(
+    async (
+      pistaVideo: MediaStreamTrack | null,
+      pistaAudio: MediaStreamTrack | null,
+      stream: MediaStream | null,
+    ) => {
+      for (const [otroId, { pc }] of pares.current) {
+        const par = pares.current.get(otroId)
+        if (!par) continue
+
+        let hayCambio = false
+
+        if (pistaVideo && stream && !par.senderVideoPantalla) {
+          par.senderVideoPantalla = pc.addTrack(pistaVideo, stream)
+          hayCambio = true
+        } else if (!pistaVideo && par.senderVideoPantalla) {
+          try {
+            pc.removeTrack(par.senderVideoPantalla)
+          } catch {
+            // La conexión ya pudo haberse cerrado; no hay nada que sacar.
+          }
+          par.senderVideoPantalla = null
+          hayCambio = true
+        }
+
+        if (pistaAudio && stream && !par.senderAudioPantalla) {
+          par.senderAudioPantalla = pc.addTrack(pistaAudio, stream)
+          hayCambio = true
+        } else if (!pistaAudio && par.senderAudioPantalla) {
+          try {
+            pc.removeTrack(par.senderAudioPantalla)
+          } catch {
+            // La conexión ya pudo haberse cerrado; no hay nada que sacar.
+          }
+          par.senderAudioPantalla = null
+          hayCambio = true
+        }
+
+        if (hayCambio && pc.signalingState === 'stable') void ofrecer(otroId)
       }
     },
     [ofrecer],
@@ -543,7 +786,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       const par = pares.current.get(otroId)
       if (!par) return
 
-      if (!abrirRanuraDeVideo(par.pc)) {
+      if (!abrirRanuraDeVideo(par.pc, par.senderVideoPantalla)) {
         // Ya quedó bien: se olvidan los intentos, para que un problema futuro
         // vuelva a tener sus oportunidades.
         par.intentosRanura = 0
@@ -602,7 +845,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           // qué acepta este lado: si contesta con la dirección torcida que traía
           // de una negociación anterior, el pacto queda en `sendonly` para el
           // otro y su video no vuelve a entrar nunca.
-          abrirRanuraDeVideo(par.pc)
+          abrirRanuraDeVideo(par.pc, par.senderVideoPantalla)
 
           for (const c of par.pendientes) {
             await par.pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {})
@@ -680,6 +923,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
           return
         }
         local.current = stream
+        pistaMicCrudaRef.current = stream.getAudioTracks()[0] ?? null
         setStreamLocal(stream)
       } catch {
         if (vigente) setError('No se pudo usar el micrófono. Revisa los permisos del navegador.')
@@ -747,6 +991,24 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       for (const id of [...misPares.keys()]) cerrarPar(id)
       local.current?.getTracks().forEach((t) => t.stop())
       pantalla.current?.getTracks().forEach((t) => t.stop())
+      // Si la supresión de ruido estaba activa, `local.current` llevaba la
+      // pista PROCESADA, no la cruda -- pararla a ella no apaga el micrófono
+      // físico, solo el nodo de salida del grafo de audio. Sin esto, la luz
+      // del micrófono podía quedar encendida después de colgar.
+      pistaMicCrudaRef.current?.stop()
+      pistaMicCrudaRef.current = null
+      nodoRuidoRef.current?.destroy()
+      nodoRuidoRef.current = null
+      try {
+        fuenteRuidoRef.current?.disconnect()
+        destinoRuidoRef.current?.disconnect()
+      } catch {
+        // Ya desconectado.
+      }
+      fuenteRuidoRef.current = null
+      destinoRuidoRef.current = null
+      void ctxRuidoRef.current?.close()
+      ctxRuidoRef.current = null
       local.current = null
       pantalla.current = null
       setStreamLocal(null)
@@ -769,6 +1031,103 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     setMicro(pista.enabled)
     enviar({ tipo: 'estado', de: miIntegranteId, micro: pista.enabled, camara: camaraRef.current })
   }, [enviar, miIntegranteId])
+
+  /**
+   * Prender o apagar la supresión de ruido tipo Discord (RNNoise por WASM).
+   *
+   * Reemplaza la pista que se está enviando por su versión procesada (o al
+   * revés, para apagarla), en cada conexión abierta, con `replaceTrack` --
+   * como es audio por audio no hace falta renegociar nada, igual que al
+   * silenciar el micrófono.
+   *
+   * Si algo del pipeline falla (WASM no soportado, AudioWorklet bloqueado,
+   * lo que sea), se avisa con un toast y se sigue con el micrófono normal:
+   * esto nunca debe poder dejar a alguien sin micrófono.
+   */
+  const alternarSupresionRuido = useCallback(async () => {
+    const cruda = pistaMicCrudaRef.current
+    if (!cruda) return
+
+    if (ruidoSuprimido) {
+      for (const [, par] of pares.current) {
+        const sender = senderDeMicrofono(par.pc, par)
+        if (sender) await sender.replaceTrack(cruda).catch(() => {})
+      }
+      cruda.enabled = microRef.current
+      if (local.current) {
+        const vieja = local.current.getAudioTracks()[0]
+        if (vieja && vieja !== cruda) {
+          local.current.removeTrack(vieja)
+          local.current.addTrack(cruda)
+        }
+      }
+      nodoRuidoRef.current?.destroy()
+      nodoRuidoRef.current = null
+      try {
+        fuenteRuidoRef.current?.disconnect()
+        destinoRuidoRef.current?.disconnect()
+      } catch {
+        // Ya desconectado.
+      }
+      fuenteRuidoRef.current = null
+      destinoRuidoRef.current = null
+      void ctxRuidoRef.current?.close()
+      ctxRuidoRef.current = null
+      setRuidoSuprimido(false)
+      return
+    }
+
+    setCargandoSupresionRuido(true)
+    try {
+      // RNNoise asume 48kHz -- de ahí el sampleRate explícito, no vale confiar
+      // en el que traiga el dispositivo por defecto.
+      const { RnnoiseWorkletNode, loadRnnoise } = await import('@sapphi-red/web-noise-suppressor')
+      const ctx = new AudioContext({ sampleRate: 48000 })
+      await ctx.audioWorklet.addModule('/audio/rnnoise-worklet.js')
+      const wasmBinary = await loadRnnoise({
+        url: '/audio/rnnoise.wasm',
+        simdUrl: '/audio/rnnoise-simd.wasm',
+      })
+      const nodo = new RnnoiseWorkletNode(ctx, { wasmBinary, maxChannels: 1 })
+      const fuente = ctx.createMediaStreamSource(new MediaStream([cruda]))
+      const destino = ctx.createMediaStreamDestination()
+      fuente.connect(nodo)
+      nodo.connect(destino)
+
+      const procesada = destino.stream.getAudioTracks()[0]
+      if (!procesada) throw new Error('el nodo de salida no entregó ninguna pista')
+      procesada.enabled = microRef.current
+
+      ctxRuidoRef.current = ctx
+      nodoRuidoRef.current = nodo
+      fuenteRuidoRef.current = fuente
+      destinoRuidoRef.current = destino
+
+      for (const [, par] of pares.current) {
+        const sender = senderDeMicrofono(par.pc, par)
+        if (sender) await sender.replaceTrack(procesada).catch(() => {})
+      }
+      if (local.current) {
+        const vieja = local.current.getAudioTracks()[0]
+        if (vieja) local.current.removeTrack(vieja)
+        local.current.addTrack(procesada)
+      }
+      setRuidoSuprimido(true)
+    } catch (err) {
+      console.error('[llamada] no se pudo activar la supresión de ruido', err)
+      toast.error('No se pudo activar la supresión de ruido', {
+        description: 'Seguís con el micrófono normal.',
+      })
+      nodoRuidoRef.current?.destroy()
+      nodoRuidoRef.current = null
+      fuenteRuidoRef.current = null
+      destinoRuidoRef.current = null
+      void ctxRuidoRef.current?.close()
+      ctxRuidoRef.current = null
+    } finally {
+      setCargandoSupresionRuido(false)
+    }
+  }, [ruidoSuprimido])
 
   const alternarCamara = useCallback(async () => {
     const pista = local.current?.getVideoTracks()[0]
@@ -804,8 +1163,10 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   }, [aplicarCalidad, enviar, miIntegranteId, repartirVideo])
 
   /**
-   * Devuelve la cámara a su lugar con `replaceTrack`, que no obliga a renegociar.
-   * Volver a ofrecer acá cortaría el audio un instante.
+   * Saca la pantalla de las conexiones. Ya no toca la cámara para nada -- son
+   * pistas independientes desde que se abrieron como senders separados, así
+   * que dejar de compartir no le hace nada a lo que la cámara esté mandando
+   * (prendida o apagada, como estuviera).
    *
    * Va en su propia función y no dentro de `alternarPantalla` porque el botón
    * "Dejar de compartir" del navegador tiene que poder llamarla, y una función
@@ -814,17 +1175,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
   const dejarDeCompartir = useCallback(async () => {
     if (!pantalla.current) return
 
-    // Si la cámara está apagada esto pone null: la ranura queda vacía y el otro
-    // lado deja de recibir cuadros, que es lo correcto.
-    const camaraPista = local.current?.getVideoTracks()[0] ?? null
-    await repartirVideo(camaraPista)
+    await repartirPantalla(null, null, null)
     pantalla.current.getTracks().forEach((t) => t.stop())
     pantalla.current = null
     setStreamPantalla(null)
     setCompartiendo(false)
     aplicarCalidad()
     enviar({ tipo: 'pantalla', de: miIntegranteId, activa: false })
-  }, [aplicarCalidad, enviar, miIntegranteId, repartirVideo])
+  }, [aplicarCalidad, enviar, miIntegranteId, repartirPantalla])
 
   const alternarPantalla = useCallback(async () => {
     if (pantalla.current) {
@@ -833,15 +1191,46 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     }
 
     try {
+      // `audio: true` solo pide el permiso; el navegador decide si lo puede
+      // cumplir. Compartiendo una pestaña de Chrome con "Compartir audio de
+      // la pestaña" tildado, llega. Compartiendo una ventana o el escritorio
+      // entero, la mayoría de los navegadores no ofrecen esa opción y el
+      // stream simplemente no trae pista de audio -- no es un error, es
+      // audio: false silencioso, así que el resto del código lo trata como
+      // opcional en todo momento.
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 15 } },
-        audio: false,
+        /**
+         * Se probó `{ echoCancellation: true, noiseSuppression: true,
+         * autoGainControl: false }` acá para el eco (#159: quien comparte
+         * escuchaba su propia voz rebotada, porque el audio de sistema
+         * captura lo que sale por sus parlantes, incluida la llamada
+         * sonando ahí mismo). Rebotó en producción: en el equipo de
+         * Ignacio, la pista de audio de pantalla quedaba `muted: true` a
+         * nivel de WebRTC -- viva pero sin datos, silencio total del otro
+         * lado -- confirmado leyendo el estado real de la pista en la
+         * consola del navegador. echoCancellation/noiseSuppression están
+         * pensados para señal de MICRÓFONO; aplicados a una captura de
+         * audio de sistema, en algunos equipos degradan la señal a
+         * silencio en vez de solo cancelar el eco.
+         *
+         * Silencio total es peor que un eco ocasional -- se vuelve a
+         * `audio: true` a secas. El eco de #159 queda sin resolver (mitigar
+         * con auriculares mientras se comparte pantalla con audio).
+         */
+        audio: true,
       })
       const pista = stream.getVideoTracks()[0]
       pantalla.current = stream
       setStreamPantalla(stream)
 
-      await repartirVideo(pista)
+      // Video y audio (si vino) van juntos, en una sola renegociación por
+      // conexión -- ver el comentario de `repartirPantalla`. Pista de video
+      // aparte de la cámara: no toca su ranura para nada, si la cámara
+      // estaba prendida sigue mandando exactamente igual que antes de
+      // empezar a compartir.
+      const pistaAudio = stream.getAudioTracks()[0] ?? null
+      await repartirPantalla(pista, pistaAudio, stream)
 
       // El botón "Dejar de compartir" del navegador no pasa por nuestra UI: sin
       // este handler la app seguiría creyendo que se comparte.
@@ -853,7 +1242,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     } catch {
       // El usuario canceló el selector de ventana. No es un error que avisar.
     }
-  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirVideo])
+  }, [aplicarCalidad, dejarDeCompartir, enviar, miIntegranteId, repartirPantalla])
 
   /**
    * Cada dos segundos se pregunta a WebRTC cuántos paquetes de audio salieron y
@@ -869,6 +1258,7 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       const porPersona: DiagnosticoLlamada['porPersona'] = []
 
       for (const [otroId, { pc }] of pares.current) {
+        const par = pares.current.get(otroId)
         let enviados = 0
         let recibidos = 0
         let videoEnviado = 0
@@ -894,11 +1284,14 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
          * mucho que el otro transmita nunca va a llegar nada. Eso no se ve en
          * ningún otro lado y es invisible desde la interfaz.
          */
-        const trVideo = ranuraDeVideo(pc)
-        // Cuántas ranuras de video tiene la conexión. Más de una significa que la
-        // negociación dejó m-lines de sobra, y ahí es donde el video se va por un
-        // tubo que no está conectado a nada.
-        const ranuras = transceiversDeVideo(pc).length
+        // Sin contar la ranura de pantalla: con ella activa es NORMAL tener
+        // dos transceivers de video a la vez, no es el bug que este
+        // diagnóstico busca detectar.
+        const trVideo = ranuraDeVideo(pc, par?.senderVideoPantalla)
+        // Cuántas ranuras de CÁMARA tiene la conexión. Más de una significa que
+        // la negociación dejó m-lines de sobra, y ahí es donde el video se va
+        // por un tubo que no está conectado a nada.
+        const ranuras = transceiversDeVideo(pc, par?.senderVideoPantalla).length
 
         porPersona.push({
           id: otroId,
@@ -955,6 +1348,10 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
       await fetch(`/api/llamadas/${llamadaId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        // `keepalive` deja que el request termine aunque la pestaña se esté
+        // cerrando en ese mismo instante (ej. se dispara desde `pagehide`
+        // más abajo): sin esto el navegador puede abortarlo a mitad de vuelo.
+        keepalive: true,
         body: JSON.stringify({
           accion: 'salir',
           // El navegador es el unico que sabe por donde fue el trafico. Si esto
@@ -971,6 +1368,16 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     onTerminada?.()
   }, [llamadaId, onTerminada])
 
+  // OJO mobile: `pagehide` se dispara TANTO al cerrar la pestaña de verdad
+  // como al pasar la app a segundo plano (cambiar de app), y no hay forma
+  // confiable de distinguir un caso del otro solo con este evento -- iOS
+  // manda la misma señal para ambos. Adivinar con un timeout corta llamadas
+  // que siguen activas; por eso ya no colgamos automáticamente acá: la
+  // llamada sigue viva mientras el usuario esté en otra app y puede volver
+  // a escuchar/hablar sin cortes. Colgar de verdad queda a cargo de: (a) el
+  // botón de colgar, o (b) el barrido de zombis del servidor, para cuando
+  // alguien cierra la pestaña sin colgar y nunca vuelve.
+
   return {
     participantes,
     conexion,
@@ -982,9 +1389,12 @@ export function useLlamada({ llamadaId, miIntegranteId, conVideo, onTerminada }:
     compartiendo,
     error,
     hayTurn,
+    ruidoSuprimido,
+    cargandoSupresionRuido,
     alternarMicro,
     alternarCamara,
     alternarPantalla,
+    alternarSupresionRuido,
     colgar,
   }
 }

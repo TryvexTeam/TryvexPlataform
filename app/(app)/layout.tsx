@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { headers } from 'next/headers'
+import { after } from 'next/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Topbar } from '@/components/layout/topbar'
 import { BottomNav } from '@/components/layout/bottom-nav'
@@ -10,11 +12,23 @@ import { DynamicGlows } from '@/components/layout/dynamic-glows'
 import { AppShell } from '@/components/layout/app-shell'
 import { PermisosRepository, puede } from '@/lib/repos/permisos'
 import { ProveedorLlamadas } from '@/components/llamadas/proveedor-llamadas'
+import { FrenoJornada } from '@/components/jornada/freno-jornada'
+import { JornadasRepository } from '@/lib/repos/jornadas'
+import { BienvenidasRepository } from '@/lib/repos/bienvenidas'
+import { RedRepository } from '@/lib/repos/red'
+import { ipCliente } from '@/lib/net/ip-cliente'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
+
+  // El fusible de siempre: fuera de desarrollo, `bypass` es false y nada de lo
+  // de abajo se activa.
+  const bypass =
+    process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true'
+
   let user = null
-  if (process.env.BYPASS_AUTH === 'true') {
+  if (bypass) {
     user = { id: '1230b7c1-8086-4f14-b6b1-2afa9deb56ae', email: 'ignacio.andres.navarrete.silva@gmail.com' }
   } else {
     const res = await supabase.auth.getUser()
@@ -23,29 +37,68 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (!user) redirect('/login')
 
-  const { data: integrante } = await supabase
-    .from('dim_integrantes')
-    .select('id, nombre, email, avatar_url')
-    .eq('auth_user_id', user.id)
-    .single() as { data: { id: string; nombre: string; email: string; avatar_url: string | null } | null; error: unknown }
+  /*
+   * Con el atajo puesto, los datos se piden con el cliente de servicio.
+   *
+   * El usuario inventado no tiene sesión: `auth.uid()` es null y RLS niega
+   * `dim_integrantes`. El layout moría con "permission denied for table
+   * dim_integrantes" y con él se caía la app ENTERA — no la pantalla que uno
+   * quería mirar, toda. El middleware ya había previsto la mitad del problema
+   * (por eso no comprueba la fila del integrante, "comprobarlo convertiría el
+   * bypass en un candado"); faltaba esta otra mitad.
+   */
+  const datos = bypass ? createAdminClient() : supabase
 
-  // El equipo se carga acá y no en el chat porque una llamada entrante tiene que
-  // poder decir quién llama estando uno en leads, en finanzas o donde sea.
-  const { data: equipo } = await supabase
-    .from('dim_integrantes')
-    .select('id, nombre, avatar_url, color')
-    .eq('activo', true) as {
-      data: { id: string; nombre: string; avatar_url: string | null; color: string | null }[] | null
-      error: unknown
-    }
+  /*
+   * Dos consultas en paralelo, no cuatro en fila.
+   *
+   * Este layout se ejecuta en CADA navegación y en cada refresco automático, así
+   * que lo que tarde aquí lo paga toda la app. Antes pedía la fila del integrante
+   * y luego, por separado, sus permisos: la misma fila de `dim_integrantes` dos
+   * veces, con la segunda esperando a que terminara la primera. Ahora los
+   * permisos traen también el nombre, el correo y la foto, y el equipo se pide a
+   * la vez en lugar de después.
+   */
+  const [permisos, { data: equipo }] = await Promise.all([
+    new PermisosRepository(datos).misPermisos(user.id),
+    // El equipo se carga acá y no en el chat porque una llamada entrante tiene
+    // que poder decir quién llama estando uno en leads, en finanzas o donde sea.
+    datos
+      .from('dim_integrantes')
+      .select('id, nombre, avatar_url, color')
+      .eq('activo', true) as unknown as Promise<{
+        data: { id: string; nombre: string; avatar_url: string | null; color: string | null }[] | null
+      }>,
+  ])
 
-  const nombre = integrante?.nombre ?? user.email ?? 'Usuario'
-  const email = integrante?.email ?? user.email ?? ''
-  const avatarUrl = integrante?.avatar_url ?? null
+  const integrante = permisos
 
-  // Solo para decidir qué links mostrar en el menú. El candado real está en la RLS y
-  // en cada ruta: esconder un link no protege nada, solo evita ofrecer un callejón.
-  const permisos = await new PermisosRepository(supabase).misPermisos(user.id)
+  if (integrante && !bypass) {
+    const ip = ipCliente(await headers())
+    after(async () => {
+      // La IP se escribe con la clave de servicio y el id resuelto aquí, en el
+      // servidor: la RPC ya no es ejecutable por el rol del usuario (migración 121).
+      const resultados = await Promise.allSettled([
+        new BienvenidasRepository(datos).anunciarLlegada(integrante.id),
+        new RedRepository(createAdminClient() as unknown as SupabaseClient).registrarIpDe(integrante.id, ip),
+      ])
+      for (const resultado of resultados) {
+        if (resultado.status === 'rejected') console.error('[layout] tarea posterior falló:', resultado.reason)
+      }
+    })
+  }
+
+  // ¿Tiene jornada abierta? Decide si las secciones de trabajo piden marcar
+  // entrada. Va después de los permisos porque necesita el id del integrante,
+  // y se traga su propio error: sin este dato la app sigue, solo que sin freno
+  // — preferible a una pantalla en blanco por un fallo de una consulta.
+  const jornadaAbierta = permisos?.id
+    ? Boolean(await new JornadasRepository(datos).getAbierta(permisos.id).catch(() => null))
+    : true
+
+  const nombre = permisos?.nombre ?? user.email ?? 'Usuario'
+  const email = permisos?.email ?? user.email ?? ''
+  const avatarUrl = permisos?.avatar_url ?? null
 
   // Sin fila en dim_integrantes no hay a quién llamar ni quién llame: el resto de
   // la app sigue funcionando, solo que sin llamadas.
@@ -76,9 +129,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
           {/* Main content */}
           <div className="flex flex-col flex-1 min-w-0 relative z-10">
-            <Topbar nombre={nombre} email={email} avatarUrl={avatarUrl} />
+            <Topbar nombre={nombre} email={email} avatarUrl={avatarUrl} jornadaAbierta={jornadaAbierta} />
             <main className="flex-1 overflow-y-auto overflow-x-hidden pb-nav-movil md:pb-0 h-full">
-              <PageTransition>{children}</PageTransition>
+              <PageTransition>
+                <FrenoJornada jornadaAbierta={jornadaAbierta}>{children}</FrenoJornada>
+              </PageTransition>
             </main>
           </div>
       </AppShell>
@@ -87,7 +142,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   )
 
   return (
-    <AuthProvider>
+    <AuthProvider bypass={bypass}>
       <ThemeProvider>
         {integrante ? (
           <ProveedorLlamadas miIntegranteId={integrante.id} equipo={equipo ?? []}>

@@ -3,8 +3,37 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import type { Celda, DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
+import { AvatarIntegrante } from '@/components/shared/avatar-integrante'
 import { DIAS_SEMANA } from '@/lib/types/disponibilidad'
-import { hashColorHex, getInitials, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
+import { hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
+import { PanelCitasWeb, type ModoRejilla } from '@/components/equipo/panel-citas-web'
+
+/**
+ * Lado del avatar dentro de una celda de la rejilla.
+ *
+ * 18 px es el punto de equilibrio: por debajo la foto deja de distinguirse de
+ * una mancha, y por encima dejan de entrar en una columna de 80 px.
+ */
+const AVATAR_CELDA = 18
+
+/**
+ * Cuánto se monta cada avatar sobre el anterior: la mitad justa.
+ *
+ * Es lo que hace que quepan. En fila suelta, cinco personas ocupan 103 px y la
+ * columna mide 80; solapados a la mitad ocupan 54 y sobra sitio. El montaje
+ * además se lee como grupo — cinco discos separados parecen cinco cosas, y
+ * apilados parecen un equipo.
+ */
+const SOLAPE = Math.round(AVATAR_CELDA / 2)
+
+/**
+ * Cuántas caras se muestran antes de resumir el resto en un "+N".
+ *
+ * Con el solape entran seis en el ancho mínimo de columna, así que el corte
+ * casi nunca se alcanza: existe para que un equipo grande no rompa la celda,
+ * no como comportamiento de todos los días.
+ */
+const MAX_EN_CELDA = 6
 
 const HORA_MIN = 10
 // 26 = 2:00 del día siguiente; filas 24-25 representan 0:00-1:00 de la madrugada
@@ -24,6 +53,12 @@ export function DisponibilidadGrid() {
   const [data, setData] = useState<DisponibilidadIntegrante[] | null>(null)
   const [myCells, setMyCells] = useState<Set<string>>(new Set())
   const [savedCells, setSavedCells] = useState<Set<string>>(new Set())
+  const [publicCells, setPublicCells] = useState<Set<string>>(new Set())
+  const [savedPublic, setSavedPublic] = useState<Set<string>>(new Set())
+  const [recibeCitas, setRecibeCitas] = useState(false)
+  const [savedRecibeCitas, setSavedRecibeCitas] = useState(false)
+  const [visibleEnLanding, setVisibleEnLanding] = useState(false)
+  const [modo, setModo] = useState<ModoRejilla>('propia')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -48,6 +83,12 @@ export function DisponibilidadGrid() {
           const s = buildSet(own.celdas)
           setMyCells(s)
           setSavedCells(new Set(s))
+          const pub = buildSet(own.celdas.filter((c) => c.publica))
+          setPublicCells(pub)
+          setSavedPublic(new Set(pub))
+          setRecibeCitas(own.recibe_citas)
+          setSavedRecibeCitas(own.recibe_citas)
+          setVisibleEnLanding(own.visible_en_landing)
         }
       })
       .catch(() => {
@@ -68,13 +109,16 @@ export function DisponibilidadGrid() {
   }, [])
 
   // ---------- Derived ----------
-  const hasChanges = (() => {
-    if (myCells.size !== savedCells.size) return true
-    for (const k of myCells) {
-      if (!savedCells.has(k)) return true
-    }
-    return false
-  })()
+  const mismosSets = (a: Set<string>, b: Set<string>) => {
+    if (a.size !== b.size) return false
+    for (const k of a) if (!b.has(k)) return false
+    return true
+  }
+
+  const hasChanges =
+    !mismosSets(myCells, savedCells) ||
+    !mismosSets(publicCells, savedPublic) ||
+    recibeCitas !== savedRecibeCitas
 
   const totalMembers = data?.length ?? 0
 
@@ -100,27 +144,57 @@ export function DisponibilidadGrid() {
   // ---------- Handlers ----------
   const toggleCell = useCallback(
     (key: string) => {
+      if (modo === 'publica') {
+        setPublicCells((prev) => {
+          // Solo se puede ofrecer afuera una hora en la que uno está: marcar
+          // como pública una celda que no es propia publicaría una hora en la
+          // que no se atiende.
+          if (dragMode.current === 'add' && !myCells.has(key)) return prev
+          const next = new Set(prev)
+          if (dragMode.current === 'add') next.add(key)
+          else next.delete(key)
+          return next
+        })
+        return
+      }
+
       setMyCells((prev) => {
         const next = new Set(prev)
-        if (dragMode.current === 'add') {
-          next.add(key)
-        } else {
-          next.delete(key)
-        }
+        if (dragMode.current === 'add') next.add(key)
+        else next.delete(key)
         return next
       })
+
+      /* Dejar de estar disponible a una hora la retira también de las que se
+         ofrecen afuera: si no, quedaría publicada una hora que ya no se
+         trabaja y un visitante podría reservarla.
+
+         Va FUERA del updater de `myCells` y no dentro. Un updater tiene que
+         ser una función pura de su estado anterior — React puede llamarlo dos
+         veces en modo estricto, y un `setState` escondido ahí adentro se
+         ejecutaría dos veces. Acá los dos updates son hermanos, y React los
+         agrupa en un solo render igual. */
+      if (dragMode.current === 'remove') {
+        setPublicCells((prev) => {
+          if (!prev.has(key)) return prev
+          const next = new Set(prev)
+          next.delete(key)
+          return next
+        })
+      }
     },
-    [],
+    [modo, myCells],
   )
 
   const handleMouseDown = useCallback(
     (dia: number, hora: number) => {
       const key = celdaKey(dia, hora)
       isDragging.current = true
-      dragMode.current = myCells.has(key) ? 'remove' : 'add'
+      const yaMarcada = modo === 'publica' ? publicCells.has(key) : myCells.has(key)
+      dragMode.current = yaMarcada ? 'remove' : 'add'
       toggleCell(key)
     },
-    [myCells, toggleCell],
+    [modo, myCells, publicCells, toggleCell],
   )
 
   const handleMouseEnter = useCallback(
@@ -136,17 +210,19 @@ export function DisponibilidadGrid() {
     const celdas: Celda[] = []
     for (const k of myCells) {
       const [d, h] = k.split('-').map(Number)
-      celdas.push({ dia_semana: d, hora: h })
+      celdas.push({ dia_semana: d, hora: h, publica: publicCells.has(k) })
     }
     try {
       const res = await fetch('/api/disponibilidad', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ celdas }),
+        body: JSON.stringify({ celdas, recibe_citas: recibeCitas }),
       })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error ?? 'Error al guardar')
       setSavedCells(new Set(myCells))
+      setSavedPublic(new Set(publicCells))
+      setSavedRecibeCitas(recibeCitas)
       toast.success('Disponibilidad guardada')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Error al guardar'
@@ -185,6 +261,15 @@ export function DisponibilidadGrid() {
   // ---------- Render ----------
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <PanelCitasWeb
+        recibeCitas={recibeCitas}
+        onRecibeCitasChange={setRecibeCitas}
+        visibleEnLanding={visibleEnLanding}
+        horasOfrecidas={publicCells.size}
+        modo={modo}
+        onModoChange={setModo}
+      />
+
       {/* Legend */}
       <div
         style={{
@@ -194,6 +279,11 @@ export function DisponibilidadGrid() {
           gap: '8px',
         }}
       >
+        {/* La foto de perfil de cada uno, no un disco con iniciales sobre su
+            color: la cara identifica antes que cualquier código de color, y
+            las iniciales siguen ahí de respaldo dentro del propio avatar.
+            El color del integrante queda para las celdas de la rejilla, que es
+            donde de verdad hace falta distinguir de quién es cada banda. */}
         {data.map((m, mi) => {
           const color = m.color ?? MEMBER_PALETTE[mi % MEMBER_PALETTE.length] ?? hashColorHex(m.nombre)
           return (
@@ -202,74 +292,118 @@ export function DisponibilidadGrid() {
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '6px',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--tx-ink-primary)',
-                backgroundColor: 'rgba(255,255,255,0.06)',
-                padding: '4px 10px',
-                borderRadius: '100px',
-                border: `1.5px solid ${color}`,
+                gap: '8px',
+                fontSize: '12.5px',
+                fontWeight: 500,
+                color: m.es_propio ? 'var(--tx-ink-primary)' : 'var(--tx-ink-secondary)',
+                marginRight: '10px',
               }}
             >
-              <span
-                style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  backgroundColor: color,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: '#000',
-                  flexShrink: 0,
-                }}
-              >
-                {getInitials(m.nombre)}
-              </span>
-              {m.nombre}
+              <AvatarIntegrante
+                nombre={m.nombre}
+                avatarUrl={m.avatar_url}
+                color={color}
+                size={26}
+                destacado={m.es_propio}
+              />
+              {m.nombre.split(' ')[0]}
+              {m.es_propio && (
+                <span style={{ color: 'var(--tx-ink-muted)', fontSize: '11px' }}>tú</span>
+              )}
             </span>
           )
         })}
-        {/* "Todos disponibles" chip */}
+
+        {/* La clave de "todos disponibles" muestra el mismo relleno que usa la
+            rejilla, en vez de describirlo con un símbolo: así se reconoce en
+            la cuadrícula sin tener que traducir nada. Antes iba con un dingbat
+            (✦) haciendo de icono, que ni escala ni se recolorea. */}
         <span
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '6px',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: 'var(--tx-accent)',
-            backgroundColor: 'var(--tx-accent-subtle)',
-            padding: '4px 10px',
-            borderRadius: '100px',
-            border: '1.5px solid var(--tx-accent)',
+            gap: '8px',
+            fontSize: '12.5px',
+            fontWeight: 500,
+            color: 'var(--tx-ink-secondary)',
           }}
         >
-          ✦ Todos disponibles
+          <span
+            style={{
+              width: '22px',
+              height: '14px',
+              borderRadius: '5px',
+              background: 'var(--tx-accent-subtle)',
+              boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--tx-accent) 45%, transparent)',
+              flexShrink: 0,
+            }}
+          />
+          Todos disponibles
         </span>
+
+        {/* Solo cuando hay horas ofrecidas: una clave para algo que no está en
+            pantalla es ruido. */}
+        {publicCells.size > 0 && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12.5px',
+              fontWeight: 500,
+              color: 'var(--tx-ink-secondary)',
+            }}
+          >
+            <span
+              style={{
+                width: '22px',
+                height: '14px',
+                borderRadius: '5px',
+                background: 'color-mix(in srgb, var(--tx-accent) 22%, transparent)',
+                boxShadow: 'inset 0 0 0 1.5px var(--tx-accent)',
+                flexShrink: 0,
+              }}
+            />
+            Ofrecida en la web
+          </span>
+        )}
       </div>
 
       {/* Common window counter */}
+      {/* El número manda: es la respuesta a "¿cuándo podemos juntarnos?", que
+          es a lo que se entra a esta pantalla. Antes iba del mismo tamaño que
+          la leyenda de al lado y se perdía entre los nombres. */}
       <p
         style={{
           margin: 0,
-          fontSize: '13px',
-          fontWeight: 600,
-          color: 'var(--tx-ink-secondary)',
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: '9px',
         }}
       >
-        {commonCount} hora{commonCount !== 1 ? 's' : ''} comunes a la semana
+        <span
+          style={{
+            fontSize: '30px',
+            fontWeight: 600,
+            letterSpacing: '-0.04em',
+            lineHeight: 1,
+            color: commonCount > 0 ? 'var(--tx-ink-primary)' : 'var(--tx-ink-muted)',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {commonCount}
+        </span>
+        <span style={{ fontSize: '13px', color: 'var(--tx-ink-secondary)' }}>
+          {commonCount === 1 ? 'hora común a la semana' : 'horas comunes a la semana'}
+        </span>
       </p>
 
       {/* Grid wrapper */}
       <div
         style={{
           overflowX: 'auto',
-          borderRadius: '12px',
-          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.06)',
           background: 'rgba(255,255,255,0.02)',
         }}
       >
@@ -292,13 +426,15 @@ export function DisponibilidadGrid() {
             <div
               key={i}
               style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                color: 'var(--tx-ink-primary)',
+                fontSize: '11px',
+                fontWeight: 500,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: 'var(--tx-ink-muted)',
                 textAlign: 'center',
-                padding: '10px 4px',
-                borderBottom: '1px solid rgba(255,255,255,0.08)',
-                borderLeft: '1px solid rgba(255,255,255,0.05)',
+                padding: '12px 4px',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                borderLeft: '1px solid rgba(255,255,255,0.04)',
               }}
             >
               {dia}
@@ -311,9 +447,10 @@ export function DisponibilidadGrid() {
               {/* Hour label */}
               <div
                 style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
+                  fontSize: '10.5px',
+                  fontWeight: 500,
                   color: 'var(--tx-ink-muted)',
+                  fontVariantNumeric: 'tabular-nums',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'flex-end',
@@ -331,6 +468,12 @@ export function DisponibilidadGrid() {
                 const isCommon = commonSet.has(key)
                 const members = membersByCell.get(key) ?? []
                 const isOwn = myCells.has(key)
+                const isPublica = publicCells.has(key)
+                /* En modo "horas para citas" la rejilla baja el contraste de
+                   todo lo que no es propio: lo que se está decidiendo es sobre
+                   las horas de uno, y ver el resto igual de fuerte invita a
+                   pulsar celdas que ese modo no edita. */
+                const atenuada = modo === 'publica' && !isOwn
 
                 return (
                   <div
@@ -346,24 +489,45 @@ export function DisponibilidadGrid() {
                       borderLeft: '1px solid rgba(255,255,255,0.05)',
                       borderBottom: '1px solid rgba(255,255,255,0.05)',
                       cursor: 'pointer',
-                      transition: 'background 0.1s, box-shadow 0.1s',
-                      background: isCommon
-                        ? 'var(--tx-accent-subtle)'
-                        : isOwn
-                          ? 'rgba(255,255,255,0.05)'
-                          : 'transparent',
-                      boxShadow: isCommon
+                      transition: 'background 0.1s, box-shadow 0.1s, opacity 0.1s',
+                      opacity: atenuada ? 0.35 : 1,
+                      background: isPublica
+                        ? /* Las horas ofrecidas afuera se distinguen por
+                             RELLENO propio y no solo por un borde: en modo
+                             citas hay que poder barrerlas de un vistazo, y un
+                             borde se pierde entre las líneas de la rejilla. */
+                          'color-mix(in srgb, var(--tx-accent) 22%, transparent)'
+                        : isCommon
+                          ? 'var(--tx-accent-subtle)'
+                          : isOwn
+                            ? 'rgba(255,255,255,0.05)'
+                            : 'transparent',
+                      boxShadow: isPublica
                         ? 'inset 0 0 0 1.5px var(--tx-accent)'
-                        : 'none',
+                        : isCommon
+                          ? 'inset 0 0 0 1.5px var(--tx-accent)'
+                          : 'none',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '2px',
+                      gap: 0,
                       padding: '3px',
-                      flexWrap: 'wrap',
+                      /* Sin envolver: si una celda pasa a dos filas, esa fila
+                         de la rejilla crece y se desalinea de la regleta. */
+                      flexWrap: 'nowrap',
+                      overflow: 'hidden',
                     }}
                   >
-                    {members.map((m) => {
+                    {/* La cara de cada uno con un anillo de su color, en vez de
+                        un punto de color a secas: se ve QUIÉN puede a esa hora
+                        sin tener que memorizar qué color es cada persona.
+
+                        Solo caben MAX_EN_CELDA: la columna mide 80 px de ancho
+                        mínimo y el equipo puede ser de cinco, así que a partir
+                        de ahí el resto se resume en un "+N". Dejarlos envolver
+                        haría crecer la fila y la rejilla se desalinearía de la
+                        regleta de horas de la izquierda. */}
+                    {members.slice(0, MAX_EN_CELDA).map((m, idx) => {
                       const mi = data.findIndex((d2) => d2.integrante_id === m.integrante_id)
                       const color = (mi >= 0 ? data[mi].color : null)
                         ?? (mi >= 0 ? MEMBER_PALETTE[mi % MEMBER_PALETTE.length] : hashColorHex(m.nombre))
@@ -372,16 +536,55 @@ export function DisponibilidadGrid() {
                           key={m.integrante_id}
                           title={m.nombre}
                           style={{
-                            width: '8px',
-                            height: '8px',
+                            /* El anillo va por `box-shadow` y no por `border`:
+                               un borde real sumaría al tamaño de la caja y
+                               descuadraría el solape, que se calcula sobre el
+                               lado del avatar. */
+                            boxShadow: `0 0 0 1.5px ${color}`,
                             borderRadius: '50%',
-                            backgroundColor: color,
                             flexShrink: 0,
-                            opacity: 0.9,
+                            lineHeight: 0,
+                            /* Fondo OPACO bajo cada avatar. El relleno del
+                               avatar es translúcido, y apilados se
+                               transparentaban entre sí: se veían las iniciales
+                               del de atrás cruzando la cara del de delante.
+                               `color-mix` contra el fondo del panel da el mismo
+                               tono que se veía antes, pero tapando. */
+                            background: `color-mix(in srgb, ${color} 16%, #15141a)`,
+                            marginLeft: idx === 0 ? 0 : `-${SOLAPE}px`,
+                            /* El primero queda encima y cada siguiente detrás.
+                               Al revés, la pila se leería de derecha a
+                               izquierda y el orden de la lista dejaría de
+                               coincidir con lo que se ve. */
+                            zIndex: MAX_EN_CELDA - idx,
+                            position: 'relative',
                           }}
-                        />
+                        >
+                          <AvatarIntegrante
+                            nombre={m.nombre}
+                            avatarUrl={data[mi]?.avatar_url ?? null}
+                            color={color}
+                            size={AVATAR_CELDA}
+                          />
+                        </span>
                       )
                     })}
+
+                    {members.length > MAX_EN_CELDA && (
+                      <span
+                        title={members.slice(MAX_EN_CELDA).map((m) => m.nombre).join(', ')}
+                        style={{
+                          fontSize: '9.5px',
+                          fontWeight: 500,
+                          color: 'var(--tx-ink-secondary)',
+                          fontVariantNumeric: 'tabular-nums',
+                          flexShrink: 0,
+                          marginLeft: '4px',
+                        }}
+                      >
+                        +{members.length - MAX_EN_CELDA}
+                      </span>
+                    )}
                   </div>
                 )
               })}

@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
+import { useHasMounted } from '@/lib/hooks/use-has-mounted'
+import { useIsNarrowViewport } from '@/lib/hooks/use-is-narrow-viewport'
 import {
-  Sun,
   LayoutDashboard,
   Users,
   Building2,
@@ -24,12 +25,12 @@ import {
   Wallet,
   ShieldCheck,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { TryvexLogo } from '@/components/shared/tryvex-logo'
 
 const MotionLink = motion.create(Link)
 
 const primaryNav = [
-  { href: '/hoy',                 label: 'Hoy',           icon: Sun,             count: null },
   { href: '/chat',                label: 'Chat',          icon: MessagesSquare,  count: null },
   { href: '/dashboard',           label: 'Dashboard',     icon: LayoutDashboard, count: null },
   { href: '/leads',               label: 'Leads',         icon: Users,           count: null },
@@ -110,7 +111,7 @@ function NavItem({
 }: {
   href: string
   label: string
-  icon: React.ElementType
+  icon: LucideIcon
   active: boolean
   count: number | null
   onNavigate?: () => void
@@ -144,27 +145,38 @@ export function Sidebar({
   esSuperadmin = false,
 }: SidebarProps) {
   const pathname = usePathname()
-  const [isCollapsed, setIsCollapsed] = useState(false)
+
+  // Mientras el usuario nunca haya tocado el botón de colapsar (`override`
+  // sigue en null, no hay nada guardado en localStorage todavía), el ancho
+  // real de la ventana manda: angosto colapsa solo, ancho expande solo — eso
+  // es lo que faltaba, la sidebar quedaba fija en expandida sin importar el
+  // tamaño de ventana. En cuanto el usuario lo toca una vez, su elección
+  // manda siempre, sin importar el ancho — igual que se comportaba antes.
+  //
+  // Lazy initializer: lee localStorage antes del primer render.
+  const [override, setOverride] = useState<boolean | null>(() => {
+    if (typeof window === 'undefined') return null
+    const guardado = localStorage.getItem('tryvex-sidebar-collapsed')
+    return guardado === null ? null : guardado === 'true'
+  })
+  const angosto = useIsNarrowViewport(1024)
 
   const itemsPrimarios = puedeVerFinanzas ? [...primaryNav, finanzasNav] : primaryNav
   const itemsSistema = esSuperadmin ? [...systemNav, accesosNav] : systemNav
 
-  useEffect(() => {
-    if (forceExpand) return
-    const stored = localStorage.getItem('tryvex-sidebar-collapsed')
-    if (stored !== null) {
-      setIsCollapsed(stored === 'true')
-    }
-  }, [forceExpand])
-
   const toggleCollapse = () => {
     if (forceExpand) return
-    const nextVal = !isCollapsed
-    setIsCollapsed(nextVal)
+    const nextVal = !(override ?? angosto)
+    setOverride(nextVal)
     localStorage.setItem('tryvex-sidebar-collapsed', String(nextVal))
   }
 
-  const collapsed = forceExpand ? false : isCollapsed
+  // El servidor no tiene `window` (ni localStorage ni ancho real), así que
+  // siempre renderiza expandido; hay que seguir mostrando expandido hasta
+  // que el cliente termine de hidratar, o React marca mismatch en este
+  // subárbol (mismo motivo que ya exigía este gate antes de este cambio).
+  const mounted = useHasMounted()
+  const collapsed = forceExpand ? false : mounted && (override ?? angosto)
 
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(href + '/')
@@ -197,7 +209,7 @@ export function Sidebar({
             whileTap={{ scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <Link href="/dashboard" className="outline-none">
+            <Link href="/dashboard" className="outline-none" aria-label="tryvex, ir al dashboard">
               <TryvexLogo variant="icon" theme="dark" iconSize={20} />
             </Link>
           </motion.div>
@@ -207,7 +219,7 @@ export function Sidebar({
             whileTap={{ scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <Link href="/dashboard" className="outline-none">
+            <Link href="/dashboard" className="outline-none" aria-label="tryvex, ir al dashboard">
               <TryvexLogo variant="full" theme="dark" iconSize={20} />
             </Link>
           </motion.div>

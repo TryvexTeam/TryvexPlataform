@@ -46,6 +46,9 @@ export const NotificacionesSchema = z.object({
   tarea_asignada: z.boolean().default(true),
   cita_invitado: z.boolean().default(true),
   llamada_entrante: z.boolean().default(true),
+  tareas_atrasadas: z.boolean().default(true),
+  jornada_cerrada: z.boolean().default(true),
+  bienvenida: z.boolean().default(true),
 })
 
 /**
@@ -95,12 +98,16 @@ export const CATEGORIAS_EQUIPO = ['core', 'engineering'] as const
 
 export const PerfilUpdateSchema = z.object({
   nombre: z.string().min(1, 'El nombre es requerido').optional(),
-  especialidad: z.string().nullable().optional(),
   telefono: TelefonoSchema.optional(),
   color: z.enum(COLORES_HEX).nullable().optional(),
   horario: z.array(HorarioDiaSchema).nullable().optional(),
   notificaciones: NotificacionesSchema.partial().nullable().optional(),
-  // Estos cinco solo alimentan la ficha pública en tryvex.tech (ver v_equipo_publico).
+  // Estos seis solo alimentan la ficha pública en tryvex.tech (ver v_equipo_publico).
+  // El campo de UI dice "Especialidad / rol" pero antes guardaba en `especialidad`
+  // (columna que nada más lee ni muestra en ningún lado) en vez de `rol_principal`
+  // (la que de verdad lee la vista pública) — por eso el "rol" nunca se
+  // actualizaba en tryvex.tech/team por más que se guardara en /settings.
+  rol_principal: z.string().nullable().optional(),
   bio_corta: z.string().max(160, 'Máximo 160 caracteres').nullable().optional(),
   bio: z.string().max(2000, 'Máximo 2000 caracteres').nullable().optional(),
   linkedin: UrlOpcionalSchema,
@@ -129,7 +136,9 @@ export type Integrante = {
    */
   foto_landing_url: string | null
   activo: boolean
+  /** @deprecated desde la migración 028 — usar es_superadmin. Se mantiene solo por compat de lectura. */
   es_admin: boolean
+  es_superadmin: boolean
   color: string | null
   telefono: string | null
   horario: HorarioDia[] | null
@@ -156,6 +165,9 @@ export const NOTIFICACIONES_LABELS: { key: keyof Notificaciones; label: string; 
   { key: 'tarea_asignada', label: 'Tarea asignada', descripcion: 'Cuando te asignan una tarea con fecha' },
   { key: 'cita_invitado', label: 'Citas', descripcion: 'Cuando te invitan a una cita o evento' },
   { key: 'llamada_entrante', label: 'Llamadas', descripcion: 'Cuando alguien del equipo te llama por la app' },
+  { key: 'tareas_atrasadas', label: 'Tareas atrasadas', descripcion: 'Una vez al día, si tienes tareas pasadas de fecha' },
+  { key: 'jornada_cerrada', label: 'Jornada cerrada sola', descripcion: 'Si olvidaste marcar salida y la cerramos por ti' },
+  { key: 'bienvenida', label: 'Nuevos integrantes', descripcion: 'Cuando alguien se une al equipo' },
 ]
 
 export const DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as const

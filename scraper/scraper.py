@@ -10,17 +10,22 @@ import asyncio
 import logging
 import random
 import re
+import urllib.parse
 import os
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from dotenv import load_dotenv
+import unicodedata
+
+import httpx
 from playwright.async_api import async_playwright, Page, BrowserContext
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 from supabase import create_client, Client
 
 from notificaciones import notificar
 from crm_map import a_crm, campos_update  # mapeo esquema viejo -> CRM de Tryvex
+from revisar_web import revisar_web  # que ofrece el sitio del lead, no solo si tiene uno
 
 # Alias para correr llamadas síncronas de Supabase sin bloquear el event loop
 _in_thread = asyncio.to_thread
@@ -37,6 +42,15 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+# Si el negocio ya tiene sitio web: descartarlo (True, como siempre) o
+# guardarlo igual (False). Se cambia desde el .env sin tocar codigo.
+DESCARTAR_CON_WEB = os.getenv("SCRAPER_DESCARTAR_CON_WEB", "true").strip().lower() \
+    not in ("false", "0", "no")
+
+# Contador de modulo: stats_global es un parametro de scrape_categoria y no
+# llega hasta extraer_negocio, asi que el descarte por web se cuenta aca.
+DESCARTES = {"con_web": 0}
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -89,6 +103,56 @@ def es_red_social(url: str) -> bool:
     return any(d in url.lower() for d in SOCIAL_DOMAINS)
 
 
+def slug_dominio(nombre: str) -> list[str]:
+    """Dominios candidatos derivados del nombre del negocio (ej. "Corte y
+    Estilo" -> "corteyestilo.cl", "corteyestilo.com").
+
+    Por que existe: Maps solo muestra el boton "Sitio web" si el dueño cargo
+    la URL en su ficha -- muchos negocios chilenos SI tienen sitio real y
+    nunca completaron ese campo, y hoy quedan marcados "tiene_web: false"
+    aunque no sea cierto. Esto prueba la variante mas obvia del nombre antes
+    de asumir que no tienen nada.
+
+    Nombres muy cortos o genericos (< 4 caracteres tras limpiar) se
+    descartan: un slug como "bar" o "sur" pega contra dominios reales que no
+    tienen nada que ver con el negocio, y ahi el falso positivo es peor que
+    no verificar nada.
+    """
+    base = unicodedata.normalize("NFKD", nombre.lower()).encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "", base)
+    if len(base) < 4:
+        return []
+    return [
+        f"https://{base}.cl",
+        f"https://www.{base}.cl",
+        f"https://{base}.com",
+        f"https://www.{base}.com",
+    ]
+
+
+async def buscar_web_por_nombre(nombre: str) -> Optional[str]:
+    """Prueba los dominios candidatos de `slug_dominio` con una peticion HTTP
+    real. Gratis (httpx ya es dependencia del cliente de Supabase, no se
+    agrega nada nuevo) y sin ninguna API de busqueda de por medio.
+
+    Limitacion conocida, a proposito no resuelta aca: bajo hit-rate (solo
+    encuentra el caso en que el dominio calza con el nombre del negocio) y no
+    distingue un sitio real de una pagina de dominio parqueado/en venta. Para
+    los casos que esto no atrapa (dominio sin relacion al nombre, o el unico
+    rastro esta en la bio de Instagram) hace falta una API de busqueda real
+    -- eso queda pendiente de una decision de costo del equipo.
+    """
+    async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
+        for candidato in slug_dominio(nombre):
+            try:
+                r = await client.get(candidato)
+                if r.status_code < 400:
+                    return candidato
+            except Exception:
+                continue
+    return None
+
+
 def extraer_redes_del_texto(texto: str) -> Optional[str]:
     patrones = [
         r"(?:https?://)?(?:www\.)?instagram\.com/[\w.@]+",
@@ -110,21 +174,75 @@ def calcular_score(
     info_texto: Optional[str],
     rating: Optional[float] = None,
     num_resenas: Optional[int] = None,
+    estado_web: Optional[str] = None,
 ) -> int:
+    """Que tan bueno es este lead, de 0 a 100.
+
+    🔴 Lo que media antes y por que estaba al reves (diagnostico del 15-sep):
+    sumaba +15 por tener nota bajo 4,0 y +10 por tener menos de 20 resenas. O
+    sea premiaba la MALA reputacion, con el razonamiento de "hay mas que
+    mejorar". En la practica ordenaba la cola al reves:
+
+        Madepan, sin ninguna huella digital        -> 10/10
+        Milano, fabricante con distribucion nacional -> 5/10
+        Pilar Adet, 4,8 con 294 resenas, cliente B2B -> 5/10
+
+    Un negocio con 4,8 y 294 resenas tiene clientes, tiene plata y le importa
+    su reputacion. Ese compra. Uno con 3,2 y 4 resenas puede que ni siga
+    abierto.
+
+    Ahora se mide lo que hace a un lead comprable:
+
+      - que se le pueda hablar (telefono, redes)
+      - que sea un negocio que funciona (buena nota CON volumen de resenas)
+      - que ya haya decidido invertir en su presencia y haya quedado a medias
+        (la web rota es la senal mas fuerte que tenemos)
+    """
     score = 0
+
+    # Poder contactarlo sigue siendo lo primero: sin canal no hay lead.
     if telefono:
-        score += 50
+        score += 40
     if redes:
-        score += 30
-    if info_texto and len(info_texto.strip()) > 10:
-        score += 20
-    # Rating bajo → oportunidad de mejora de reputación
-    if rating is not None and rating < 4.0:
         score += 15
-    # Pocas reseñas → oportunidad de marketing
-    if num_resenas is not None and num_resenas < 20:
-        score += 10
-    return score
+    if info_texto and len(info_texto.strip()) > 10:
+        score += 5
+
+    # Un negocio que funciona: buena nota, pero solo si hay volumen detras. Un
+    # 5,0 con una resena no dice nada -- y de hecho citarlo suena a burla.
+    if rating is not None and num_resenas is not None:
+        if rating >= 4.5 and num_resenas >= 100:
+            score += 25
+        elif rating >= 4.3 and num_resenas >= 40:
+            score += 18
+        elif rating >= 4.0 and num_resenas >= 20:
+            score += 10
+
+    # El VOLUMEN por si solo dice algo que la nota no: cuanta gente pasa por
+    # ahi. Un local con 2.556 resenas es un negocio establecido aunque su nota
+    # sea 4,1 — tiene clientes, tiene flujo y tiene con que pagar.
+    #
+    # Sin esto, Pizzeria Alleria (4,6 con 2.556) quedaba en el mismo escalon
+    # que un local con 20 resenas, y Le Cafe de la Vie (4,1 con 294) caia al
+    # fondo por no llegar al 4,3.
+    #
+    # ⚠️ Con un tope: arriba de ~3.000 resenas para un negocio de barrio la
+    # ficha suele estar mal categorizada y las resenas son de otra cosa (la
+    # importadora del Persa Bio Bio mostraba 10.657, que son del persa entero).
+    if num_resenas is not None and (rating is None or rating >= 3.5):
+        if 150 <= num_resenas <= 3000:
+            score += 10
+        elif 40 <= num_resenas < 150:
+            score += 5
+
+    # ⭐ La senal mas fuerte: ya decidio que necesita presencia digital, puso
+    # plata y quedo a medias. Es el lead que mas rapido cierra.
+    if estado_web in ("en_obra", "staging"):
+        score += 20
+    elif estado_web in ("caida", "vacia"):
+        score += 15
+
+    return min(score, 100)
 
 
 async def delay() -> None:
@@ -134,7 +252,8 @@ async def delay() -> None:
 # ── Supabase: insertar o actualizar (async) — escribe en el ESQUEMA DEL CRM ────
 async def insertar_o_actualizar(supabase: Client, lead: dict) -> str:
     """
-    Verifica si el lead ya existe por (nombre_negocio, nicho) EN EL CRM.
+    Verifica si el lead ya existe EN EL CRM: primero por google_place_id
+    (la llave unica de la tabla) y, si no hay, por (nombre_negocio, nicho).
     - Si existe: refresca contacto/score, preserva estado/origen/notas (que el
       equipo pudo tocar a mano).
     - Si no existe: inserta como nuevo (estado 'sin_contactar', origen 'scraper').
@@ -145,17 +264,18 @@ async def insertar_o_actualizar(supabase: Client, lead: dict) -> str:
     """
     payload = a_crm(lead)  # esquema del CRM
 
-    # Se busca PRIMERO por el identificador de Google, que es lo unico que
-    # identifica al local de verdad. El emparejamiento por (nombre, nicho) crea
-    # una ficha por cada rubro en que aparezca el mismo negocio: "Salon Regias"
-    # llego a estar dos veces, como peluqueria y como centro de estetica, y al
-    # dueño le habrian llegado dos mensajes de Tryvex.
+    # 🔴 Primero por google_place_id, que es la llave UNICA en la base.
     #
-    # Borrar los duplicados a mano no alcanza: el 18-ago se borraron 9 y la
-    # corrida siguiente los recreo, porque el emparejamiento seguia mirando el
-    # nombre. El arreglo tiene que estar aca.
-    existing = None
+    # Se buscaba solo por (nombre, nicho), y la base rechazaba el insert con
+    # un 23505. Paso 68 veces sin que nadie lo mirara. El nombre no sirve para
+    # preguntar "¿ya lo tengo?" porque cambia: una tilde (Chile Psicologos /
+    # Chile Psicólogos), un emoji ("SDS Clinicas Dentales💎🇨🇱") o que el dueño
+    # le edite la ficha, y el negocio entra de nuevo o revienta.
+    #
+    # Lo peor no era el error en el log: esos negocios NUNCA se actualizaban.
+    # Un telefono nuevo o una web recien hecha no llegaba jamas a su ficha.
     place_id = payload.get("google_place_id")
+    existing = None
     if place_id:
         existing = await _in_thread(
             lambda: supabase.table("fact_leads")
@@ -164,9 +284,7 @@ async def insertar_o_actualizar(supabase: Client, lead: dict) -> str:
             .execute()
         )
 
-    # Sin identificador (o si ese negocio todavia no lo tiene guardado), se cae
-    # al emparejamiento viejo: las fichas anteriores a la migracion 049 lo
-    # tienen en NULL y hay que poder seguir actualizandolas.
+    # Sin place_id (o si no aparece), se cae al nombre como antes.
     if not (existing and existing.data):
         existing = await _in_thread(
             lambda: supabase.table("fact_leads")
@@ -258,6 +376,31 @@ async def obtener_hrefs_resultados(page: Page) -> list[tuple[str, str]]:
 
 
 # ── Extracción de datos por negocio ───────────────────────────────────────────
+def es_telefono_chileno(num: Optional[str]) -> bool:
+    """Si esto no parece un telefono chileno, no lo es.
+
+    Existe por los 75 leads que llegaron con el CODIGO POSTAL en el campo
+    telefono: "Av. Italia 1350, 7501451 Providencia" dejaba telefono=7501451.
+    El culpable es el tercer intento de extraer_telefono, que barre los
+    aria-label de los botones con un regex generico -- y el boton de copiar
+    direccion trae la direccion entera, codigo postal incluido.
+
+    Un codigo postal chileno son 7 digitos. Un telefono, 8 o mas:
+      movil     9 XXXX XXXX          -> 9 digitos
+      fijo      2 XXXX XXXX (Stgo)   -> 9 digitos
+      con pais  56 9 XXXX XXXX       -> 11 digitos
+    Por eso el corte esta en 8: deja pasar cualquier telefono real y frena
+    el codigo postal, que es lo unico de 7 que aparecia aca.
+    """
+    d = re.sub(r"\D", "", num or "")
+    if len(d) < 8:
+        return False
+    # 7 digitos con un prefijo pegado tampoco: 56 + codigo postal.
+    if d.startswith("56") and len(d) == 9:
+        return False
+    return True
+
+
 async def extraer_telefono(page: Page) -> Optional[str]:
     try:
         el = await page.query_selector('[data-item-id^="phone:tel:"]')
@@ -501,6 +644,37 @@ async def cerro_para_siempre(page: Page) -> bool:
     return False
 
 
+def limpiar_url(href: str) -> str:
+    """Se queda con la direccion y tira lo que el dueño pego al lado.
+
+    🔴 El campo "sitio web" de Maps lo escribe el dueño a mano, y a veces mete
+    mas de una cosa. Caso real del 16-sep, en la corrida de prueba:
+
+        http://www.vets.cl/%20,%20atencioncliente@vets.cl
+
+    Es el sitio, una coma y el correo, todo en el mismo campo. Guardado asi da
+    404 -- y el scraper lo leia como "su web esta caida" cuando vets.cl
+    responde 200. El sitio estaba sano; lo roto era nuestro dato.
+
+    Se corta en el primer espacio (venga literal o como %20) y en la coma, y
+    se descarta lo que quede si trae arroba.
+    """
+    u = (href or "").strip()
+    if not u:
+        return u
+    u = urllib.parse.unquote(u)
+    # Cualquier espacio en blanco corta: el resto es lo que el dueño pego al lado.
+    u = u.split()[0] if u.split() else ""
+    for sep in (",", ";"):
+        if sep in u:
+            u = u.split(sep, 1)[0]
+    u = u.strip().rstrip(",;")
+    # Si lo que queda es un correo, no es una web.
+    if "@" in u.split("/")[-1]:
+        u = u.rsplit("/", 1)[0]
+    return u.strip()
+
+
 async def extraer_negocio(page: Page) -> Optional[dict]:
     nombre: Optional[str] = None
     for selector in ["h1.DUwDvf", "h1[data-attrid]", "h1"]:
@@ -517,6 +691,7 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
         return None
 
     tiene_web = False
+    url_web: Optional[str] = None
     redes_desde_web: Optional[str] = None
     try:
         web_el = await page.query_selector('a[data-item-id="authority"]')
@@ -527,11 +702,63 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
                     redes_desde_web = href
                 else:
                     tiene_web = True
+                    url_web = limpiar_url(href)
     except Exception:
         pass
 
-    if tiene_web:
-        return None
+    # El filtro historico era "si tiene web, no es lead" — tenia sentido cuando
+    # lo unico que se vendia eran paginas. Hoy tambien se vende automatizacion,
+    # SaaS e IA aplicada, y para eso tener web es BUENA senal. Se deja
+    # configurable y se registra, porque antes se descartaba en silencio y
+    # nadie sabia cuantos de los ~580 descartes diarios eran por esto.
+    # 🔴 Y antes de descartar por tener web, hay que MIRAR esa web. Un dominio
+    # que responde 200 no es un negocio con sitio andando: puede decir "volvemos
+    # pronto", ser un staging olvidado o un dominio en venta.
+    #
+    # Ese es justo el mejor lead que existe y lo estabamos botando todos los
+    # dias: ya decidio que necesita web, ya puso plata, y quedo a medias. La
+    # venta no es "hagamos un sitio", es "terminemos lo que empezaste". Casos
+    # reales del diagnostico del 15-sep: Santo Pan ("en mantencion"), La Tienda
+    # de Ruben (tienda en wpcomstaging.com), Ivan Gonzalez (bucle de redirects,
+    # 16 s y 0 bytes).
+    revision = None
+    if tiene_web and url_web:
+        try:
+            revision = await revisar_web(url_web)
+        except Exception as e:
+            log.info(f"  no se pudo revisar la web de {nombre}: {type(e).__name__}")
+
+    if tiene_web and revision is not None and revision.es_oportunidad:
+        DESCARTES["web_a_medias"] = DESCARTES.get("web_a_medias", 0) + 1
+        log.info(f"  ⭐ LEAD BUENO (web {revision.estado}): {nombre} -> {url_web}")
+        # No se descarta: sigue de largo y se guarda con el hallazgo.
+    elif tiene_web:
+        DESCARTES["con_web"] += 1
+        log.info(f"  descartado (ya tiene web): {nombre} -> {url_web}")
+        if DESCARTAR_CON_WEB:
+            return None
+
+    # Maps solo muestra el sitio si el dueño cargó la URL en su ficha. Antes de
+    # asumir "no tiene web" se prueba el dominio obvio a partir del nombre
+    # (PR #211). Esto evita el caso reportado: escribirle a un negocio que SÍ
+    # tiene sitio, diciéndole que no tiene.
+    # 🔴 La web que sale de ADIVINAR el dominio NO es la web del negocio: es un
+    # dominio que se llama parecido. El 15-sep, "Opticas Premium" de Santiago
+    # quedo con opticaspremium.com, que es una empresa PERUANA. Lo mismo con
+    # Optica Morales, Optica San Cristobal, Restaurante Don Pepe (Peru) y
+    # Ferreteria Santa Rosa (Argentina). Vex le escribio a un chileno hablandole
+    # del negocio de otro.
+    #
+    # Por eso `tiene_web` queda en None (= "no sabemos") y no en True: se guarda
+    # la pista para que alguien la confirme, sin afirmarla. Confirmada de verdad
+    # es solo la que trae Maps en la ficha, que la cargo el dueño.
+    web_confirmada = tiene_web
+    if not tiene_web:
+        web_por_nombre = await buscar_web_por_nombre(nombre)
+        if web_por_nombre:
+            tiene_web = None
+            url_web = web_por_nombre
+            log.info(f"  posible web por nombre (SIN CONFIRMAR): {nombre} -> {web_por_nombre}")
 
     # Un negocio que cerro definitivamente no es un lead: escribirle es la peor
     # carta de presentacion posible. Se descarta antes de gastar tiempo en el.
@@ -540,6 +767,10 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
         return None
 
     telefono = await extraer_telefono(page)
+    # Un codigo postal no es un telefono. Ver es_telefono_chileno.
+    if telefono and not es_telefono_chileno(telefono):
+        log.info(f"telefono descartado por no parecerlo: {telefono!r}")
+        telefono = None
     info_texto = await extraer_info_texto(page)
     rating = await extraer_rating(page)
     num_resenas = await extraer_num_resenas(page)
@@ -555,6 +786,20 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
     except Exception:
         redes = redes_desde_web
 
+    # Si tiene sitio, se mira QUE ofrece. Saber que tiene web no alcanzo: a un
+    # lead con agenda online igual se le ofrecia "agenda de horas", y eso se lee
+    # tan mal como ofrecerle una pagina al que ya tiene una. Que falle no
+    # invalida el lead: queda sin el dato y el redactor lo trata como
+    # "no sabemos", que es lo honesto.
+    # Solo se revisa la web CONFIRMADA. Mirar lo que ofrece un sitio que quiza
+    # no es suyo es peor que no mirar nada: le terminamos diciendo "ya tienes
+    # agenda" por la agenda de otra empresa.
+    # La revision ya se hizo mas arriba, al decidir si se descartaba. Se
+    # reutiliza en vez de pedir la pagina dos veces.
+    web_capacidades = revision.como_dict() if (web_confirmada and revision is not None) else None
+    if web_capacidades and web_capacidades["capacidades"]:
+        log.info(f"  web de {nombre}: {', '.join(web_capacidades['capacidades'])}")
+
     return {
         "nombre": nombre,
         "google_place_id": id_de_google(page.url),
@@ -562,7 +807,9 @@ async def extraer_negocio(page: Page) -> Optional[dict]:
         "telefono": telefono,
         "info_texto": info_texto,
         "redes": redes,
-        "tiene_web": False,
+        "tiene_web": tiene_web,
+        "url_web": url_web,
+        "web_capacidades": web_capacidades,
         "rating": rating,
         "num_resenas": num_resenas,
         "direccion": direccion,
@@ -661,6 +908,9 @@ async def scrape_categoria(
                 datos["info_texto"],
                 datos.get("rating"),
                 datos.get("num_resenas"),
+                # El estado de su web pesa en el score: una a medio hacer es la
+                # senal mas fuerte de que ese negocio compra.
+                (datos.get("web_capacidades") or {}).get("estado"),
             )
 
             # ⚠️ Este dict se arma copiando campo por campo desde `datos`, asi
@@ -675,7 +925,14 @@ async def scrape_categoria(
                 "telefono": datos["telefono"],
                 "info_texto": datos["info_texto"],
                 "redes": datos["redes"],
-                "tiene_web": False,
+                "tiene_web": datos.get("tiene_web", False),
+                "url_web": datos.get("url_web"),
+                # Que ofrece su sitio y en que estado esta. Sin esta linea el
+                # scraper lo averigua, lo usa para el score, y lo pierde aca
+                # mismo -- que es exactamente lo que advierte el comentario de
+                # arriba y lo que paso en la primera corrida del 16-sep:
+                # Pasteleria Vienesa quedo guardada sin el hallazgo.
+                "web_capacidades": datos.get("web_capacidades"),
                 "nicho": categoria,
                 "score": score,
                 "estado": "nuevo",
@@ -883,6 +1140,7 @@ async def main() -> None:
     log.info(f"  Nuevos leads:    {resumen['nuevos_leads']}")
     log.info(f"  Actualizados:    {resumen['actualizados']}")
     log.info(f"  Descartados:     {resumen['descartados']}")
+    log.info(f"    ...de esos, ya tenian web: {DESCARTES['con_web']}")
     log.info(f"  Ya conocidos (salteados, no re-procesados): {resumen['saltados']}")
     log.info(f"  Duracion:        {duracion_min} min")
     log.info("=" * 60)

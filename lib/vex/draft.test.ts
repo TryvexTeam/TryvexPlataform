@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { generarDraftLead } from './draft'
+import { afirmacionesSinRespaldo, generarDraftLead, limpiarNombreParaSaludo } from './draft'
 import { CuotaAgotada } from './llm'
 
 // `tiene_web: null` a propósito en el lead base: "no sabemos" es el caso más
 // común de la cartera real y el que antes se convertía en un "No" inventado.
 const lead = { id: 'u1', nombre_negocio: 'Panadería San José', nicho: 'panadería',
   localidad: 'Maipú', score: 90, telefono: '987654321', redes_sociales: null,
-  tiene_web: null, info_texto: null, url_web: null,
+  tiene_web: null, info_texto: null, url_web: null, web_capacidades: null,
   google_rating: null, google_resenas: null, horario: null, instagram: null,
   categoria_google: null }
 
@@ -74,6 +74,89 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     const espia = llmEspia()
     await generarDraftLead({ ...lead, tiene_web: true }, undefined, espia.llm)
     expect(espia.prompt()).toMatch(/¿Tiene sitio web\?:\s*Sí/)
+  })
+
+  // El bug que esto cierra: pasarle el dato al modelo no alcanzaba. El catálogo
+  // del prompt incluye "Landing o sitio web — 1 a 2 semanas" y nada le prohibía
+  // ofrecerla, así que a Ópticas Premium (que tiene opticaspremium.com) le
+  // escribió "estás perdiendo clientes que no te encuentran. Podemos crear un
+  // sitio web". Había aviso para el caso "no sabemos" y ninguno para el "sí".
+  it('con web confirmada, le PROHIBE ofrecer una pagina y decir que no lo encuentran', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, tiene_web: true, url_web: 'https://opticaspremium.com' },
+      undefined,
+      espia.llm,
+    )
+    const p = espia.prompt()
+    expect(p).toContain('YA TIENE SITIO WEB')
+    expect(p).toContain('PROHIBIDO ofrecerle una pagina')
+    expect(p).toContain('opticaspremium.com')
+    // Y le dice por dónde sí: automatizar lo que ya tiene.
+    expect(p).toMatch(/deje de ser una vitrina/)
+  })
+
+  it('sin web, NO aparece la prohibicion (ahi si se le ofrece la pagina)', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, tiene_web: false }, undefined, espia.llm)
+    expect(espia.prompt()).not.toContain('YA TIENE SITIO WEB')
+  })
+
+  // Saber que tiene web no alcanzaba: a un lead cuya pagina YA tenia agenda y
+  // cotizaciones, el mensaje le ofrecio justo eso. Migracion 106 + revisar_web.py.
+  it('si su web ya tiene agenda, le prohibe ofrecerle agenda', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      {
+        ...lead,
+        tiene_web: true,
+        url_web: 'https://opticaspremium.com',
+        web_capacidades: {
+          url: 'https://opticaspremium.com',
+          revisada: true,
+          capacidades: ['reserva', 'cotiza'],
+        },
+      },
+      undefined,
+      espia.llm,
+    )
+    const p = espia.prompt()
+    expect(p).toContain('SU SITIO YA TIENE ESTO')
+    expect(p).toContain('reservar hora / agendar online')
+    expect(p).toContain('pedir cotización o presupuesto online')
+  })
+
+  it('si NO se pudo revisar la web, no afirma nada sobre lo que tiene', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      {
+        ...lead,
+        tiene_web: true,
+        web_capacidades: {
+          url: 'https://x.cl',
+          revisada: false,
+          capacidades: [],
+          error: 'ConnectTimeout',
+        },
+      },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).not.toContain('SU SITIO YA TIENE ESTO')
+  })
+
+  it('una web revisada sin capacidades tampoco inventa prohibiciones', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      {
+        ...lead,
+        tiene_web: true,
+        web_capacidades: { url: 'https://x.cl', revisada: true, capacidades: [] },
+      },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).not.toContain('SU SITIO YA TIENE ESTO')
   })
 
   it('sin web confirmado, se lo dice tal cual', async () => {
@@ -155,8 +238,11 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
       { direccion: 'in', texto: '   ' },
       { direccion: 'in', texto: 'hola' },
     ])
-    expect(espia.prompt()).toMatch(/El negocio: hola/)
-    expect(espia.prompt()).not.toMatch(/El negocio:\s*$/m)
+    // "El negocio: hola" ya no es literal desde que bloqueHistorial delimita
+    // cada turno del lead (fix de prompt injection, commit 2511830) — el
+    // mensaje real queda en la línea siguiente, entre los delimitadores.
+    expect(espia.prompt()).toMatch(/El negocio: <<<MENSAJE_DEL_LEAD>>>\s*\nhola/)
+    expect(espia.prompt()).not.toMatch(/El negocio: <<<MENSAJE_DEL_LEAD>>>\s*\n\s*\n/)
   })
 
   it('las estrellas y reseñas llegan explicadas, no crudas', async () => {
@@ -210,7 +296,7 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).toMatch(/1\. SALUDO/)
     expect(espia.prompt()).toMatch(/2\. QUIEN ERES/)
     expect(espia.prompt()).toMatch(/3\. LO QUE ESTA PERDIENDO/)
-    expect(espia.prompt()).toMatch(/4\. QUE LE ENTREGAMOS/)
+    expect(espia.prompt()).toMatch(/4\. LA PROPUESTA/)
     expect(espia.prompt()).toMatch(/5\. EL CIERRE/)
     expect(espia.prompt()).not.toMatch(/gancho\+CTA/)
   })
@@ -261,7 +347,9 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     await generarDraftLead(lead, undefined, espia.llm)
 
     expect(espia.prompt()).toMatch(/NO pidas una llamada, una reunion ni un horario/i)
-    expect(espia.prompt()).toMatch(/NO pongas ningun enlace todavia/i)
+    // El único enlace permitido es la firma; el de agendar sigue prohibido.
+    expect(espia.prompt()).toMatch(/UNICO enlace del primer mensaje es https:\/\/tryvex\.tech/)
+    expect(espia.prompt()).toMatch(/link de\s+agendar va DESPUES/i)
     expect(espia.prompt()).toMatch(/NO ofrezcas "una demo"/)
     expect(espia.prompt()).not.toMatch(/15 minutos/)
   })
@@ -290,7 +378,36 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     expect(espia.prompt()).toMatch(/Automatizacion/i)
     expect(espia.prompt()).toMatch(/Sistema a medida/i)
     expect(espia.prompt()).toMatch(/Inteligencia aplicada/i)
-    expect(espia.prompt()).toMatch(/elige.*lo que le sirve a ESTE negocio segun su/i)
+    expect(espia.prompt()).toMatch(/Que salga del catalogo de abajo y calce con su rubro/)
+  })
+
+  it('se presenta como Vex, con la dirección completa de Tryvex', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/Soy Vex, de https:\/\/tryvex\.tech/)
+    expect(espia.prompt()).not.toMatch(/Te escribimos de Tryvex/)
+  })
+
+  it('con el horario como único ángulo, pregunta la pérdida en vez de afirmarla', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/NO SABES si pierde clientes: no lo afirmes/)
+  })
+
+  it('las directivas del equipo llegan al final y mandan sobre lo anterior', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [], ['Este mes hay 20 % de descuento en landings.'])
+    const prompt = espia.prompt()
+    expect(prompt).toMatch(/Directivas vigentes del equipo de Tryvex \(mandan sobre todo lo anterior\)/)
+    expect(prompt).toMatch(/- Este mes hay 20 % de descuento en landings\./)
+    // Una promoción que no le sirve a este negocio no se nombra.
+    expect(prompt).toMatch(/una promocion que no le aplica no se nombra/i)
+  })
+
+  it('sin directivas, no aparece el bloque', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm, [], [])
+    expect(espia.prompt()).not.toMatch(/Directivas vigentes/)
   })
 
   it('la columna manda sobre el texto crudo', async () => {
@@ -299,19 +416,19 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
     // filas (era la calificación por diez).
     const espia = llmEspia()
     await generarDraftLead(
-      { ...lead, info_texto: '4,3\n(43)', google_rating: 4.3, google_resenas: 7885 },
+      { ...lead, info_texto: '4,3\n(43)', google_rating: 4.8, google_resenas: 256 },
       undefined,
       espia.llm,
     )
-    expect(espia.prompt()).toMatch(/4,3 estrellas con 7885 reseñas/)
+    expect(espia.prompt()).toMatch(/4,8 estrellas con 256 reseñas/)
     expect(espia.prompt()).not.toMatch(/con 43 reseñas/)
   })
 
   it('sin columna, todavía se apoya en el texto crudo', async () => {
     // Un lead recién traído por el scraper no tiene las columnas llenas.
     const espia = llmEspia()
-    await generarDraftLead({ ...lead, info_texto: '4,9\n(35)' }, undefined, espia.llm)
-    expect(espia.prompt()).toMatch(/4,9 estrellas con 35 reseñas/)
+    await generarDraftLead({ ...lead, info_texto: '4,9\n(45)' }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/4,9 estrellas con 45 reseñas/)
   })
 
   it('el Instagram entra como ángulo cuando existe', async () => {
@@ -424,5 +541,379 @@ describe('generarDraftLead: no afirma lo que no sabe', () => {
       espia.llm,
     )
     expect(espia.prompt()).toContain('Atiende solo con reserva')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// El filtro de salida: lo que el prompt pide y el modelo igual se salta.
+// ---------------------------------------------------------------------------
+describe('afirmacionesSinRespaldo', () => {
+  const sinSaber = { tiene_web: null, url_web: 'https://x.cl', google_rating: 4.8, google_resenas: 256, horario: null }
+  const conWeb = { tiene_web: true, url_web: 'https://x.cl', google_rating: 4.8, google_resenas: 256, horario: null }
+  const sinWeb = { tiene_web: false, url_web: null, google_rating: 4.8, google_resenas: 256, horario: null }
+
+  // Este es el mensaje REAL que Vex escribió para Ópticas Premium el 15-sep,
+  // con el prompt que ya le decía "no menciones su web, ni Google, ni que no
+  // aparece". Lo encontramos AHÍ, en Google, con sus 256 reseñas.
+  const mensajeReal =
+    'Hola, ¿hablo con Opticas Premium? Te escribimos de Tryvex. Veo que tienes 4,8 estrellas y 256 reseñas, ' +
+    'pero cuando alguien busca ópticas en Santiago no aparecen tus datos, así pierdes clientes que ya están ' +
+    'interesados. Podemos crear una página web de 1 a 2 semanas que muestre tus reseñas.'
+
+  it('atrapa el mensaje real que se coló', () => {
+    const m = afirmacionesSinRespaldo(mensajeReal, sinSaber)
+    expect(m.length).toBeGreaterThanOrEqual(3)
+    expect(m.join(' ')).toContain('no aparece')
+    expect(m.join(' ')).toContain('pierde clientes')
+    expect(m.join(' ')).toContain('página')
+  })
+
+  it('a quien YA tiene web, no le deja ofrecer una', () => {
+    const m = afirmacionesSinRespaldo('Podemos crearte un sitio web en dos semanas.', conWeb)
+    expect(m.join(' ')).toContain('ya tiene una')
+  })
+
+  it('a quien NO tiene web, ofrecerle una es correcto y pasa', () => {
+    expect(afirmacionesSinRespaldo('Podemos crearte un sitio web en dos semanas.', sinWeb)).toEqual([])
+  })
+
+  it('preguntar lo que no sabemos SÍ se puede', () => {
+    const texto = '¿Cómo llegan hoy tus clientes nuevos, te escriben o llaman?'
+    expect(afirmacionesSinRespaldo(texto, sinSaber)).toEqual([])
+  })
+
+  it('sin reputación en la ficha, no puede citar estrellas', () => {
+    const lead = { ...sinWeb, google_rating: null, google_resenas: null }
+    const m = afirmacionesSinRespaldo('Vi que tienes 4,8 estrellas.', lead)
+    expect(m.join(' ')).toContain('estrellas')
+  })
+
+  it('con reputación real, citarla no es problema', () => {
+    expect(afirmacionesSinRespaldo('Vi tus 256 reseñas con 4,8 estrellas.', sinWeb)).toEqual([])
+  })
+
+  it('sin horario, no puede afirmar a qué hora cierra', () => {
+    const m = afirmacionesSinRespaldo('Cuando cierras a las 7 nadie contesta.', sinWeb)
+    expect(m.join(' ')).toContain('horario')
+  })
+
+  it('un mensaje limpio no reporta nada', () => {
+    const texto =
+      'Hola, ¿hablo con Ópticas Premium? Te escribimos de Tryvex. Vi que tienen 256 reseñas con 4,8 estrellas. ' +
+      '¿Cuando alguien quiere una hora para examen de vista, cómo la piden hoy?'
+    expect(afirmacionesSinRespaldo(texto, sinSaber)).toEqual([])
+  })
+})
+
+describe('generarDraftLead: no entrega lo que no puede sostener', () => {
+  const malo =
+    'Veo que tienes 4,8 estrellas y 256 reseñas, pero cuando alguien busca ópticas en Santiago ' +
+    'no aparecen tus datos, así pierdes clientes. Podemos crear una página web.'
+  const bueno =
+    'Hola, ¿hablo con Ópticas Premium? Vi tus 256 reseñas con 4,8 estrellas. ' +
+    '¿Cómo pide hoy la gente su hora para examen de vista?'
+  const premium = { ...lead, tiene_web: null, url_web: 'https://opticaspremium.com',
+    google_rating: 4.8, google_resenas: 256 }
+
+  it('si insiste con la invención, NO entrega mensaje y avisa por qué', async () => {
+    const llm = async () => JSON.stringify({ whatsapp_text: malo })
+    const d = await generarDraftLead(premium, undefined, llm)
+    expect(d.whatsapp).toBeNull()
+    expect(d.aviso).toMatch(/no podemos sostener/i)
+    expect(d.aviso).toMatch(/no aparece/i)
+  })
+
+  it('le da una segunda oportunidad y acepta el mensaje corregido', async () => {
+    let n = 0
+    const llm = async () => {
+      n++
+      return JSON.stringify({ whatsapp_text: n === 1 ? malo : bueno })
+    }
+    const d = await generarDraftLead(premium, undefined, llm)
+    expect(n).toBe(2)
+    expect(d.aviso).toBeUndefined()
+    expect(d.whatsapp?.text).toContain('examen de vista')
+  })
+
+  it('en el reintento le dice al modelo qué estuvo mal', async () => {
+    const vistos: string[] = []
+    const llm = async (p: string) => {
+      vistos.push(p)
+      return JSON.stringify({ whatsapp_text: vistos.length === 1 ? malo : bueno })
+    }
+    await generarDraftLead(premium, undefined, llm)
+    expect(vistos[1]).toContain('EL MENSAJE ANTERIOR NO SIRVE')
+    expect(vistos[1]).toMatch(/PREGUNTAR lo que no sabes/i)
+  })
+
+  it('un mensaje limpio pasa a la primera, sin reintento', async () => {
+    let n = 0
+    const llm = async () => { n++; return JSON.stringify({ whatsapp_text: bueno }) }
+    const d = await generarDraftLead(premium, undefined, llm)
+    expect(n).toBe(1)
+    expect(d.whatsapp?.text).toBe(bueno)
+  })
+})
+
+// El segundo escape: el filtro enumeraba verbos y el modelo ofrecio la pagina
+// sin usar ninguno. Mensaje real del 15-sep, ya con el filtro puesto.
+describe('afirmacionesSinRespaldo: ofrecer una web sin decir "crear"', () => {
+  const sinSaber = { tiene_web: null, url_web: 'https://x.cl', google_rating: 4.8, google_resenas: 256, horario: null }
+  const conWeb = { tiene_web: true, url_web: 'https://x.cl', google_rating: 4.8, google_resenas: 256, horario: null }
+  const sinWeb = { tiene_web: false, url_web: null, google_rating: 4.8, google_resenas: 256, horario: null }
+
+  const escape =
+    'Hola 👋 ¿hablo con Opticas Premium? Somos Tryvex. Ayudamos a negocios como el tuyo a ' +
+    'conseguir más clientes con una página web lista en días. ¿Te muestro un ejemplo, sin compromiso?'
+
+  it('atrapa el mensaje que se colo por no usar el verbo', () => {
+    const m = afirmacionesSinRespaldo(escape, sinSaber)
+    expect(m.join(' ')).toContain('página web')
+  })
+
+  it('si no sabemos, NINGUNA mencion de pagina pasa', () => {
+    for (const t of [
+      'Te armamos un sitio web.',
+      'con una página web lista en días',
+      'una landing que convierta',
+      'tu sitio puede recibir reservas',
+    ]) {
+      expect(afirmacionesSinRespaldo(t, sinSaber).length).toBeGreaterThan(0)
+    }
+  })
+
+  it('si NO tiene web, ofrecersela sigue siendo correcto', () => {
+    expect(afirmacionesSinRespaldo(escape, sinWeb)).toEqual([])
+    expect(afirmacionesSinRespaldo('Te armamos una página web lista en días.', sinWeb)).toEqual([])
+  })
+
+  it('con web confirmada puede nombrarla, pero no ofrecersela', () => {
+    // Nombrarla para automatizar lo que ya tiene: correcto.
+    expect(afirmacionesSinRespaldo('Conectamos tu sitio con la agenda.', conWeb)).toEqual([])
+    // Ofrecersela como si le faltara: no.
+    expect(afirmacionesSinRespaldo(escape, conWeb).length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Reputación con piso: no toda nota es un logro que mostrarle al dueño.
+// Casos reales: Florería Costanera 3,3 (16), Farmacia La Rebaja 3,7 (20),
+// Centro Joyas 5,0 (1) — al dueño le suena a burla, no a elogio. Y una
+// importadora del Persa Bío Bío mostraba 10.657 reseñas porque su ficha de
+// Google está categorizada como el centro comercial entero, no como su local.
+// ---------------------------------------------------------------------------
+describe('reputación: solo se cita si pasa el umbral', () => {
+  it('una nota de 3,3 con 16 reseñas (Florería Costanera) no se cita', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 3.3, google_resenas: 16 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/3,3 estrellas/)
+    expect(espia.prompt()).toMatch(/NO menciones estrellas ni reseñas/i)
+  })
+
+  it('una nota de 3,7 con 20 reseñas (Farmacia La Rebaja) no se cita', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 3.7, google_resenas: 20 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/3,7 estrellas/)
+  })
+
+  it('un 5,0 con 1 sola reseña (Centro Joyas) no se cita: sobra nota, falta muestra', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 5.0, google_resenas: 1 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/estrellas con 1 reseñas?/)
+  })
+
+  it('10.657 reseñas (importadora del Persa Bío Bío) es sospechoso y no se cita', async () => {
+    // La ficha de Google de esta importadora quedó categorizada como el Persa
+    // Bío Bío entero: las reseñas son del centro comercial, no del negocio.
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 4.7, google_resenas: 10657 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/10657 reseñas/)
+    expect(espia.prompt()).toMatch(/NO menciones estrellas ni reseñas/i)
+  })
+
+  it('4,6 con 40 reseñas justo en el piso, sí se cita', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 4.6, google_resenas: 40 }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/4,6 estrellas con 40 reseñas/)
+  })
+
+  it('4,6 pero con solo 39 reseñas, no alcanza', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 4.6, google_resenas: 39 }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/4,6 estrellas/)
+  })
+
+  it('4,8 con 256 reseñas (dentro del umbral) sí se cita, como antes', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, google_rating: 4.8, google_resenas: 256 }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/4,8 estrellas con 256 reseñas/)
+  })
+
+  it('afirmacionesSinRespaldo también rechaza citar una nota baja aunque el dato exista', () => {
+    const florida = { tiene_web: false, url_web: null, google_rating: 3.3, google_resenas: 16, horario: null }
+    const m = afirmacionesSinRespaldo('Vi que tienes 3,3 estrellas.', florida)
+    expect(m.join(' ')).toContain('estrellas')
+  })
+
+  it('afirmacionesSinRespaldo rechaza citar reseñas sospechosamente altas', () => {
+    const persa = { tiene_web: false, url_web: null, google_rating: 4.7, google_resenas: 10657, horario: null }
+    const m = afirmacionesSinRespaldo('Vi tus 10657 reseñas.', persa)
+    expect(m.join(' ')).toContain('estrellas')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Usted para rubros profesionales: se le tuteaba igual a un abogado que a una
+// pizzería.
+// ---------------------------------------------------------------------------
+describe('trato de tú o de usted según el rubro', () => {
+  it('a un abogado se le trata de usted', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, nicho: 'abogados', categoria_google: null }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/Espanol de CHILE, de USTED/i)
+    expect(espia.prompt()).not.toMatch(/Espanol de CHILE, tuteo/i)
+  })
+
+  it('a un contador se le trata de usted, por categoria_google', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nicho: null, categoria_google: 'Contador auditor' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/de USTED/i)
+  })
+
+  it('a un químico farmacéutico se le trata de usted', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nicho: null, categoria_google: 'Químico farmacéutico' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/de USTED/i)
+  })
+
+  it('a una panadería (el lead base) se le sigue tuteando', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(lead, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/Espanol de CHILE, tuteo/i)
+  })
+
+  it('el voseo argentino sigue prohibido tanto de tú como de usted', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, nicho: 'abogados' }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/PROHIBIDO el voseo/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Limpiar el nombre de Google antes de saludar: "¿hablo con Miga S?" en vez de
+// "Pastelería Miga's", número de local, y razón social completa.
+// ---------------------------------------------------------------------------
+describe('limpiarNombreParaSaludo', () => {
+  it('saca "local 34" del saludo', () => {
+    expect(limpiarNombreParaSaludo('Peluquería Santiago Barbería, local 34'))
+      .not.toMatch(/local/i)
+  })
+
+  it('saca la razón social ("Limitada") del saludo', () => {
+    expect(limpiarNombreParaSaludo('Comercial Ferretería Lazaros Limitada'))
+      .not.toMatch(/limitada/i)
+  })
+
+  it('saca "Ltda" y "SpA"', () => {
+    expect(limpiarNombreParaSaludo('Panificadora Don José Ltda.')).not.toMatch(/ltda/i)
+    expect(limpiarNombreParaSaludo('Servicios Técnicos ABC SpA')).not.toMatch(/spa/i)
+  })
+
+  it('un nombre corto y normal no se toca', () => {
+    expect(limpiarNombreParaSaludo('Panadería San José')).toBe('Panadería San José')
+  })
+
+  it('un nombre con posesivo corto (Pastelería Miga\'s) se mantiene entero', () => {
+    // El caso real: "¿hablo con Miga S?" salió de tratar el nombre completo
+    // como si sobrara algo que recortar. Sin forma jurídica ni número de
+    // local ni más de 6 palabras, no hay nada que limpiar: se manda entero.
+    expect(limpiarNombreParaSaludo("Pastelería Miga's")).toBe("Pastelería Miga's")
+  })
+
+  it('un nombre larguísimo se recorta, no se manda entero', () => {
+    const largo = limpiarNombreParaSaludo(
+      'Peluqueria Santiago Barberia Unisex Corte Y Color Estilo Moderno'
+    )
+    expect(largo.split(' ').length).toBeLessThanOrEqual(4)
+  })
+
+  it('si al limpiar queda demasiado corto, se vuelve al original', () => {
+    // Un nombre real corto no debería quedar vacío ni reducido a nada por el
+    // limpiador de formas jurídicas.
+    expect(limpiarNombreParaSaludo('SA')).toBe('SA')
+  })
+
+  it('el prompt usa el nombre limpio para el saludo, no la razón social cruda', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, nombre_negocio: 'Comercial Ferretería Lazaros Limitada' },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/Nombre para el saludo.*Ferretería Lazaros/)
+    expect(espia.prompt()).not.toMatch(/Nombre para el saludo.*Limitada/)
+  })
+})
+
+// El revisor de webs ya sabia que 23 sitios estaban rotos o a medio hacer, y el
+// mensaje no lo usaba. Es el mejor gancho: suyo y comprobable.
+describe('generarDraftLead: el estado de su web como gancho', () => {
+  const web = (estado: 'en_obra' | 'viva' | 'caida') => ({
+    url: 'https://barberiagold.cl', revisada: true, capacidades: [], estado,
+  })
+
+  it('una web en obra es el angulo principal, y ya no le prohibe ofrecer terminarla', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, tiene_web: true, url_web: 'https://barberiagold.cl', web_capacidades: web('en_obra') },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).toMatch(/TU ANGULO PRINCIPAL PARA EL PUNTO 3/)
+    expect(espia.prompt()).toMatch(/en construccion cuando lo revisamos/)
+    expect(espia.prompt()).toContain('https://barberiagold.cl')
+    expect(espia.prompt()).not.toMatch(/ESTE NEGOCIO YA TIENE SITIO WEB/)
+  })
+
+  it('una web viva no da gancho: sigue la regla de "ya tiene web"', async () => {
+    const espia = llmEspia()
+    await generarDraftLead(
+      { ...lead, tiene_web: true, url_web: 'https://barberiagold.cl', web_capacidades: web('viva') },
+      undefined,
+      espia.llm,
+    )
+    expect(espia.prompt()).not.toMatch(/TU ANGULO PRINCIPAL/)
+    expect(espia.prompt()).toMatch(/ESTE NEGOCIO YA TIENE SITIO WEB/)
+  })
+
+  it('aunque la casilla diga "no sabemos", lo que vio el revisor manda', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, tiene_web: null, web_capacidades: web('caida') }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/no cargaba cuando lo revisamos/)
+    expect(espia.prompt()).not.toMatch(/NO SABEMOS si tiene sitio web/)
+  })
+})
+
+describe('generarDraftLead: la propuesta segun el rubro', () => {
+  it('una ferreteria recibe su oferta, y la prohibicion de ofrecer reservas', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, nicho: 'ferreterías', categoria_google: 'Ferretería' }, undefined, espia.llm)
+    expect(espia.prompt()).toMatch(/GUIA PARA EL PUNTO 4/)
+    expect(espia.prompt()).toMatch(/cotizaciones y consultas de stock/)
+    expect(espia.prompt()).toMatch(/NO le ofrezcas reservar hora/)
+  })
+
+  it('un rubro que no esta en la tabla no recibe guia inventada', async () => {
+    const espia = llmEspia()
+    await generarDraftLead({ ...lead, nicho: 'soluciones', categoria_google: null }, undefined, espia.llm)
+    expect(espia.prompt()).not.toMatch(/GUIA PARA EL PUNTO 4/)
   })
 })

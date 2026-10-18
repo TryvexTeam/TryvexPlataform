@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 export interface SuscripcionPushInput {
   integranteId: string
@@ -33,8 +34,12 @@ export class PushRepository {
     if (error) throw new Error(error.message)
   }
 
-  async eliminar(endpoint: string): Promise<void> {
-    const { error } = await this.sb.from('push_subscriptions').delete().eq('endpoint', endpoint)
+  async eliminar(endpoint: string, integranteId: string): Promise<void> {
+    const { error } = await this.sb
+      .from('push_subscriptions')
+      .delete()
+      .eq('endpoint', endpoint)
+      .eq('integrante_id', integranteId)
     if (error) throw new Error(error.message)
   }
 }

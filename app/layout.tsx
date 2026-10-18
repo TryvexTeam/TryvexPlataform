@@ -22,10 +22,10 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
   width: 'device-width',
   initialScale: 1,
-  // Se deja llegar hasta 5x a propósito. Bloquear el zoom arregla el síntoma y
-  // rompe la accesibilidad de quien necesita agrandar; el zoom molesto de iPhone
-  // no es este, es el automático al enfocar un campo de menos de 16px — y eso se
-  // corrige con el tamaño de fuente, no prohibiendo ampliar.
+  // Bloquear el zoom viola WCAG 1.4.4. El zoom-al-enfocar de iOS se evita con
+  // font-size >= 16px en los inputs (.search input, .field__input input,
+  // .tp__desc textarea y demás en globals.css bajo @media max-width: 768px),
+  // no capando el pinch-zoom.
   maximumScale: 5,
   userScalable: true,
   // El teclado achica el área visible en vez de tapar el contenido: sin esto, al

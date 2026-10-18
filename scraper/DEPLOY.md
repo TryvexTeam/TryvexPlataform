@@ -5,6 +5,44 @@ cerebro de Ariel y el bridge de WhatsApp de Spike). **Es temporal**: cuando el
 equipo destrabe una cuenta/infra propia, se muda ahí (misma lógica que el tablero
 neutral — no depender de una persona).
 
+## ⚠️ Pendiente de desplegar (26-ago-2026)
+
+Dos cambios ya están en `main` pero **todavía no están en el VPS** — el deploy
+es manual (ver "Actualizar el código" abajo), mergear en GitHub no los sube solos.
+Necesita acceso SSH al servidor, que hoy tiene Ariel — por eso queda anotado acá
+para que Cristian se lo pase.
+
+- **PR #211** — `scraper.py`: antes de marcar un negocio como "sin web", ahora
+  también prueba el dominio obvio a partir de su nombre (`slug_dominio` /
+  `buscar_web_por_nombre`, HTTP real vía `httpx`, sin ninguna API nueva).
+  Arregla el bug reportado: negocios que sí tenían web y el sistema decía que no,
+  porque Maps solo lo detecta si el dueño cargó la URL en su ficha.
+- **PR #214** — `auditar_leads_existentes.py` (archivo nuevo): revisa los leads
+  que YA están en la base marcados "sin web" contra ese mismo chequeo. Solo lee
+  y reporta, no modifica ningún lead — el equipo decide a mano qué hacer con lo
+  que encuentre.
+
+### Qué hacer, en orden
+
+1. Copiar los archivos nuevos al servidor:
+   ```
+   scp scraper.py crm_map.py auditar_leads_existentes.py root@179.197.224.95:/opt/scraper/
+   ssh root@179.197.224.95 'chown scraper:scraper /opt/scraper/*.py'
+   ```
+2. Auditar los leads que ya existen (solo lee, no modifica nada):
+   ```
+   ssh root@179.197.224.95
+   su scraper -c 'cd /opt/scraper && .venv/bin/python auditar_leads_existentes.py'
+   ```
+3. Probar el fix en vivo con una corrida chica — 5 barberías:
+   ```
+   su scraper -c 'cd /opt/scraper && .venv/bin/python scraper.py --nicho "barberías" --cantidad 5 --concurrencia 1'
+   ```
+   Buscar en el log la línea `descartado (web encontrada por nombre, no en Maps)`
+   — esa es la señal de que el fix está funcionando.
+
+Pedido de Adley, 26-ago-2026.
+
 ## Cómo está montado
 - **Usuario dedicado:** `scraper` (aislado; NO puede leer los secretos del cerebro
   de Ariel ni del bridge — cada servicio con su usuario).
@@ -31,7 +69,7 @@ su scraper -c 'cd /opt/scraper && .venv/bin/python scraper.py --nicho "barbería
 
 ## Actualizar el código
 ```
-scp scraper.py crm_map.py notificaciones.py root@179.197.224.95:/opt/scraper/
+scp scraper.py crm_map.py notificaciones.py auditar_leads_existentes.py root@179.197.224.95:/opt/scraper/
 ssh root@179.197.224.95 'chown scraper:scraper /opt/scraper/*.py'
 ```
 (Cuando el CRM tenga integración git/deploy, esto se automatiza.)

@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/server'
 import type {
   AsignacionConIntegrante,
@@ -5,8 +7,7 @@ import type {
   RolAsignacion,
 } from '@/lib/types/asignacion'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 /**
  * Asignación de leads y citas a integrantes.
@@ -16,6 +17,14 @@ type SB = any
  * Nadie entra a marcar "este lead es mío" antes de escribirle. Por eso la vía
  * principal es `autoAsignarPorContacto`, que se dispara sola al contactar.
  */
+/**
+ * Cuántos ids caben en un `.in()` por consulta.
+ *
+ * El filtro viaja en la URL, así que el límite real es el largo de la petición,
+ * no la base. Con 200 UUID la URL ronda los 7.400 caracteres.
+ */
+const LOTE_IDS = 200
+
 export class AsignacionesRepository {
   private sb: SB
 
@@ -53,16 +62,35 @@ export class AsignacionesRepository {
       .select('*', { count: 'exact', head: true })
       .eq('lead_id', leadId)
 
-    const rol: RolAsignacion = (count ?? 0) === 0 ? 'owner' : 'colaborador'
+    let rol: RolAsignacion = (count ?? 0) === 0 ? 'owner' : 'colaborador'
 
     const { error } = await this.sb
       .from('lead_asignaciones')
       .insert({ lead_id: leadId, integrante_id: integranteId, rol, asignado_por: integranteId })
 
-    // Carrera: dos personas escribiendo a la vez al mismo lead. La PK compuesta
-    // lo impide en la base; aquí se absorbe sin romper el envío del mensaje.
     if (error) {
-      if (error.code === '23505') return null
+      // Dos carreras posibles, mismo código 23505 pero distinto significado:
+      // - PK (lead_id, integrante_id): este integrante ya estaba asignado
+      //   (otro request paralelo lo insertó primero) — no hay nada que hacer.
+      // - unique parcial (lead_id) WHERE rol='owner' (migración 072): OTRO
+      //   integrante ganó la carrera por "owner" entre el SELECT count y este
+      //   INSERT. En ese caso el rol calculado era incorrecto — reintentar
+      //   como 'colaborador' en vez de devolver null, que dejaría a este
+      //   integrante sin ninguna fila y "silenciosamente" desasignado.
+      if (error.code === '23505') {
+        if (rol === 'owner') {
+          rol = 'colaborador'
+          const reintento = await this.sb
+            .from('lead_asignaciones')
+            .insert({ lead_id: leadId, integrante_id: integranteId, rol, asignado_por: integranteId })
+          if (reintento.error) {
+            if (reintento.error.code === '23505') return null
+            throw new Error(reintento.error.message)
+          }
+          return rol
+        }
+        return null
+      }
       throw new Error(error.message)
     }
 
@@ -110,7 +138,9 @@ export class AsignacionesRepository {
       .order('rol', { ascending: true })
 
     if (error) throw new Error(error.message)
-    return mapearAsignaciones(data)
+    // `rol` es TEXT con CHECK en la base, así que el tipo generado dice
+    // `string`. El CHECK garantiza el dominio; la conversión lo afirma acá.
+    return mapearAsignaciones(data as unknown as FilaAsignacion[])
   }
 
   /**
@@ -124,19 +154,38 @@ export class AsignacionesRepository {
   ): Promise<Record<string, AsignacionConIntegrante[]>> {
     if (leadIds.length === 0) return {}
 
-    const { data, error } = await this.sb
-      .from('lead_asignaciones')
-      .select(
-        'lead_id, integrante_id, rol, dim_integrantes!lead_asignaciones_integrante_id_fkey ( nombre, avatar_url, color )'
-      )
-      .in('lead_id', leadIds)
-
-    if (error) throw new Error(error.message)
-
     const porLead: Record<string, AsignacionConIntegrante[]> = {}
-    for (const fila of data ?? []) {
-      const lista = (porLead[fila.lead_id] ??= [])
-      lista.push(...mapearAsignaciones([fila]))
+
+    /*
+     * Por lotes, y no con un `.in()` de la lista entera.
+     *
+     * PostgREST manda el filtro en la URL: con 541 leads (que ya hay hoy) eso
+     * son ~20.000 caracteres, y el `fetch` del servidor de Next se quedaba
+     * colgado diez segundos y terminaba en "fetch failed" — la página de leads
+     * dejaba de cargar por completo. La consulta no era lenta: la URL era
+     * impracticable.
+     *
+     * 200 ids son unos 7.400 caracteres, con margen de sobra bajo cualquier
+     * límite razonable. Los lotes van EN SERIE y no en paralelo: son pocos y
+     * lanzarlos a la vez solo cambiaría un problema de tamaño por uno de
+     * concurrencia contra la base.
+     */
+    for (let i = 0; i < leadIds.length; i += LOTE_IDS) {
+      const lote = leadIds.slice(i, i + LOTE_IDS)
+
+      const { data, error } = await this.sb
+        .from('lead_asignaciones')
+        .select(
+          'lead_id, integrante_id, rol, dim_integrantes!lead_asignaciones_integrante_id_fkey ( nombre, avatar_url, color )'
+        )
+        .in('lead_id', lote)
+
+      if (error) throw new Error(error.message)
+
+      for (const fila of data ?? []) {
+        const lista = (porLead[fila.lead_id] ??= [])
+        lista.push(...mapearAsignaciones([fila as unknown as FilaAsignacion]))
+      }
     }
     // El owner primero: es el que se ve cuando el stack se recorta a "+N".
     for (const lista of Object.values(porLead)) {

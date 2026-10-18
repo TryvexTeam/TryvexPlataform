@@ -24,7 +24,24 @@ export function DynamicGlows() {
   const size = theme.glowMode === 'cinematic' ? 1.15 : 1
 
   return (
-    <>
+    /*
+      El envoltorio NO es decorativo: es lo que impide que los resplandores
+      arrastren la app entera.
+
+      El segundo glow lleva `bottom: -10%` a propósito —se derrama por la
+      esquina— y hasta ahora se derramaba fuera del marco de la app. Ese marco
+      tiene `overflow: hidden`, así que no aparecía barra de scroll, pero el
+      contenedor QUEDABA DESPLAZABLE POR DENTRO: 869 px de alto contra 956 de
+      contenido, los 87 px del 10% que sobresalía.
+
+      Bastaba con que algo pidiera verse —el chat bajando al último mensaje— para
+      que el navegador desplazara el marco 87 px y se llevara la cabecera fuera
+      de la vista. Cristian: «cuando quiero ver un chat se va para arriba».
+
+      Encerrándolos acá el derrame se recorta donde tiene que recortarse y el
+      marco deja de tener nada que desplazar. El efecto se ve igual.
+    */
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
       {/* Primary glow — top center-left */}
       <div
         aria-hidden
@@ -57,6 +74,6 @@ export function DynamicGlows() {
           }}
         />
       )}
-    </>
+    </div>
   )
 }

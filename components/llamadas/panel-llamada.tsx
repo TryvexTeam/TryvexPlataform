@@ -1,16 +1,26 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import {
   ActivityIcon,
   HeadphoneOffIcon,
   HeadphonesIcon,
+  Maximize2Icon,
   MessageSquareIcon,
   MicIcon,
   MicOffIcon,
   MonitorUpIcon,
   MonitorXIcon,
   PhoneOffIcon,
+  SparklesIcon,
   Volume2Icon,
   VolumeXIcon,
   ShieldAlertIcon,
@@ -19,9 +29,9 @@ import {
 } from 'lucide-react'
 import { MusicIcon } from 'lucide-react'
 import { AvatarChat } from '@/components/chat/avatar-chat'
-import { BotonEnLlamada } from './boton-en-llamada'
+import { PipLlamada } from './pip-llamada'
 import { ChatLlamada } from './chat-llamada'
-import { ReproductorMusica, type TamanoMusica } from './reproductor-musica'
+import { LADO_MINIMO, ReproductorMusica, type TamanoMusica } from './reproductor-musica'
 import { useGrillaVideo } from './use-grilla-video'
 import { useHablando } from './use-hablando'
 import { useMusica } from './use-musica'
@@ -47,6 +57,41 @@ interface PanelLlamadaProps {
 }
 
 /**
+ * La pantalla compartida de alguien es una tarjeta propia en la grilla, no
+ * parte de la suya -- así conviven con su cámara en vez de reemplazarla. El
+ * id sintético las distingue de la tarjeta real de esa persona en todos
+ * lados: destacar, hablar, volumen.
+ */
+const SUFIJO_PANTALLA = ':pantalla'
+const idPantalla = (integranteId: string) => `${integranteId}${SUFIJO_PANTALLA}`
+
+/**
+ * En desktop, chat y música conviven lado a lado (fix de `min-w-0` más
+ * abajo); en mobile no entran los tres a la vez, así que abrir uno cierra
+ * al otro -- los mismos botones de la botonera hacen de pestañas ahí, sin
+ * agregar una barra aparte que repita lo mismo. `768px` es el breakpoint
+ * `md` de Tailwind en este proyecto.
+ *
+ * `useSyncExternalStore` y no `useState`+`useEffect`: el lint del repo
+ * (`react-hooks/set-state-in-effect`) rechaza el `setState` síncrono
+ * dentro de un efecto que necesitaría ese patrón para la lectura inicial
+ * de `matchMedia`. El tercer argumento (`getServerSnapshot`) evita el
+ * error de hidratación SSR -- en el server no hay `window`, así que el
+ * primer render asume desktop (`false`) hasta que el cliente confirma.
+ */
+function useEsMobile() {
+  return useSyncExternalStore(
+    (avisar) => {
+      const mq = window.matchMedia('(max-width: 767px)')
+      mq.addEventListener('change', avisar)
+      return () => mq.removeEventListener('change', avisar)
+    },
+    () => window.matchMedia('(max-width: 767px)').matches,
+    () => false,
+  )
+}
+
+/**
  * La llamada en pantalla. Va sobre todo lo demás y no se desmonta al navegar:
  * uno entra a una llamada para hablar mientras mira un lead, no para quedarse
  * mirando la llamada.
@@ -63,6 +108,7 @@ export function PanelLlamada({
   const [minimizado, setMinimizado] = useState(false)
   const [chatAbierto, setChatAbierto] = useState(false)
   const [musicaAbierta, setMusicaAbierta] = useState(false)
+  const esMobile = useEsMobile()
   /**
    * Atenuación general de las voces, de 0 a 1. Multiplica al volumen por persona
    * en vez de reemplazarlo: se puede bajar a todos para escuchar la música y
@@ -86,8 +132,24 @@ export function PanelLlamada({
   // Callback ref por lo mismo que la grilla: minimizar y volver monta un ancla
   // nueva, y con un `useRef` el efecto que la mide no se enteraba.
   const [anclaMusica, setAnclaMusica] = useState<HTMLDivElement | null>(null)
-  /** Dónde está el hueco reservado, en coordenadas de viewport. */
-  const [huecoMusica, setHuecoMusica] = useState<DOMRect | null>(null)
+  /**
+   * Mismo mecanismo que `anclaMusica`, pero para el hueco que reserva la
+   * tarjeta minimizada (`PipLlamada`) cuando hay un video de música cargado.
+   * Antes, minimizado mostraba una cajita de música flotante APARTE de la
+   * tarjeta de la llamada -- dos cosas separadas. Con esto, el iframe se
+   * reparenta DENTRO de la misma tarjeta.
+   */
+  const [anclaPip, setAnclaPip] = useState<HTMLDivElement | null>(null)
+  /**
+   * El wrapper `position: fixed` del reproductor no se posiciona con estado
+   * de React (`style={{top, left, ...}}` desde un `useState`) -- eso deja un
+   * frame de rezago entre que la tarjeta minimizada se mueve y el video la
+   * alcanza, porque el arrastre de la tarjeta escribe el DOM directo (ver
+   * `pip-llamada.tsx`, `colocar`) y React re-renderiza en un ciclo aparte.
+   * Se posiciona con la misma técnica: escritura directa sobre el nodo, sin
+   * pasar por estado, así los dos se mueven en el mismo instante.
+   */
+  const reproductorFijoRef = useRef<HTMLDivElement>(null)
   /**
    * Ensordecer: dejar de oír a todos. Como en Discord, también apaga el propio
    * micrófono -- si uno no está escuchando, seguir transmitiendo es hablarle a
@@ -134,9 +196,12 @@ export function PanelLlamada({
     error,
     hayTurn,
     diagnostico,
+    ruidoSuprimido,
+    cargandoSupresionRuido,
     alternarMicro,
     alternarCamara,
     alternarPantalla,
+    alternarSupresionRuido,
     colgar,
   } = useLlamada({
     llamadaId,
@@ -147,6 +212,7 @@ export function PanelLlamada({
 
   const porId = new Map(personas.map((p) => [p.id, p]))
   const yo = porId.get(miIntegranteId)
+
 
   /**
    * Quiénes están en la llamada ahora mismo. De acá sale quién es el encargado
@@ -216,6 +282,25 @@ export function PanelLlamada({
   const musicaVisible = musicaAbierta || Boolean(musica.sala.video_id)
 
   /**
+   * En mobile no entran video, chat y música a la vez -- la fila pasa a columna
+   * y cada panel pedía su propia franja, dejando a la gente en un resto
+   * inservible. Con pestañas, en mobile se ve UN panel a la vez, a pantalla
+   * completa (bajo el header, sobre la botonera). Es solo de lectura: no hay
+   * estado propio, sale de `chatAbierto`/`musicaVisible` para no duplicar la
+   * fuente de verdad y desincronizarse de los botones que ya los controlan.
+   *
+   * Ojo: se deriva de `musicaAbierta` (el botón/pestaña "Música", la
+   * intención del usuario), NO de `musicaVisible` (que además incluye
+   * "está sonando aunque nadie pidió verla" -- ver más abajo). Si usara
+   * `musicaVisible`, la pestaña "Video" no serviría de nada mientras suena
+   * algo: `musicaAbierta` puede pasar a `false` con el botón, pero
+   * `musicaVisible` seguiría en `true` por el video sonando, y esta
+   * variable volvería a caer en 'musica' sin importar qué tocara el
+   * usuario.
+   */
+  const pestanaMobile: 'video' | 'chat' | 'musica' = chatAbierto ? 'chat' : musicaAbierta ? 'musica' : 'video'
+
+  /**
    * Seguir al hueco reservado para el panel de música.
    *
    * El reproductor se monta UNA vez y fuera de la vista, por la misma razón que
@@ -228,28 +313,96 @@ export function PanelLlamada({
    * entero: el hueco también se mueve cuando se abre el chat al lado o cuando
    * cambia el tamaño de la ventana, y eso no cambia el tamaño del ancla.
    */
+  /** Si hay un video cargado de verdad, no solo el panel de música abierto. */
+  const hayVideoMusica = Boolean(musica.sala.video_id)
+
+  /** Escribe la posición/tamaño directo en el nodo -- ver el comentario de `reproductorFijoRef`. */
+  const posicionarReproductor = useCallback((r: DOMRect | null) => {
+    const el = reproductorFijoRef.current
+    if (!el) return
+    if (r) {
+      el.style.top = `${r.top}px`
+      el.style.left = `${r.left}px`
+      el.style.width = `${r.width}px`
+      el.style.height = `${r.height}px`
+      el.style.right = 'auto'
+      el.style.bottom = 'auto'
+    } else {
+      // Sin ancla que seguir -- solo pasa minimizado y sin video cargado.
+      // Antes esto mostraba una miniatura de respaldo flotando sobre la
+      // tarjeta ("Nada sonando…"), pero esa es justo la caja separada que
+      // Vicho pidió sacar: sin video no hay audio sonando tampoco, así que
+      // no hace falta que quede visible en ningún lado -- los términos de
+      // la API exigen visibilidad mientras REPRODUCE, no en reposo. Se
+      // saca de pantalla en vez de ocultar con display:none, que si rompe
+      // los términos.
+      el.style.top = '-9999px'
+      el.style.left = '-9999px'
+      el.style.right = 'auto'
+      el.style.bottom = 'auto'
+      el.style.width = `${LADO_MINIMO}px`
+      el.style.height = `${LADO_MINIMO}px`
+    }
+  }, [])
+
+  /**
+   * Decide a qué ancla seguir según el estado actual y reposiciona. Minimizada
+   * sigue el ancla de la tarjeta (si hay video cargado, que es la única vez
+   * que la tarjeta la reserva) en vez de la del panel abierto, que ya no
+   * existe. Sin video de por medio, no hay ancla que seguir -- cae al
+   * recuadrito flotante de respaldo.
+   */
+  const reposicionarReproductor = useCallback(() => {
+    if (minimizado) {
+      posicionarReproductor(hayVideoMusica && anclaPip ? anclaPip.getBoundingClientRect() : null)
+    } else if (anclaMusica) {
+      posicionarReproductor(anclaMusica.getBoundingClientRect())
+    }
+  }, [minimizado, hayVideoMusica, anclaPip, anclaMusica, posicionarReproductor])
+
   useEffect(() => {
     if (!anclaMusica) return
 
-    const medir = () => setHuecoMusica(anclaMusica.getBoundingClientRect())
-    medir()
-
-    const observador = new ResizeObserver(medir)
+    reposicionarReproductor()
+    const observador = new ResizeObserver(reposicionarReproductor)
     observador.observe(anclaMusica)
     // También el padre: el hueco se corre cuando se abre el chat al lado, y eso
     // no cambia el tamaño del ancla, solo su posición.
     if (anclaMusica.parentElement) observador.observe(anclaMusica.parentElement)
-    window.addEventListener('resize', medir)
+    window.addEventListener('resize', reposicionarReproductor)
 
     return () => {
       observador.disconnect()
-      window.removeEventListener('resize', medir)
+      window.removeEventListener('resize', reposicionarReproductor)
     }
-  }, [anclaMusica])
+  }, [anclaMusica, reposicionarReproductor])
 
-  // Minimizada no hay hueco que seguir: se descarta al derivar y no reseteando el
-  // estado desde el efecto, que dejaría un render con la medida vieja.
-  const huecoVigente = minimizado ? null : huecoMusica
+  // Igual que el efecto de arriba, para el ancla de la tarjeta minimizada.
+  useEffect(() => {
+    if (!anclaPip) return
+
+    reposicionarReproductor()
+    const observador = new ResizeObserver(reposicionarReproductor)
+    observador.observe(anclaPip)
+    window.addEventListener('resize', reposicionarReproductor)
+
+    return () => {
+      observador.disconnect()
+      window.removeEventListener('resize', reposicionarReproductor)
+    }
+  }, [anclaPip, reposicionarReproductor])
+
+  // Minimizar/restaurar, o que cargue/termine un video mientras está
+  // minimizado, cambia a qué ancla hay que seguir -- sin esto, quedaba con
+  // la posición vieja hasta el próximo resize de ventana. `useLayoutEffect`
+  // y no `useEffect`: corre antes de pintar, así el primer render del
+  // reproductor (que no trae ningún `style` de React -- se maneja todo acá,
+  // a propósito, para que los efectos de arriba puedan escribirle encima
+  // sin que React se lo pise en el próximo render ajeno) no asoma un frame
+  // sin posición.
+  useLayoutEffect(() => {
+    reposicionarReproductor()
+  }, [reposicionarReproductor])
 
   const terminar = async () => {
     await colgar()
@@ -268,19 +421,43 @@ export function PanelLlamada({
   const recuadros: RecuadroProps[] = [
     {
       id: miIntegranteId,
-      // Si estoy compartiendo, mi recuadro muestra lo que comparto, no mi cara.
-      stream: streamPantalla ?? streamLocal,
+      // Ya no muestra la pantalla acá -- eso es una tarjeta aparte, más
+      // abajo. La cámara sigue mandando (si está prendida) aunque se esté
+      // compartiendo pantalla al mismo tiempo.
+      stream: streamLocal,
       nombre: yo?.nombre ? `${yo.nombre} (tú)` : 'Tú',
       avatarUrl: yo?.avatar_url ?? null,
       color: yo?.color ?? null,
       micro,
       camara,
-      compartiendo,
+      compartiendo: false,
       estado: 'conectado',
     },
-    ...participantes.map((p) => {
+    ...(streamPantalla
+      ? [
+          {
+            id: idPantalla(miIntegranteId),
+            stream: streamPantalla,
+            // El navegador decide si `getDisplayMedia({ audio: true })` trae
+            // pista de audio de verdad -- una pestaña con "Compartir audio"
+            // tildado sí, una ventana o el escritorio completo normalmente
+            // no. Sin este aviso, "no se escucha" parece un bug en vez de
+            // una limitación real de qué se está compartiendo.
+            nombre:
+              (yo?.nombre ? `Pantalla de ${yo.nombre}` : 'Tu pantalla') +
+              (streamPantalla.getAudioTracks().length === 0 ? ' (sin audio)' : ''),
+            avatarUrl: yo?.avatar_url ?? null,
+            color: yo?.color ?? null,
+            micro: true,
+            camara: false,
+            compartiendo: true,
+            estado: 'conectado' as const,
+          },
+        ]
+      : []),
+    ...participantes.flatMap((p) => {
       const persona = porId.get(p.integranteId)
-      return {
+      const propio = {
         id: p.integranteId,
         stream: p.stream,
         nombre: persona?.nombre ?? 'Alguien',
@@ -288,9 +465,26 @@ export function PanelLlamada({
         color: persona?.color ?? null,
         micro: p.micro,
         camara: p.camara,
-        compartiendo: p.compartiendo,
+        compartiendo: false,
         estado: p.estado,
       }
+      if (!p.streamPantalla) return [propio]
+      return [
+        propio,
+        {
+          id: idPantalla(p.integranteId),
+          stream: p.streamPantalla,
+          nombre:
+            `Pantalla de ${persona?.nombre ?? 'alguien'}` +
+            (p.streamAudioPantalla ? '' : ' (sin audio)'),
+          avatarUrl: persona?.avatar_url ?? null,
+          color: persona?.color ?? null,
+          micro: true,
+          camara: false,
+          compartiendo: true,
+          estado: p.estado,
+        },
+      ]
     }),
   ]
 
@@ -341,10 +535,16 @@ export function PanelLlamada({
    * cualquier otro recuadro deshace la elección, así que no se le impone nada a
    * quien prefiera la grilla.
    */
-  const compartiendoAhora = participantes.find((p) => p.compartiendo)?.integranteId ?? null
-  useEffect(() => {
-    if (compartiendoAhora) setDestacado(compartiendoAhora)
-  }, [compartiendoAhora])
+  const compartiendoAhora = participantes.find((p) => p.streamPantalla)?.integranteId ?? null
+  // Ajuste de estado durante el render (no en un efecto): comparar contra el
+  // valor anterior y llamar a setState de forma condicionada es el patrón que
+  // React recomienda para esto, evita el render en cascada extra de hacerlo
+  // en un efecto.
+  const [previoCompartiendoAhora, setPrevioCompartiendoAhora] = useState(compartiendoAhora)
+  if (compartiendoAhora !== previoCompartiendoAhora) {
+    setPrevioCompartiendoAhora(compartiendoAhora)
+    if (compartiendoAhora) setDestacado(idPantalla(compartiendoAhora))
+  }
 
   /**
    * El audio de la llamada, separado de los recuadros.
@@ -371,6 +571,33 @@ export function PanelLlamada({
           volumen={(volumenes.get(p.integranteId) ?? 1) * volumenVoces}
         />
       ))}
+
+      {/* El audio de la pantalla compartida (si el que comparte tildó
+          "Compartir audio también") va en su propio elemento -- viajó en una
+          pista de audio aparte, no mezclada con el micrófono, así que se
+          reproduce aparte también.
+          Se probó reproducirlo nativo desde el <video> de la tarjeta, sin
+          mutear, para que el control de volumen del navegador funcionara en
+          pantalla completa (ver PR #161). Rebotó en producción: un <video>
+          sin mutear con autoPlay cae bajo la política de autoplay del
+          navegador y no siempre suena del otro lado, y a quien comparte se
+          le duplicaba su propio audio (una vez real, en su equipo, y otra
+          rebotada acá). De vuelta a este camino, que sí funciona.
+          Perilla PROPIA, con la clave del id sintético de la tarjeta de
+          pantalla -- no la del participante. Así el volumen del video que
+          comparte no queda pegado al de su voz: se puede subir uno y bajar
+          el otro por separado, que es lo que se espera de dos cosas que
+          suenan distinto. */}
+      {participantes
+        .filter((p) => p.streamAudioPantalla)
+        .map((p) => (
+          <AudioRemoto
+            key={`${p.integranteId}-pantalla`}
+            stream={p.streamAudioPantalla}
+            mudo={ensordecido || silenciados.has(idPantalla(p.integranteId))}
+            volumen={(volumenes.get(idPantalla(p.integranteId)) ?? 1) * volumenVoces}
+          />
+        ))}
     </div>
   )
 
@@ -417,14 +644,40 @@ export function PanelLlamada({
         </button>
       </div>
     )
-  // Minimizado: una barra fina para volver. Sin esto, atender una llamada
-  // significa no poder usar el CRM, que es justo lo contrario de lo que se busca.
+  // Minimizado: el recuadro con imagen y controles, en cualquier página. Sin
+  // esto, atender una llamada significa no poder usar el CRM, que es justo lo
+  // contrario de lo que se busca.
+  //
+  // Reemplaza a la píldora de "En llamada" que había antes: se sigue pudiendo
+  // arrastrar y recuerda dónde se dejó, pero además deja ver a quién se está
+  // oyendo y silenciar o colgar sin restaurar la llamada entera.
   } else if (minimizado) {
     vista = (
-      <BotonEnLlamada
+      <PipLlamada
         onRestaurar={() => setMinimizado(false)}
+        participantes={participantes}
+        personas={porId}
+        quienesHablan={quienesHablan}
+        miIntegranteId={miIntegranteId}
+        micro={micro}
+        camara={camara}
         ensordecido={ensordecido}
-        participantesCount={participantes.length + 1}
+        streamLocal={streamLocal}
+        onAlternarMicro={alternarMicro}
+        onAlternarCamara={alternarCamara}
+        onAlternarEnsordecer={alternarEnsordecer}
+        onColgar={colgar}
+        streamPantallaPropia={streamPantalla}
+        hayMusica={hayVideoMusica}
+        onAnclaMusica={setAnclaPip}
+        // El ResizeObserver de arriba solo dispara con cambios de TAMAÑO del
+        // ancla; arrastrar la tarjeta la mueve sin cambiarle el tamaño, así
+        // que sin esto el video de música quedaba pegado en el sitio viejo
+        // mientras la tarjeta se arrastraba a otro lado. Llama directo a
+        // `reposicionarReproductor` (escritura en el DOM, no `setState`):
+        // pasar por React acá metía un frame de rezago entre que la tarjeta
+        // se movía (arrastre = DOM directo) y el video la alcanzaba.
+        onMovida={reposicionarReproductor}
       />
     )
   } else {
@@ -559,8 +812,27 @@ export function PanelLlamada({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-        <div className="flex-1 min-h-0 flex flex-col px-4 pb-4 gap-3">
+      {/* `min-w-0` en la fila y en el área de video: un `flex-1` sin esto no
+          se achica más allá del tamaño de su contenido (acá, la grilla de
+          recuadros/avatar centrado) -- con chat y/o música abiertos al
+          lado, el hueco de música (ancho fijo, `md:w-[320px]` más abajo)
+          terminaba empujado fuera de pantalla en vez de recibir el ancho
+          que le sobra al video. `min-h-0` ya estaba (mismo problema, eje
+          vertical) pero le faltaba el equivalente horizontal para
+          `md:flex-row`. */}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row md:min-w-0">
+        <div
+          // `|| musicaGrande`: el video de música "agrandado" (botón
+          // expandir del reproductor) reserva su hueco DENTRO de este div
+          // (más abajo, `musicaGrande && <div ref={setAnclaMusica} .../>`)
+          // -- si la pestaña activa en mobile no era "Video" cuando se
+          // agrandó (lo normal: se agranda desde la pestaña "Música"), este
+          // div quedaba `hidden`, el ancla medía 0x0, y el reproductor real
+          // (que sigue esa medición) se veía en pantalla negra. Confirmado
+          // con capturas de Vicho -- se corregía a medias reabriendo la
+          // música desde la botonera, que fuerza una remedición.
+          className={`${pestanaMobile === 'video' || musicaGrande ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 min-w-0 flex-col px-4 pb-4 gap-3`}
+        >
           {/* El video de YouTube agrandado. Ocupa el área principal y manda a la
               gente a la tira, igual que una pantalla compartida: si están viendo
               algo juntos, lo que importa es lo que se ve, no las caras. El
@@ -576,7 +848,14 @@ export function PanelLlamada({
                 {...enGrande}
                 grande
                 hablando={quienesHablan.has(enGrande.id)}
-                volumen={enGrande.id === miIntegranteId ? null : (volumenes.get(enGrande.id) ?? 1)}
+                // Sin perilla solo para las tarjetas propias -- no hay audio
+                // que controlar de uno mismo. Las de pantalla ajena SÍ tienen
+                // perilla (propia, separada de la voz): ver capaAudio.
+                volumen={
+                  enGrande.id === miIntegranteId || enGrande.id === idPantalla(miIntegranteId)
+                    ? null
+                    : (volumenes.get(enGrande.id) ?? 1)
+                }
                 silenciado={silenciados.has(enGrande.id)}
                 onSilenciar={() =>
                   setSilenciados((s) => {
@@ -618,7 +897,11 @@ export function PanelLlamada({
                 <Recuadro
                   {...r}
                   hablando={quienesHablan.has(r.id)}
-                  volumen={r.id === miIntegranteId ? null : (volumenes.get(r.id) ?? 1)}
+                  volumen={
+                    r.id === miIntegranteId || r.id === idPantalla(miIntegranteId)
+                      ? null
+                      : (volumenes.get(r.id) ?? 1)
+                  }
                   silenciado={silenciados.has(r.id)}
                   onSilenciar={() =>
                     setSilenciados((s) => {
@@ -652,19 +935,37 @@ export function PanelLlamada({
             se monta una sola vez fuera de esta vista y se posiciona encima de
             este ancla. Lo que hace este div es reservar el ancho, que es lo que
             corre los recuadros de la gente. */}
-        {/*
-          En escritorio el hueco va en el flujo y empuja: la grilla se achica y
-          los recuadros se reacomodan. En el teléfono no puede empujar -- apilado
-          bajo el video dejaba a la gente en una franja de nada. Ahí es una hoja
-          sobre la llamada, por encima del video y por debajo de la botonera, que
-          es lo que hacen Meet y Discord con el chat en móvil.
-        */}
+        {/* En escritorio el hueco va en el flujo y empuja: la grilla se achica
+            y los recuadros se reacomodan. En mobile, con la pestaña "Música"
+            activa, ocupa toda la fila igual que el chat -- lo reserva la
+            pestaña, no un tamaño fijo. Si NO está esa pestaña activa pero hay
+            música sonando (`musicaVisible` sin `musicaAbierta`, ver el
+            comentario de `pestanaMobile`), no puede desaparecer del todo --
+            los términos de la API de YouTube exigen que el reproductor quede
+            visible mientras reproduce -- así que queda como una miniatura fija
+            en la esquina, del tamaño mínimo que la API pide. */}
         {musicaVisible && !musicaGrande && (
           <div
             ref={setAnclaMusica}
-            className={`fixed inset-x-0 bottom-[84px] top-auto h-[58vh] md:static md:h-auto md:inset-auto md:shrink-0 w-full ${
-              musicaTamano === 'encogido' ? 'md:w-[224px]' : 'md:w-[320px]'
-            }`}
+            className={
+              pestanaMobile === 'musica'
+                ? `flex-1 min-h-0 w-full md:static md:h-auto md:inset-auto md:shrink-0 ${
+                    musicaTamano === 'encogido' ? 'md:w-[224px]' : 'md:w-[320px]'
+                  }`
+                // Ancho/alto en px literal (no `style`): un `style` inline
+                // pisaría también en desktop, donde `md:` sí tiene que ganar.
+                // 200 = `LADO_MINIMO` (reproductor-musica.tsx) -- Tailwind
+                // necesita el valor literal en el string de la clase, no
+                // puede interpolar la constante. Si `LADO_MINIMO` cambia,
+                // actualizar acá también.
+                // `bottom-[172px]`, no los `bottom-[92px]` de siempre: acá
+                // abajo puede haber además un cuadro de texto (el del chat,
+                // si esa es la pestaña activa) -- con el offset de la
+                // botonera nomás, la miniatura se lo tapaba.
+                : `fixed bottom-[172px] right-3 w-[200px] h-[200px] md:static md:bottom-auto md:right-auto md:h-auto md:flex-1 md:min-h-0 md:shrink-0 ${
+                    musicaTamano === 'encogido' ? 'md:w-[224px]' : 'md:w-[320px]'
+                  }`
+            }
             aria-hidden
           />
         )}
@@ -672,13 +973,38 @@ export function PanelLlamada({
 
       {/* Lo mismo abajo: sin `pb-safe`, colgar y silenciar quedan sobre la barra
           de gestos, donde el deslizamiento del sistema se lleva el toque. */}
-      <footer className="flex items-center justify-center gap-3 px-4 py-5 shrink-0 pb-safe">
+      <footer className="flex items-center justify-center gap-1.5 px-2 py-5 shrink-0 pb-safe md:gap-3 md:px-4">
         <Boton
           activo={micro}
           onClick={alternarMicro}
           etiqueta={micro ? 'Silenciar micrófono' : 'Activar micrófono'}
         >
           {micro ? <MicIcon className="size-5" /> : <MicOffIcon className="size-5" />}
+        </Boton>
+
+        {/* Supresión de ruido tipo Discord (RNNoise por WASM). Solo desktop:
+            corre un modelo entero por cada llamada y en un teléfono no vale
+            la pena el costo de CPU/batería -- mismo criterio que "compartir
+            pantalla", que tampoco existe ahí. */}
+        <Boton
+          activo={ruidoSuprimido}
+          onClick={() => void alternarSupresionRuido()}
+          etiqueta={
+            cargandoSupresionRuido
+              ? 'Activando supresión de ruido…'
+              : ruidoSuprimido
+                ? 'Apagar supresión de ruido'
+                : 'Suprimir ruido de fondo'
+          }
+          clase="hidden md:inline-flex"
+        >
+          {cargandoSupresionRuido ? (
+            <ActivityIcon className="size-5 animate-pulse" />
+          ) : ruidoSuprimido ? (
+            <SparklesIcon className="size-5" />
+          ) : (
+            <SparklesIcon className="size-5 opacity-60" />
+          )}
         </Boton>
 
         <Boton
@@ -701,7 +1027,16 @@ export function PanelLlamada({
 
         <Boton
           activo={chatAbierto}
-          onClick={() => setChatAbierto((v) => !v)}
+          onClick={() => {
+            // En mobile este mismo botón hace de pestaña: abrir chat cierra
+            // música (no entran los dos a la vez, ver `pestanaMobile`). En
+            // desktop no se toca música -- ahí conviven lado a lado.
+            setChatAbierto((v) => {
+              const siguiente = !v
+              if (esMobile && siguiente) setMusicaAbierta(false)
+              return siguiente
+            })
+          }}
           etiqueta={chatAbierto ? 'Cerrar el chat' : 'Abrir el chat'}
         >
           <MessageSquareIcon className="size-5" />
@@ -711,7 +1046,13 @@ export function PanelLlamada({
             misma pista en la misma posición. Ver la migración 039. */}
         <Boton
           activo={musicaVisible}
-          onClick={() => setMusicaAbierta((v) => !v)}
+          onClick={() => {
+            setMusicaAbierta((v) => {
+              const siguiente = !v
+              if (esMobile && siguiente) setChatAbierto(false)
+              return siguiente
+            })
+          }}
           etiqueta={musicaVisible ? 'Cerrar la música' : 'Abrir la música'}
         >
           <MusicIcon className="size-5" />
@@ -729,10 +1070,10 @@ export function PanelLlamada({
         <button
           onClick={terminar}
           aria-label="Colgar"
-          className="inline-flex size-14 items-center justify-center rounded-full transition-transform active:scale-95"
+          className="inline-flex size-12 md:size-14 items-center justify-center rounded-full transition-transform active:scale-95"
           style={{ background: 'oklch(55% 0.22 25)', color: 'white' }}
         >
-          <PhoneOffIcon className="size-6" />
+          <PhoneOffIcon className="size-5 md:size-6" />
         </button>
       </footer>
     </div>
@@ -751,21 +1092,19 @@ export function PanelLlamada({
 
       {musicaVisible && (
         <div
-          className="fixed z-[81]"
-          style={
-            huecoVigente
-              ? {
-                  top: huecoVigente.top,
-                  left: huecoVigente.left,
-                  width: huecoVigente.width,
-                  height: huecoVigente.height,
-                }
-              : // Con la llamada minimizada el hueco no existe, pero el reproductor
-                // tiene que seguir a la vista: apagarlo cortaría la música, y
-                // esconderlo rompe los términos de la API. Queda como miniatura
-                // sobre la píldora de "En llamada".
-                { bottom: 88, right: 12, width: 224, height: 300 }
-          }
+          ref={reproductorFijoRef}
+          // Minimizada, tiene que quedar POR DEBAJO de los controles propios
+          // de la tarjeta (z-[80] en pip-llamada.tsx) -- antes, con el mismo
+          // z-index de siempre, el video tapaba el botón de "volver" y el
+          // contador de gente en la llamada, que viven en esa misma tarjeta
+          // pero son un elemento de React totalmente aparte.
+          // Este wrapper vive fuera del árbol de `PipLlamada` -- es un
+          // `position: fixed` aparte que solo se posiciona ENCIMA de la
+          // tarjeta por coincidencia de coordenadas, nunca es su hijo real.
+          // El `overflow-hidden`/rounded de la tarjeta no lo alcanza, así
+          // que las esquinas de arriba del video se salían del marco
+          // redondeado de la tarjeta. Mismo radio acá, directo.
+          className={`fixed ${minimizado ? 'z-[79] rounded-t-[23px] overflow-hidden' : 'z-[81]'}`}
         >
           <ReproductorMusica
             musica={musica}
@@ -778,11 +1117,13 @@ export function PanelLlamada({
             }}
             volumenVoces={volumenVoces}
             onVolumenVoces={setVolumenVoces}
-            // Con la llamada minimizada solo cabe la miniatura, sin cola ni
-            // sliders: se fuerza encogido sin tocar la preferencia de la persona,
-            // que vuelve tal cual estaba al restaurar.
-            tamano={minimizado ? 'encogido' : musicaTamano}
+            tamano={musicaTamano}
             onTamano={setMusicaTamano}
+            // Minimizada: solo el video, dentro de la tarjeta flotante --
+            // `tamano` no se toca, así que vuelve a verse tal cual estaba al
+            // restaurar (antes se forzaba a 'encogido', perdiendo la
+            // preferencia de la persona).
+            compacto={minimizado}
           />
         </div>
       )}
@@ -806,7 +1147,7 @@ function Boton({ activo, onClick, etiqueta, clase = '', children }: BotonProps) 
       aria-label={etiqueta}
       aria-pressed={activo}
       title={etiqueta}
-      className={`inline-flex size-14 items-center justify-center rounded-full transition-transform active:scale-95 ${clase}`}
+      className={`inline-flex size-12 md:size-14 items-center justify-center rounded-full transition-transform active:scale-95 ${clase}`}
       style={{
         background: activo ? 'oklch(100% 0 0 / 12%)' : 'oklch(100% 0 0 / 4%)',
         color: activo ? 'var(--tx-ink-primary)' : 'var(--tx-ink-muted)',
@@ -863,6 +1204,14 @@ function Recuadro({
   onClick,
 }: RecuadroProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  /**
+   * El contenedor entero entra en pantalla completa, no el `<video>` solo.
+   * La perilla de volumen vive como hermana del video, dentro de este mismo
+   * div -- si el fullscreen fuera sobre el `<video>`, el navegador solo
+   * muestra el subárbol de ESE elemento y la perilla (fuera de él) queda
+   * inalcanzable: aparecía "bloqueada" justo al entrar a pantalla completa.
+   */
+  const contenedorRef = useRef<HTMLDivElement>(null)
 
   // `srcObject` no se puede pasar como prop en JSX: es una referencia viva, no
   // una URL. Va por ref o el recuadro queda negro.
@@ -871,6 +1220,44 @@ function Recuadro({
     if (!el || el.srcObject === stream) return
     el.srcObject = stream
   }, [stream])
+
+  // Si esta tarjeta se desmonta (típicamente: la pantalla que mostraba dejó
+  // de compartir) mientras el navegador la tiene en pantalla completa,
+  // React se lleva el elemento pero el navegador se queda "atrapado" en modo
+  // fullscreen sobre un video que ya no existe -- sin este chequeo, la
+  // única salida era Esc a mano.
+  useEffect(() => {
+    const el = contenedorRef.current
+    return () => {
+      if (document.fullscreenElement === el) {
+        void document.exitFullscreen().catch(() => {})
+      }
+    }
+  }, [])
+
+  /**
+   * Pantalla negra al entrar a pantalla completa en el navegador del
+   * teléfono (reportado por Vicho, no reproducible en este entorno --
+   * Playwright corre Chromium de escritorio, no el motor real de
+   * Safari/Chrome de un iPhone/Android). Causa probable: el fullscreen es
+   * sobre el CONTENEDOR, no sobre el `<video>` (ver el comentario de
+   * `contenedorRef` más arriba) -- en varios navegadores móviles, mover un
+   * `<video>` al "top layer" de fullscreen mueve su nodo en el árbol de
+   * render y el decoder pausa la reproducción sin que nada dispare un
+   * evento que lo avise; con `autoPlay` ya cumplido una vez, no hay
+   * reintento automático. Se vuelve a pedir `play()` explícito al entrar,
+   * que es el arreglo estándar para este patrón -- pendiente de que Vicho
+   * confirme en su teléfono, no se pudo verificar acá.
+   */
+  useEffect(() => {
+    const el = contenedorRef.current
+    if (!el) return
+    const alCambiar = () => {
+      if (document.fullscreenElement === el) videoRef.current?.play().catch(() => {})
+    }
+    document.addEventListener('fullscreenchange', alCambiar)
+    return () => document.removeEventListener('fullscreenchange', alCambiar)
+  }, [])
 
   /**
    * ¿Hay imagen que mostrar?
@@ -916,7 +1303,6 @@ function Recuadro({
     // pista ya venía destapada antes de montar, no habrá ningún evento después y
     // sin esto el recuadro se queda en el avatar para siempre. Es justo el bug
     // que este efecto arregla.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     revisar()
 
     pistaVideo.addEventListener('unmute', revisar)
@@ -953,6 +1339,7 @@ function Recuadro({
         }
       }}
       aria-label={onClick ? (grande ? `Volver a la grilla` : `Ver a ${nombre} en grande`) : undefined}
+      ref={contenedorRef}
       className={`relative overflow-hidden rounded-xl ${grande ? 'size-full' : 'size-full'} ${onClick ? 'cursor-pointer' : ''}`}
       style={{
         background: 'oklch(14% 0.004 240)',
@@ -983,6 +1370,26 @@ function Recuadro({
         {!micro && <MicOffIcon className="size-3.5 shrink-0 text-[oklch(75%_0.16_25)]" />}
         {compartiendo && <MonitorUpIcon className="size-3.5 shrink-0 text-[var(--tx-accent)]" />}
         <span className="flex-1 text-[12px] font-medium text-white truncate">{nombre}</span>
+
+        {/* Pantalla completa nativa del navegador, como en YouTube. Solo tiene
+            sentido en el recuadro destacado -- en la grilla el video ya es
+            chico a propósito. */}
+        {grande && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              contenedorRef.current?.requestFullscreen().catch(() => {
+                /* el navegador negó el pedido (ej. falta de gesto de usuario
+                   registrado); no hay nada que hacer salvo no romper el resto. */
+              })
+            }}
+            aria-label="Pantalla completa"
+            title="Pantalla completa"
+            className="shrink-0 p-1 text-white/70 hover:text-white"
+          >
+            <Maximize2Icon className="size-3.5" />
+          </button>
+        )}
 
         {/* Volumen de esta persona. El `stopPropagation` es necesario: sin él,
             tocar el control también destacaría el recuadro. */}
@@ -1114,6 +1521,15 @@ function AudioRemoto({
     const el = ref.current
     if (!el || el.srcObject === stream) return
     el.srcObject = stream
+    // `autoPlay` dispara al CARGAR el elemento, no cada vez que `srcObject`
+    // cambia después -- este elemento vive desde que arranca la llamada, así
+    // que cuando el audio de pantalla llega recién a mitad de la llamada (el
+    // caso normal: nadie comparte pantalla apenas entra), la reasignación de
+    // `srcObject` no siempre retoma la reproducción sola. El del micrófono
+    // nunca tropieza con esto porque existe desde el primer render. `.play()`
+    // explícito cubre el caso; si el navegador ya lo tenía andando, es un
+    // no-op inofensivo.
+    if (stream) void el.play().catch(() => {})
   }, [stream])
 
   /**

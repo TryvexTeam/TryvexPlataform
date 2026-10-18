@@ -57,6 +57,19 @@ function ClienteKanbanCard({
   return (
     <div
       onClick={() => !isDragging && onSelect(cliente.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        // Solo Enter, no Espacio: esta tarjeta vive dentro de un SortableCard
+        // (dnd-kit) cuyo wrapper ya usa Espacio para levantar el drag. Si acá
+        // también reaccionara a Espacio, el evento dispararía onSelect Y,
+        // al burbujear, el "recoger para arrastrar" del wrapper — dos
+        // acciones a la vez con la misma tecla.
+        if (e.key === 'Enter' && !isDragging) {
+          e.preventDefault()
+          onSelect(cliente.id)
+        }
+      }}
       className="rounded-[14px] p-3 cursor-pointer select-none"
       style={{
         background: isSelected

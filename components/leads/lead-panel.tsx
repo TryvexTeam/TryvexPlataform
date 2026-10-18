@@ -9,18 +9,30 @@ import {
   CheckSquare,
   MessageCircle,
   Phone,
+  PhoneCall,
+  PhoneOff,
   Globe,
   MapPin,
   Tag,
   Loader2,
   Trophy,
-  XCircle
+  XCircle,
+  Pencil,
+  StickyNote as StickyNoteIcon,
+  ExternalLink,
+  History,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Lead, Interaccion } from '@/lib/types/lead'
 import { RAZONES_PERDIDA } from '@/lib/types/lead'
+import type { LeadInsert } from '@/lib/types/lead'
+import { LeadForm } from './lead-form'
+import { NotaInterna } from './nota-interna'
 import { hashColorHex, getInitials, relativeTime } from '@/lib/utils/lead-utils'
 import { LeadChatWa } from './lead-chat-wa'
+import { LeadEscribirWhatsapp } from './lead-escribir-whatsapp'
+import { LeadHistorialManual } from './lead-historial-manual'
+import { LeadPitchModal } from './lead-pitch-modal'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 const estadoConfig: Record<Lead['estado'], { label: string; dot: string }> = {
@@ -38,6 +50,14 @@ const origenLabels: Record<Lead['origen'], string> = {
   manual:   'Manual',
   referido: 'Referido',
 }
+
+/** Pantalla completa en el teléfono: devolver el espacio de la Dynamic Island y la barra de gestos. */
+const MARGENES_SEGUROS = {
+  paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))',
+  paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+  paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+  paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+} as const
 
 interface LeadPanelProps {
   lead: Lead | null
@@ -79,30 +99,67 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   const [loading, setLoading] = useState(false)
   const [visible, setVisible] = useState(false)
   const [showRazones, setShowRazones] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   // El chat de WhatsApp se abre y cierra con el mismo boton, ahi mismo.
   // Arranca abierto si se llegó con `?chat=1`: es el atajo del botón "Abrir en
   // el chat" de los borradores de Vex. Aterrizar en la ficha y tener que buscar
   // el botón de WhatsApp haría que el atajo no sirviera de nada.
   const [chatAbierto, setChatAbierto] = useState(searchParams.get('chat') === '1')
+  const [pitchAbierto, setPitchAbierto] = useState(false)
+  // Escribir desde el WhatsApp propio (no depende del QR del equipo) y el
+  // historial anotado a mano de lo que se habla por ahí.
+  const [whatsappPropioAbierto, setWhatsappPropioAbierto] = useState(false)
+  const [historialAbierto, setHistorialAbierto] = useState(false)
+  const [historialVersion, setHistorialVersion] = useState(0)
+  // "Llamé" no abre un formulario: solo pregunta si contestó, para poder
+  // pintar el ícono de teléfono distinto en la tarjeta sin abrir la ficha.
+  const [showLlamada, setShowLlamada] = useState(false)
   const prevLeadId = useRef<string | null>(null)
 
-  // Fade transition when lead changes
+  // Fade transition when lead changes.
+  // El "ocultar" es un ajuste de estado durante el render (patrón
+  // recomendado por React al reaccionar a un cambio de identidad de prop):
+  // pasa en el mismo render en que cambia `lead.id`, sin setState síncrono
+  // dentro de un effect. El "mostrar de nuevo" sigue en un effect porque
+  // depende de un timer (sistema externo real).
+  const [renderedLeadId, setRenderedLeadId] = useState<string | null>(lead?.id ?? null)
+  if ((lead?.id ?? null) !== renderedLeadId) {
+    setRenderedLeadId(lead?.id ?? null)
+    setVisible(false)
+  }
+
+  // Los refs no se leen ni se escriben durante el render (`prevLeadId` es
+  // libro de estado del propio effect), así que ese seguimiento queda acá.
   useEffect(() => {
     if (!lead) {
-      setVisible(false)
       prevLeadId.current = null
       return
     }
-    if (lead.id !== prevLeadId.current) {
-      setVisible(false)
-      const t = setTimeout(() => {
-        setVisible(true)
-        prevLeadId.current = lead.id
-      }, 80)
-      return () => clearTimeout(t)
-    }
-    setVisible(true)
+    if (lead.id === prevLeadId.current) return
+    const t = setTimeout(() => {
+      setVisible(true)
+      prevLeadId.current = lead.id
+    }, 80)
+    return () => clearTimeout(t)
   }, [lead?.id])
+
+  /**
+   * Guarda los datos editados del lead.
+   *
+   * Existe porque el scraper se equivoca: un teléfono mal capturado deja el
+   * lead incontactable, y corregirlo tenía que pasar por otra pantalla.
+   */
+  const guardarEdicion = async (datos: LeadInsert) => {
+    if (!lead) return
+    const res = await fetch(`/api/leads/${lead.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    })
+    if (!res.ok) throw new Error('No se pudo guardar')
+    toast.success('Lead actualizado')
+    router.refresh()
+  }
 
   const updateEstado = async (payload: { estado: Lead['estado']; razon_perdida?: string }, successMsg: string) => {
     if (!lead) return
@@ -131,28 +188,57 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
   const markPerdido = (razon: string) =>
     updateEstado({ estado: 'perdido', razon_perdida: razon }, 'Lead marcado como perdido')
 
+  /**
+   * Registra la llamada en un clic, sin abrir el panel de "Registrar
+   * Contacto". El único dato que pide es si contestó — eso ya alcanza para
+   * mover el lead a "Contactado" (createInteraccion lo hace solo) y para
+   * pintar el ícono correcto en la tarjeta del tablero.
+   */
+  const registrarLlamada = async (respondio: boolean) => {
+    if (!lead) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/interacciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: lead.id, tipo: 'llamada', respondio }),
+      })
+      if (res.ok) {
+        toast.success(respondio ? 'Llamada registrada — contestó' : 'Llamada registrada — sin respuesta')
+        setShowLlamada(false)
+        router.refresh()
+      } else {
+        toast.error('No se pudo registrar la llamada')
+      }
+    } catch {
+      toast.error('Error de red al registrar la llamada')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const deleteLead = async () => {
     if (!lead) return
     // Toast destructivo — no confirm() nativo
-    toast('¿Eliminar este lead?', {
-      description: lead.nombre_negocio,
+    toast('¿Mandar este lead a la papelera?', {
+      description: `${lead.nombre_negocio} — se puede restaurar después`,
       action: {
-        label: 'Eliminar',
+        label: 'A la papelera',
         onClick: async () => {
           setLoading(true)
           try {
             const res = await fetch(`/api/leads/${lead.id}`, { method: 'DELETE' })
             if (res.ok) {
-              toast.success('Lead eliminado')
+              toast.success('Lead en la papelera', { description: 'Restaurable desde /leads/papelera' })
               const params = new URLSearchParams(window.location.search)
               params.delete('lead')
               router.replace(`/leads?${params.toString()}`)
               router.refresh()
             } else {
-              toast.error('Error al eliminar')
+              toast.error('No se pudo mover a la papelera')
             }
           } catch {
-            toast.error('Error de red al eliminar')
+            toast.error('Error de red al mover a la papelera')
           } finally {
             setLoading(false)
           }
@@ -235,27 +321,68 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           >
             <ArrowLeft size={16} />
           </button>
-          <button className="icon-btn" title="Eliminar lead" onClick={deleteLead} disabled={loading}>
-            <Trash2 size={16} />
+          {/* Editar estaba solo en la ficha completa, no aquí — y aquí es
+              donde se trabaja a diario. El scraper trae teléfonos y nombres
+              equivocados, y sin este botón un dato malo dejaba el lead
+              incontactable hasta que alguien lo abriera por otra ruta. */}
+          <button
+            className="icon-btn"
+            title="Editar datos del lead"
+            onClick={() => setEditOpen(true)}
+            disabled={loading}
+          >
+            <Pencil size={16} />
           </button>
         </div>
+
+        {/*
+         * Eliminar va FUERA del grupo, separado y con color de peligro.
+         *
+         * Estaba pegado a "editar" con 4 px de por medio y el mismo aspecto:
+         * dos botones idénticos, uno abre un formulario y el otro borra el
+         * lead para siempre. A esa distancia el error es cuestión de tiempo, y
+         * borrar no tiene deshacer.
+         *
+         * La separación y el rojo al acercarse son la advertencia: se llega a
+         * él a propósito, no de paso.
+         */}
+        <button
+          type="button"
+          title="Eliminar lead"
+          aria-label="Eliminar lead"
+          onClick={deleteLead}
+          disabled={loading}
+          className="ml-3 flex h-9 w-9 items-center justify-center rounded-full border
+            border-white/[0.07] text-[var(--tx-ink-muted)] transition-colors
+            hover:border-[color-mix(in_srgb,var(--tx-accent)_45%,transparent)]
+            hover:bg-[var(--tx-accent-subtle)] hover:text-[var(--tx-accent-2)]
+            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tx-accent-2)]
+            disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Trash2 size={15} />
+        </button>
 
         {!isTaskPanelOpen && (
           <button onClick={onToggleTaskPanel} className="reopen">
             <CheckSquare size={13} />
-            <span>Open Tasks</span>
+            <span>Tareas abiertas</span>
           </button>
         )}
       </div>
 
-      {/* Subject Header — muestra info_texto como heading principal, igual que "Hello, help me v..." en la referencia */}
+      {/* Subject Header — el nombre del lead es lo que importa acá, no el
+          primer fragmento de texto que trajo el scraper (que suele empezar
+          con el rating de Google: "4,3 (11)..." se leía más grande que el
+          propio nombre del negocio). El nombre va de heading; info_texto,
+          si existe, queda como descripción secundaria debajo. */}
       <h1 className="reader__subject" style={{ fontSize: 28 }}>
-        {lead.info_texto
-          ? lead.info_texto.split(' ').slice(0, 9).join(' ') + (lead.info_texto.split(' ').length > 9 ? '...' : '')
-          : lead.nombre_negocio}
+        {lead.nombre_negocio}
       </h1>
       {lead.info_texto && (
-        <p className="reader__subtitle">{lead.nombre_negocio}</p>
+        <p className="reader__subtitle">
+          {lead.info_texto.split(' ').slice(0, 12).join(' ') +
+            (lead.info_texto.split(' ').length > 12 ? '...' : '')}
+        </p>
       )}
 
       {/* Meta bar */}
@@ -293,7 +420,7 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           </header>
           <div className="msg__to">Canal: {origenLabels[lead.origen]}</div>
           <div className="msg__body space-y-2 mt-2">
-            <div className="grid grid-cols-2 gap-3 text-[12px] bg-black/15 p-3 rounded-xl border border-white/[0.04]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px] bg-black/15 p-3 rounded-xl border border-white/[0.04]">
               {lead.telefono && (
                 <div className="flex items-center gap-2">
                   <Phone size={12} className="text-[var(--tx-ink-muted)]" />
@@ -337,6 +464,11 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             )}
           </div>
         </article>
+
+        {/* El compositor va ARRIBA del hilo y no al final: con veinte
+            interacciones, dejarlo abajo obligaba a bajar hasta el fondo cada
+            vez que alguien quiere apuntar algo. */}
+        <NotaInterna leadId={lead.id} onGuardada={() => router.refresh()} />
 
         {/* Interaction thread */}
         {interacciones.length === 0 ? (
@@ -401,7 +533,40 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             </button>
           </div>
         )}
-        <div className="flex items-center gap-2">
+        {showLlamada && (
+          <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
+            <span className="text-[var(--tx-ink-muted)] mr-1">¿Contestó?</span>
+            <button
+              onClick={() => registrarLlamada(true)}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-green-500/20 bg-green-500/10 hover:bg-green-500/20 text-green-400 transition-colors"
+            >
+              <PhoneCall size={12} />
+              Sí, contestó
+            </button>
+            <button
+              onClick={() => registrarLlamada(false)}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.08] text-[var(--tx-ink-secondary)] transition-colors"
+            >
+              <PhoneOff size={12} />
+              No contestó
+            </button>
+            <button
+              onClick={() => setShowLlamada(false)}
+              className="px-2 py-1 text-[var(--tx-ink-muted)] hover:text-white transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
+        {/* `flex-wrap`: son 8 botones ("Ganado", "Perdido", "Llamé",
+            "Registrar Contacto", "Chat CRM", "WhatsApp", "Historial", "Pitch") y sin esto no entraban
+            en una sola fila en un teléfono — como `<main>` tiene
+            `overflow-x-hidden` (necesario en el resto de la app para que no
+            aparezca scroll lateral), los últimos botones quedaban cortados y
+            no se podía llegar a ellos. Ahora pasan a una segunda fila. */}
+        <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={markGanado}
           disabled={loading || lead.estado === 'ganado'}
@@ -418,6 +583,16 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
           <XCircle size={12} />
           <span>Perdido</span>
         </button>
+        {lead.telefono && (
+          <button
+            onClick={() => setShowLlamada(true)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-blue-500/15 bg-blue-500/5 hover:bg-blue-500/15 text-blue-400 transition-colors disabled:opacity-40"
+          >
+            <PhoneCall size={12} />
+            <span>Llamé</span>
+          </button>
+        )}
         <button
           onClick={onToggleTaskPanel}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.06] text-purple-400 transition-colors"
@@ -435,16 +610,63 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             }`}
           >
             <MessageCircle size={12} />
-            <span>{chatAbierto ? 'Cerrar chat' : 'WhatsApp'}</span>
+            {/* "Chat CRM" y no "WhatsApp": sale por el número del equipo y
+                depende del QR vinculado. El de al lado es tu WhatsApp. */}
+            <span>{chatAbierto ? 'Cerrar chat' : 'Chat CRM'}</span>
           </button>
         )}
+        {lead.telefono && (
+          <button
+            onClick={() => setWhatsappPropioAbierto(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-green-500/15 bg-green-500/5 hover:bg-green-500/15 text-green-400 transition-colors"
+          >
+            <ExternalLink size={12} />
+            <span>WhatsApp</span>
+          </button>
+        )}
+        <button
+          onClick={() => setHistorialAbierto(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.06] text-[var(--tx-ink-secondary)] transition-colors"
+        >
+          <History size={12} />
+          <span>Historial</span>
+        </button>
 
+        <button
+          onClick={() => setPitchAbierto(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium border border-green-500/15 bg-green-500/5 hover:bg-green-500/15 text-green-400 transition-colors"
+        >
+          <Sparkles size={12} />
+          <span>Pitch</span>
+        </button>
+
+        </div>
+
+        {/*
+         * La nota del lead, como bloque propio y legible.
+         *
+         * Estaba arrinconada al final de la fila de botones: 12 px, en el color
+         * más apagado, en cursiva y CORTADA a 200 caracteres de ancho. Es lo
+         * único que alguien del equipo escribió a mano sobre este lead —
+         * "atiende después de las 6", "pidió que le llamemos en enero"— y era
+         * lo menos visible de la ficha.
+         *
+         * Ahora va debajo de las acciones, a ancho completo y sin truncar, en
+         * el color de contenido legible. El icono es de lucide y no el dingbat
+         * `✎` que había: un dingbat ni escala ni se recolorea.
+         */}
         {lead.notas && (
-          <div className="ml-auto text-[12px] max-w-[200px] truncate text-[var(--tx-ink-muted)] italic">
-            ✎ {lead.notas}
+          <div className="mt-3 flex gap-2.5 rounded-[18px] border border-white/[0.07] bg-white/[0.03] px-3.5 py-3">
+            <StickyNoteIcon
+              size={14}
+              className="mt-0.5 shrink-0 text-[var(--tx-ink-muted)]"
+              aria-hidden="true"
+            />
+            <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-[var(--tx-ink-secondary)]">
+              {lead.notas}
+            </p>
           </div>
         )}
-        </div>
 
         {/* El chat va en un modal y no desplegado dentro del panel: en el
             celular el panel vive en un contenedor de altura fija con overflow
@@ -486,6 +708,63 @@ export function LeadPanel({ lead, interacciones, isTaskPanelOpen, onToggleTaskPa
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Mismo patrón de modal que el chat del CRM: pantalla completa en el
+            teléfono (con los márgenes de la Dynamic Island), ventana en el
+            escritorio. `key` por la misma razón: el panel no se remonta al
+            cambiar de lead y el texto de una ficha no puede quedar en otra. */}
+        {lead.telefono && (
+          <Dialog open={whatsappPropioAbierto} onOpenChange={setWhatsappPropioAbierto}>
+            <DialogContent
+              showCloseButton={false}
+              className="modal-pantalla-movil flex flex-col gap-0 p-4 max-w-none w-screen rounded-none sm:w-full sm:max-w-lg sm:rounded-xl"
+              style={MARGENES_SEGUROS}
+            >
+              <DialogTitle className="sr-only">Escribir por WhatsApp a {lead.nombre_negocio ?? 'este lead'}</DialogTitle>
+              <LeadEscribirWhatsapp
+                key={lead.id}
+                lead={lead}
+                onCerrar={() => setWhatsappPropioAbierto(false)}
+                onAnotado={() => setHistorialVersion((v) => v + 1)}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
+        <Dialog open={historialAbierto} onOpenChange={setHistorialAbierto}>
+          <DialogContent
+            showCloseButton={false}
+            className="modal-pantalla-movil flex flex-col gap-0 p-4 max-w-none w-screen rounded-none sm:w-full sm:max-w-lg sm:rounded-xl sm:h-[80vh]"
+            style={MARGENES_SEGUROS}
+          >
+            <DialogTitle className="sr-only">Historial de {lead.nombre_negocio ?? 'este lead'}</DialogTitle>
+            <LeadHistorialManual
+              key={lead.id}
+              lead={lead}
+              version={historialVersion}
+              onCerrar={() => setHistorialAbierto(false)}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* El pitch: datos de contacto para confirmar, estado, y el guion de
+            llamada personalizado del negocio. Se abre desde el botón "Pitch". */}
+        <LeadPitchModal lead={lead} open={pitchAbierto} onOpenChange={setPitchAbierto} />
+
+        {/* Mismo formulario que usa la ficha completa y la creación: un lead
+            editado desde aquí y desde allí tiene que validar igual. */}
+        {/* `key` con el id: este panel NO se remonta al cambiar de lead (la
+            transición de arriba existe justamente porque sigue montado), y
+            `LeadForm` lee sus valores iniciales una sola vez con `useState`.
+            Sin esta línea, "Editar" mostraba los datos del primer lead que
+            se abrió en la sesión, y al guardar los escribía encima del lead
+            actual. */}
+        <LeadForm
+          key={lead.id}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          lead={lead}
+          onSubmit={guardarEdicion}
+        />
       </div>
     </section>
   )

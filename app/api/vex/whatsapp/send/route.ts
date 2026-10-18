@@ -155,15 +155,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, proveedorId: resultado.proveedorId });
   }
 
-  const { error: errorFallido } = await admin
-    .from("outreach_messages")
-    .update({
-      estado: "fallido",
-      error: resultado.error,
-    })
-    .eq("id", reservaId);
+  // Reintentos: si este UPDATE también falla, la fila queda 'enviado' sin
+  // wa_message_id y bloquea el unique parcial para siempre (ver comentario
+  // arriba). La mayoría de estos fallos son transitorios, así que un par de
+  // reintentos cierra el caso de doble-fallo en la práctica.
+  let errorFallido = null;
+  for (let intento = 0; intento < 3; intento++) {
+    if (intento > 0) await new Promise((r) => setTimeout(r, 300 * intento));
+    const { error } = await admin
+      .from("outreach_messages")
+      .update({
+        estado: "fallido",
+        error: resultado.error,
+      })
+      .eq("id", reservaId);
+    errorFallido = error;
+    if (!errorFallido) break;
+  }
   if (errorFallido) {
-    console.error("[vex/whatsapp/send] error registrando el fallo:", errorFallido);
+    console.error(
+      "[vex/whatsapp/send] error registrando el fallo tras 3 intentos — fila",
+      reservaId,
+      "quedó 'enviado' sin wa_message_id, bloqueará reintentos para este lead:",
+      errorFallido,
+    );
   }
   return NextResponse.json({ ok: false, error: resultado.error }, { status: 502 });
 }

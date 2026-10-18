@@ -116,3 +116,37 @@ def test_al_refrescar_tambien_se_actualizan_las_columnas_nuevas():
     assert u["google_resenas"] == 2532
     assert u["instagram"] == "https://instagram.com/casasalvo.cl"
     assert u["horario"] == "Abierto · Cierra a las 8 p. m."
+
+
+# ── "No sabemos" no es "no tiene" ────────────────────────────────────────────
+# `tiene_web` tiene TRES valores: True, False y None ("no sabemos", cuando el
+# dominio se adivino del nombre). bool(None) los aplasta a False, y el
+# redactor entonces le ofrece una pagina a quien quiza ya tiene una: el caso
+# de Opticas Premium.
+
+
+def test_no_sabemos_si_tiene_web_llega_como_none():
+    m = crm_map.a_crm({**LEAD, "tiene_web": None, "url_web": "https://adivinada.cl"})
+    assert m["tiene_web"] is None, "None es 'no sabemos', no 'no tiene'"
+
+
+def test_si_maps_dice_que_tiene_llega_true():
+    assert crm_map.a_crm({**LEAD, "tiene_web": True})["tiene_web"] is True
+
+
+def test_si_maps_dice_que_no_llega_false():
+    assert crm_map.a_crm({**LEAD, "tiene_web": False})["tiene_web"] is False
+
+
+# ── El hallazgo de la web tiene que llegar a la ficha ────────────────────────
+def test_lo_que_ofrece_su_web_no_se_pierde():
+    hallazgo = {"estado": "en_obra", "capacidades": [], "revisada": True}
+    m = crm_map.a_crm({**LEAD, "web_capacidades": hallazgo})
+    assert m["web_capacidades"] == hallazgo
+    assert m["web_revisada_at"], "sin fecha no se sabe si el hallazgo es de hoy"
+
+
+def test_sin_revision_no_se_inventa_fecha():
+    m = crm_map.a_crm(LEAD)
+    assert m["web_capacidades"] is None
+    assert m["web_revisada_at"] is None

@@ -7,6 +7,7 @@ import { es } from 'date-fns/locale/es'
 import type { InvitacionConEstado } from '@/lib/types/invitacion'
 
 const estadoBadge: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' }> = {
+  pendiente_aprobacion: { label: 'Esperando aprobación', variant: 'destructive' },
   pendiente: { label: 'Pendiente', variant: 'default' },
   usado: { label: 'Usado', variant: 'secondary' },
   expirado: { label: 'Expirado', variant: 'destructive' },
@@ -31,7 +32,12 @@ export function InvitacionesLista({ refreshKey }: InvitacionesListaProps) {
     }
   }, [])
 
-  useEffect(() => { cargar() }, [cargar, refreshKey])
+  useEffect(() => {
+    // `cargar` es async: en este tick solo arranca el fetch, y el setState
+    // pasa recien cuando responde. La regla no puede ver a traves del await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargar()
+  }, [cargar, refreshKey])
 
   if (loading) {
     return <p className="text-sm text-neutral-400 text-center py-6">Cargando...</p>

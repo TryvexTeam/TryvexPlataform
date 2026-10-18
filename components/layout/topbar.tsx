@@ -1,14 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { LogOut, Settings } from 'lucide-react'
+import { useHasMounted } from '@/lib/hooks/use-has-mounted'
+import { Clock, LogOut, Settings } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ThemePanel } from '@/components/dashboard/theme-panel'
 import { NotificacionesBell } from './notificaciones-bell'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,18 +70,30 @@ interface TopbarProps {
   nombre: string
   email: string
   avatarUrl: string | null
+  /** Para avisar al salir si quedó la jornada corriendo. */
+  jornadaAbierta?: boolean
 }
 
-export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
+export function Topbar({ nombre, email, avatarUrl, jornadaAbierta = false }: TopbarProps) {
+  // Irse con la jornada abierta deja una jornada de 30 horas al día siguiente,
+  // y ahí las horas del equipo dejan de servir para nada. El navegador no deja
+  // poner un texto propio al cerrar la pestaña —solo un cartel genérico del
+  // sistema—, pero al cerrar sesión SÍ podemos decirlo con nuestras palabras.
+  const [confirmarSalida, setConfirmarSalida] = useState(false)
   const router = useRouter()
-  const [status, setStatus] = useState<'online' | 'offline'>('online')
-
-  useEffect(() => {
-    const saved = localStorage.getItem('tryvex-user-status') as 'online' | 'offline'
-    if (saved) {
-      setStatus(saved)
-    }
-  }, [])
+  // Lazy initializer: lee localStorage antes del primer render en vez de
+  // arrancar en 'online' y corregir en un efecto.
+  const [status, setStatus] = useState<'online' | 'offline'>(() => {
+    if (typeof window === 'undefined') return 'online'
+    const saved = localStorage.getItem('tryvex-user-status') as 'online' | 'offline' | null
+    return saved ?? 'online'
+  })
+  // El servidor siempre renderiza 'online' (sin acceso a localStorage); si el
+  // valor guardado es 'offline', el primer render del cliente ya difiere y
+  // React marca mismatch de hidratación en el punto de presencia. Se sigue
+  // mostrando 'online' hasta que termine de hidratar.
+  const mounted = useHasMounted()
+  const statusMostrado = mounted ? status : 'online'
 
   function toggleStatus() {
     const newStatus = status === 'online' ? 'offline' : 'online'
@@ -94,7 +109,8 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
     .join('')
     .toUpperCase()
 
-  async function handleSignOut() {
+  /** El cierre de verdad, ya con la decisión tomada. */
+  async function salirDeVerdad() {
     const supabase = createClient()
     const { error } = await supabase.auth.signOut()
     if (error) {
@@ -105,11 +121,34 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
     router.refresh()
   }
 
+  async function handleSignOut() {
+    if (jornadaAbierta) {
+      setConfirmarSalida(true)
+      return
+    }
+    await salirDeVerdad()
+  }
+
+  /** Cierra la jornada y recién ahí cierra sesión. */
+  async function cerrarJornadaYSalir() {
+    try {
+      await fetch('/api/jornadas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'salida' }),
+      })
+    } catch {
+      // Si falla no se bloquea la salida: quedarse atrapado dentro del CRM por
+      // un error de red sería peor que una jornada mal cerrada.
+    }
+    await salirDeVerdad()
+  }
+
   return (
     <header
       // pt-safe/px-safe: sin esto la barra queda bajo la Dynamic Island y no se
       // puede tocar. `h-12` pasa a ser alto MÍNIMO para que el inset la empuje.
-      className="min-h-12 shrink-0 flex items-center justify-between px-4 pt-safe px-safe"
+      className="topbar-app min-h-12 shrink-0 flex items-center justify-between px-4 pt-safe px-safe"
       style={{
         position: 'relative',
         zIndex: 50,
@@ -142,6 +181,7 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
           <DropdownMenuTrigger
             className="flex items-center gap-2 pl-1 pr-1.5 h-7 rounded-lg transition-colors focus:outline-none"
             style={{ color: 'var(--tx-ink-primary)' }}
+            aria-label={`Menú de usuario, ${nombre}`}
           >
             <div className="relative">
               <Avatar className="h-6 w-6">
@@ -161,9 +201,9 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
                   width: 7,
                   height: 7,
                   borderRadius: '50%',
-                  backgroundColor: status === 'online' ? '#22C55E' : '#9CA3AF',
+                  backgroundColor: statusMostrado === 'online' ? '#22C55E' : '#9CA3AF',
                   border: '1.5px solid oklch(6% 0.003 240)',
-                  boxShadow: status === 'online' ? '0 0 6px rgba(34,197,94,0.8)' : 'none',
+                  boxShadow: statusMostrado === 'online' ? '0 0 6px rgba(34,197,94,0.8)' : 'none',
                 }}
               />
             </div>
@@ -220,6 +260,33 @@ export function Topbar({ nombre, email, avatarUrl }: TopbarProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Al salir con la jornada corriendo. No es un bloqueo: la tercera opción
+          deja irse igual, porque encerrar a alguien dentro del CRM sería peor
+          que una jornada mal cerrada. */}
+      <Dialog open={confirmarSalida} onOpenChange={setConfirmarSalida}>
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm p-5">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Clock size={16} style={{ color: 'oklch(80% 0.14 55)' }} />
+              Tu jornada sigue abierta
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--tx-ink-muted)]">
+            Si te vas así, queda corriendo hasta mañana y tus horas de hoy salen
+            mal contadas.
+          </p>
+          <div className="mt-4 flex flex-col gap-2">
+            <Button onClick={cerrarJornadaYSalir}>Cerrar jornada y salir</Button>
+            <Button variant="outline" onClick={salirDeVerdad}>
+              Salir sin cerrarla
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirmarSalida(false)}>
+              Volver
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 }

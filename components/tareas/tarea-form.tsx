@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { z } from 'zod'
-import { TareaInsertSchema, type TareaConResponsables } from '@/lib/types/tarea'
+import { ESTADOS_TAREA, TareaInsertSchema, type TareaConResponsables } from '@/lib/types/tarea'
 import type { DisponibilidadIntegrante } from '@/lib/types/disponibilidad'
 import { getInitials, hashColorHex, MEMBER_PALETTE } from '@/lib/utils/lead-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SelectorFecha } from '@/components/ui/selector-fecha'
+import { SelectorHora } from '@/components/ui/selector-hora'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -34,6 +36,7 @@ const defaults = {
   prioridad: 'media' as const,
   esfuerzo: 'medio' as const,
   fecha_limite: '',
+  hora_limite: '',
 }
 
 export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProps) {
@@ -45,6 +48,9 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
     prioridad: (tarea?.prioridad ?? defaults.prioridad) as string,
     esfuerzo: (tarea?.esfuerzo ?? defaults.esfuerzo) as string,
     fecha_limite: tarea?.fecha_limite ?? defaults.fecha_limite,
+    // La base guarda 'HH:MM:SS' y el input de hora espera 'HH:MM': se recorta
+    // al leer, y al guardar el propio input ya entrega el formato corto.
+    hora_limite: tarea?.hora_limite?.slice(0, 5) ?? defaults.hora_limite,
   })
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -83,6 +89,11 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
     const result = TareaInsertSchema.safeParse({
       ...form,
       fecha_limite: form.fecha_limite || null,
+      // Sin día no puede haber hora: es lo que exige la base (migración 054) y
+      // además una hora suelta no significa nada. Se limpia aquí para que el
+      // usuario no reciba un error de la base por algo que la interfaz puede
+      // resolver sola.
+      hora_limite: form.fecha_limite ? form.hora_limite || null : null,
       descripcion: form.descripcion || null,
       responsables_ids: Array.from(responsables),
     })
@@ -115,21 +126,21 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Título *</Label>
-            <Input value={form.titulo} onChange={(e) => set('titulo', e.target.value)} placeholder="¿Qué hay que hacer?" />
+            <Label htmlFor="tarea-titulo">Título *</Label>
+            <Input id="tarea-titulo" value={form.titulo} onChange={(e) => set('titulo', e.target.value)} placeholder="¿Qué hay que hacer?" />
             {errors.titulo && <p className="text-xs text-red-500">{errors.titulo}</p>}
           </div>
 
           <div className="space-y-1.5">
-            <Label>Descripción</Label>
-            <Textarea value={form.descripcion ?? ''} onChange={(e) => set('descripcion', e.target.value)} rows={2} placeholder="Detalles opcionales..." />
+            <Label htmlFor="tarea-descripcion">Descripción</Label>
+            <Textarea id="tarea-descripcion" value={form.descripcion ?? ''} onChange={(e) => set('descripcion', e.target.value)} rows={2} placeholder="Detalles opcionales..." />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Tipo</Label>
+              <Label htmlFor="tarea-tipo">Tipo</Label>
               <Select value={form.tipo} onValueChange={(v) => set('tipo', v ?? '')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="tarea-tipo"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="general">General</SelectItem>
                   <SelectItem value="feature">Feature</SelectItem>
@@ -140,21 +151,23 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
             </div>
 
             <div className="space-y-1.5">
-              <Label>Estado</Label>
+              <Label htmlFor="tarea-estado">Estado</Label>
               <Select value={form.estado} onValueChange={(v) => set('estado', v ?? '')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="tarea-estado"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sin_empezar">Sin empezar</SelectItem>
-                  <SelectItem value="en_curso">En curso</SelectItem>
-                  <SelectItem value="listo">Listo</SelectItem>
+                  {ESTADOS_TAREA.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-1.5">
-              <Label>Prioridad</Label>
+              <Label htmlFor="tarea-prioridad">Prioridad</Label>
               <Select value={form.prioridad} onValueChange={(v) => set('prioridad', v ?? '')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="tarea-prioridad"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="alta">Alta</SelectItem>
                   <SelectItem value="media">Media</SelectItem>
@@ -164,9 +177,9 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
             </div>
 
             <div className="space-y-1.5">
-              <Label>Esfuerzo</Label>
+              <Label htmlFor="tarea-esfuerzo">Esfuerzo</Label>
               <Select value={form.esfuerzo} onValueChange={(v) => set('esfuerzo', v ?? '')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="tarea-esfuerzo"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pequeno">Pequeño (S)</SelectItem>
                   <SelectItem value="medio">Medio (M)</SelectItem>
@@ -176,15 +189,49 @@ export function TareaForm({ open, onOpenChange, tarea, onSubmit }: TareaFormProp
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Fecha límite</Label>
-            <Input type="date" value={form.fecha_limite ?? ''} onChange={(e) => set('fecha_limite', e.target.value)} />
+          {/* Fecha y hora separadas, no un `datetime-local`: la hora es
+              OPCIONAL y con un campo único no hay forma de decir "vence el
+              jueves, a cualquier hora" — que es como se pide la mayoría de las
+              tareas. Con hora, el calendario la coloca en su franja; sin ella,
+              aparece en el día.
+
+              Componentes propios y no `<input type="date">`: el control nativo
+              lo dibuja el sistema operativo, ignora los tokens del CRM y
+              cambia de aspecto entre Windows, macOS y Android. */}
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="tarea-fecha">Fecha límite</Label>
+              <SelectorFecha
+                id="tarea-fecha"
+                value={form.fecha_limite ?? ''}
+                onChange={(v) => {
+                  set('fecha_limite', v)
+                  // Al quitar la fecha se limpia la hora: la base rechaza una
+                  // hora huérfana (migración 054), y es mejor resolverlo aquí
+                  // que devolverle al usuario un error de la base.
+                  if (!v) set('hora_limite', '')
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tarea-hora">
+                Hora <span className="text-[var(--tx-ink-muted)]">(opcional)</span>
+              </Label>
+              <SelectorHora
+                id="tarea-hora"
+                value={form.hora_limite ?? ''}
+                // Sin fecha la hora no puede existir, así que el campo se
+                // apaga en vez de dejar escribir algo que se descartará.
+                disabled={!form.fecha_limite}
+                onChange={(v) => set('hora_limite', v)}
+              />
+            </div>
           </div>
 
           {integrantes.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Responsables</Label>
-              <div className="flex flex-wrap gap-1.5">
+              <Label id="tarea-responsables-label">Responsables</Label>
+              <div role="group" aria-labelledby="tarea-responsables-label" className="flex flex-wrap gap-1.5">
                 {integrantes.map((m) => {
                   const selected = responsables.has(m.integrante_id)
                   const color = memberColor(m.integrante_id, m.nombre)

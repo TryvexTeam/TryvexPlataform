@@ -81,3 +81,57 @@ def test_una_linea_cualquiera_no_dispara_nada():
     otra = "2026-08-09 07:00:00 INFO Abriendo navegador"
     assert not worker.RE_INICIA.search(otra)
     assert not worker.RE_COMPLETA.search(otra)
+
+
+# --- de donde saca las llaves ----------------------------------------------
+# El mismo dato se llama distinto en la app (nombres de Next) y en el .env del
+# servidor. Escrito con un solo nombre, el worker arranca y muere al instante
+# en un servidor donde todo lo demas anda.
+
+import pytest  # noqa: E402
+
+
+def _limpiar(monkeypatch):
+    for n in worker.NOMBRES_URL + worker.NOMBRES_KEY:
+        monkeypatch.delenv(n, raising=False)
+
+
+def test_toma_los_nombres_de_next(monkeypatch):
+    _limpiar(monkeypatch)
+    monkeypatch.setenv("NEXT_PUBLIC_SUPABASE_URL", "https://x.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "llave-next")
+    assert worker._primera(worker.NOMBRES_URL) == "https://x.supabase.co"
+    assert worker._primera(worker.NOMBRES_KEY) == "llave-next"
+
+
+def test_toma_los_nombres_del_servidor(monkeypatch):
+    """Los que ya usa scraper.py en /opt/scraper/.env desde julio."""
+    _limpiar(monkeypatch)
+    monkeypatch.setenv("SUPABASE_URL", "https://y.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "llave-servidor")
+    assert worker._primera(worker.NOMBRES_URL) == "https://y.supabase.co"
+    assert worker._primera(worker.NOMBRES_KEY) == "llave-servidor"
+
+
+def test_si_estan_los_dos_gana_el_de_next(monkeypatch):
+    _limpiar(monkeypatch)
+    monkeypatch.setenv("NEXT_PUBLIC_SUPABASE_URL", "https://next.supabase.co")
+    monkeypatch.setenv("SUPABASE_URL", "https://viejo.supabase.co")
+    assert worker._primera(worker.NOMBRES_URL) == "https://next.supabase.co"
+
+
+def test_una_variable_vacia_no_cuenta(monkeypatch):
+    """Una linea 'SUPABASE_URL=' en el .env no es una configuracion valida."""
+    _limpiar(monkeypatch)
+    monkeypatch.setenv("NEXT_PUBLIC_SUPABASE_URL", "")
+    monkeypatch.setenv("SUPABASE_URL", "https://bueno.supabase.co")
+    assert worker._primera(worker.NOMBRES_URL) == "https://bueno.supabase.co"
+
+
+def test_sin_nada_el_error_dice_que_falta_y_donde(monkeypatch):
+    _limpiar(monkeypatch)
+    with pytest.raises(SystemExit) as e:
+        worker.conectar()
+    msg = str(e.value)
+    assert "/opt/scraper/.env" in msg
+    assert "SUPABASE_URL" in msg and "SUPABASE_SERVICE_KEY" in msg

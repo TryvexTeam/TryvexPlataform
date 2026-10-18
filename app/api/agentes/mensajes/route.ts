@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { tokenCoincide, tokenDeCabecera } from '@/lib/agentes/token'
+import { tokenCoincide, tokenDeCabecera, tokenExpirado } from '@/lib/agentes/token'
+import { excedeLimite } from '@/lib/agentes/rate-limit'
 import {
   LoteMensajesAgenteSchema,
   MensajeAgenteSchema,
@@ -31,6 +32,7 @@ interface Agente {
   color: string | null
   avatar_url: string | null
   token_hash: string
+  expira_at: string | null
 }
 
 /** Devuelve el agente del token, o null. Nunca dice cuál de las dos cosas falló. */
@@ -44,7 +46,7 @@ async function autenticar(req: Request): Promise<Agente | null> {
   // Se recorren todos y se compara el hash: buscar por hash directo sería más
   // rápido, pero entonces la consulta misma revelaría si el token existe.
   const agente = ((data ?? []) as Agente[]).find((a) => tokenCoincide(token, a.token_hash))
-  if (!agente) return null
+  if (!agente || tokenExpirado(agente.expira_at)) return null
 
   await admin.from('agentes').update({ ultimo_uso_at: new Date().toISOString() }).eq('id', agente.id)
   return agente
@@ -65,6 +67,14 @@ async function hiloDeAgentes(admin: SB, nombre?: string): Promise<string | null>
 export async function GET(req: Request) {
   const agente = await autenticar(req)
   if (!agente) return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })
+
+  const espera = excedeLimite(agente.id)
+  if (espera !== null) {
+    return NextResponse.json(
+      { success: false, error: 'Demasiadas solicitudes' },
+      { status: 429, headers: { 'Retry-After': String(espera) } },
+    )
+  }
 
   const admin = createAdminClient() as SB
   const hilo = await hiloDeAgentes(admin, new URL(req.url).searchParams.get('hilo') ?? undefined)
@@ -101,6 +111,14 @@ async function refsYaIngestados(admin: SB, refs: string[]): Promise<Set<string>>
 export async function POST(req: Request) {
   const agente = await autenticar(req)
   if (!agente) return NextResponse.json({ success: false, error: 'Token inválido' }, { status: 401 })
+
+  const espera = excedeLimite(agente.id)
+  if (espera !== null) {
+    return NextResponse.json(
+      { success: false, error: 'Demasiadas solicitudes' },
+      { status: 429, headers: { 'Retry-After': String(espera) } },
+    )
+  }
 
   const cuerpo = await req.json().catch(() => null)
   if (!cuerpo) return NextResponse.json({ success: false, error: 'Cuerpo inválido' }, { status: 400 })

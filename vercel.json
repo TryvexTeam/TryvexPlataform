@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/avisos",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/llamadas-zombis",
+      "schedule": "0 18 * * *"
     }
   ]
 }

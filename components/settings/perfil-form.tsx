@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SelectorHora } from '@/components/ui/selector-hora'
 import {
   PALETA_CALENDARIO,
   NOTIFICACIONES_LABELS,
@@ -41,7 +42,7 @@ function horarioInicial(guardado: HorarioDia[] | null): HorarioDia[] {
 export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
   const router = useRouter()
   const [nombre, setNombre] = useState(perfil.nombre)
-  const [especialidad, setEspecialidad] = useState(perfil.especialidad ?? '')
+  const [rolPrincipal, setRolPrincipal] = useState(perfil.rol_principal ?? '')
   const [telefono, setTelefono] = useState(perfil.telefono ?? '')
   const [color, setColor] = useState<string | null>(perfil.color)
   const [horario, setHorario] = useState<HorarioDia[]>(horarioInicial(perfil.horario))
@@ -83,7 +84,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre,
-          especialidad: especialidad || null,
+          rol_principal: rolPrincipal || null,
           telefono: telefono || null,
           color,
           horario,
@@ -128,22 +129,22 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
 
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Nombre</Label>
-              <Input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+              <Label htmlFor="perfil-nombre">Nombre</Label>
+              <Input id="perfil-nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Especialidad / rol</Label>
-              <Input value={especialidad} onChange={(e) => setEspecialidad(e.target.value)} placeholder="Ej: Frontend, Ventas" />
+              <Label htmlFor="perfil-especialidad">Especialidad / rol</Label>
+              <Input id="perfil-especialidad" value={rolPrincipal} onChange={(e) => setRolPrincipal(e.target.value)} placeholder="Ej: Frontend, Ventas" />
             </div>
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Teléfono</Label>
-              <Input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="+56 9..." />
+              <Label htmlFor="perfil-telefono">Teléfono</Label>
+              <Input id="perfil-telefono" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="+56 9..." />
             </div>
             <div className="space-y-1.5">
-              <Label>Email</Label>
-              <Input value={perfil.email} readOnly className="opacity-60 cursor-not-allowed" />
+              <Label htmlFor="perfil-email">Email</Label>
+              <Input id="perfil-email" value={perfil.email} readOnly className="opacity-60 cursor-not-allowed" />
             </div>
           </div>
         </CardContent>
@@ -173,6 +174,7 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                   disabled={Boolean(dueno)}
                   onClick={() => setColor(seleccionado ? null : c.hex)}
                   title={dueno ? `${c.nombre} — lo usa ${dueno}` : c.nombre}
+                  aria-label={dueno ? `${c.nombre} — lo usa ${dueno}` : c.nombre}
                   className={cn(
                     'relative h-9 w-9 rounded-full flex items-center justify-center transition-transform',
                     dueno ? 'opacity-30 cursor-not-allowed' : 'hover:scale-110 cursor-pointer',
@@ -217,19 +219,23 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
                 <Switch checked={h.activo} onCheckedChange={(v) => setDia(dia, { activo: v })} />
                 <span className="w-9 font-medium text-[var(--tx-ink-secondary)]">{DIAS_SEMANA[dia]}</span>
                 {h.activo ? (
+                  // Sin ancho fijo: el selector trae ícono + input + botón de
+                  // quitar hora, más ancho que los 104px que tenía este
+                  // contenedor — el contenido quedaba apretado. Se lo deja
+                  // ajustarse a su tamaño natural en vez de adivinar un número.
                   <div className="flex items-center gap-1.5">
-                    <Input
-                      type="time"
+                    <SelectorHora
                       value={h.bloques[0]?.inicio ?? '10:00'}
-                      onChange={(e) => setBloque(dia, 0, 'inicio', e.target.value)}
-                      className="h-8 w-[104px] text-xs"
+                      onChange={(v) => setBloque(dia, 0, 'inicio', v)}
+                      ancho="compacto"
+                      ariaLabel={`Hora de inicio, ${DIAS_SEMANA[dia]}`}
                     />
                     <span className="text-[var(--tx-ink-muted)]">—</span>
-                    <Input
-                      type="time"
+                    <SelectorHora
                       value={h.bloques[0]?.fin ?? '18:00'}
-                      onChange={(e) => setBloque(dia, 0, 'fin', e.target.value)}
-                      className="h-8 w-[104px] text-xs"
+                      onChange={(v) => setBloque(dia, 0, 'fin', v)}
+                      ancho="compacto"
+                      ariaLabel={`Hora de fin, ${DIAS_SEMANA[dia]}`}
                     />
                   </div>
                 ) : (
@@ -277,27 +283,27 @@ export function PerfilForm({ perfil, equipo }: PerfilFormProps) {
             <FotoLandingUploader fotoInicial={perfil.foto_landing_url} avatarUrl={perfil.avatar_url} />
           </div>
           <div className="space-y-1.5">
-            <Label>Bio corta (una línea, máx. 160)</Label>
-            <Input value={bioCorta} onChange={(e) => setBioCorta(e.target.value)} maxLength={160} placeholder="Ej: Construye la parte que se ve" />
+            <Label htmlFor="perfil-bio-corta">Bio corta (una línea, máx. 160)</Label>
+            <Input id="perfil-bio-corta" value={bioCorta} onChange={(e) => setBioCorta(e.target.value)} maxLength={160} placeholder="Ej: Construye la parte que se ve" />
           </div>
           <div className="space-y-1.5">
-            <Label>Bio</Label>
-            <Textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={2000} rows={4} placeholder="Un par de párrafos sobre vos" />
+            <Label htmlFor="perfil-bio">Bio</Label>
+            <Textarea id="perfil-bio" value={bio} onChange={(e) => setBio(e.target.value)} maxLength={2000} rows={4} placeholder="Un par de párrafos sobre vos" />
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>LinkedIn</Label>
-              <Input value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/..." />
+              <Label htmlFor="perfil-linkedin">LinkedIn</Label>
+              <Input id="perfil-linkedin" value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/..." />
             </div>
             <div className="space-y-1.5">
-              <Label>Portfolio</Label>
-              <Input value={portfolio} onChange={(e) => setPortfolio(e.target.value)} placeholder="https://..." />
+              <Label htmlFor="perfil-portfolio">Portfolio</Label>
+              <Input id="perfil-portfolio" value={portfolio} onChange={(e) => setPortfolio(e.target.value)} placeholder="https://..." />
             </div>
           </div>
           <div className="space-y-1.5 max-w-[220px]">
-            <Label>Categoría</Label>
+            <Label htmlFor="perfil-categoria">Categoría</Label>
             <Select value={category} onValueChange={(v) => setCategory(v as typeof category)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger id="perfil-categoria"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {CATEGORIAS_EQUIPO.map((c) => (
                   <SelectItem key={c} value={c}>{c === 'core' ? 'Core' : 'Engineering'}</SelectItem>

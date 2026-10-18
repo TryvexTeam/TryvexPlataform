@@ -14,6 +14,10 @@ export const ProyectoInsertSchema = z.object({
   fecha_inicio: z.string().nullable().optional(),
   fecha_entrega: z.string().nullable().optional(),
   responsable_id: z.string().uuid().nullable().optional(),
+  // Servicio del catálogo con el que se creó el proyecto. Nullable porque los
+  // proyectos anteriores al catálogo no tienen ninguno asociado.
+  /** Servicios del catálogo vendidos en este proyecto. Vacío = sin plantilla. */
+  servicios_ids: z.array(z.string()).optional(),
 })
 
 export const ProyectoUpdateSchema = ProyectoInsertSchema.partial()
@@ -36,6 +40,10 @@ export type Proyecto = {
   fecha_inicio: string | null
   fecha_entrega: string | null
   responsable_id: string | null
+  // Servicio del catálogo con el que se creó el proyecto. Nullable porque los
+  // proyectos anteriores al catálogo no tienen ninguno asociado.
+  /** Servicios del catálogo vendidos en este proyecto. */
+  servicios_ids: string[]
   created_at: string
   updated_at: string
   cliente?: { nombre_negocio: string | null; nombre_contacto: string | null } | null
@@ -84,12 +92,29 @@ export type ResumenFinanciero = {
 }
 
 /**
+ * Saldo del valor inicial que aún se arrastra: lo acordado (`valorInicialUsd`) menos lo
+ * ya cobrado de tipo `inicial`.
+ *
  * @param saldoInicialSaldado Cuando el cliente ya no debe el valor acordado (se condonó,
  * se cobró fuera del sistema o nunca se llegó a facturar), el saldo inicial deja de
  * arrastrarse y vale 0. El `valor_inicial_usd` NO se borra: sigue siendo el valor
  * acordado del trato y se necesita para reportes. Sin este interruptor, anular todos
  * los pagos pendientes no apagaba nunca el aviso de "monto pendiente".
+ *
+ * Única fuente de verdad para este cálculo — no reimplementar en componentes.
  */
+export function saldoInicialArrastrado(
+  ventas: Venta[],
+  valorInicialUsd?: number | null,
+  saldoInicialSaldado?: boolean,
+): number {
+  if (saldoInicialSaldado) return 0
+  const cobradoInicial = ventas
+    .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
+    .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
+  return Math.max(0, (valorInicialUsd ?? 0) - cobradoInicial)
+}
+
 export function resumenFinanciero(
   ventas: Venta[],
   valorInicialUsd?: number | null,
@@ -103,13 +128,9 @@ export function resumenFinanciero(
     (v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado'
   )
 
-  // Saldo del valor inicial: lo acordado menos lo ya cobrado de tipo inicial.
   // Se toma el máximo contra los pagos iniciales pendientes registrados para
   // no contar dos veces el mismo saldo cuando también fue agendado como pago.
-  const cobradoInicial = ventas
-    .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
-    .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)
-  const saldoInicial = saldoInicialSaldado ? 0 : Math.max(0, (valorInicialUsd ?? 0) - cobradoInicial)
+  const saldoInicial = saldoInicialArrastrado(ventas, valorInicialUsd, saldoInicialSaldado)
   const pendienteInicialRegistrado = pendientes
     .filter((v) => v.tipo === 'inicial')
     .reduce((sum, v) => sum + (v.monto_usd ?? 0), 0)

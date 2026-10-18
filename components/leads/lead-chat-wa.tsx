@@ -1,9 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Send, Loader2, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { iniciarSondeoVisible, visibilidadDelNavegador } from '@/lib/ui/sondeo-visible'
 import type { Lead } from '@/lib/types/lead'
+import { abreDiaNuevo } from '@/lib/utils/fecha-santiago'
+import { SeparadorDia } from '@/components/shared/separador-dia'
+import { textoSugerido } from '@/lib/leads/texto-sugerido'
 
 /**
  * El chat de WhatsApp del lead, DENTRO del CRM.
@@ -25,25 +29,57 @@ interface MensajeWa {
   es_bot?: boolean | null
   enviado_por?: string | null
   estado_envio?: string | null
+  ack_codigo?: string | null
   created_at: string
 }
 
 /** Cada cuanto se mira si contestaron, mientras el chat esta abierto. */
 const REFRESCO_MS = 5000
 
-/** El primer mensaje, ya escrito. Editable: es un punto de partida, no un molde. */
-export function textoSugerido(lead: Lead): string {
-  const negocio = lead.nombre_negocio ?? 'tu negocio'
-  return (
-    `Hola 👋 ¿hablo con ${negocio}?\n\n` +
-    `Somos Tryvex. Ayudamos a negocios como el tuyo a conseguir más clientes ` +
-    `con una página web lista en días. ¿Te muestro un ejemplo, sin compromiso?`
-  )
-}
+/**
+ * El primer mensaje, ya escrito. Editable: es un punto de partida, no un molde.
+ *
+ * La plantilla vive en `lib/leads/texto-sugerido`, compartida con el otro panel
+ * de WhatsApp. Antes cada componente tenía la suya y las dos afirmaban cosas
+ * que nadie había mirado: esta ofrecía una página a cualquiera, y la del otro
+ * panel decía «todavía no tiene sitio web» a todos, siempre.
+ */
+export { textoSugerido }
 
 /** ¿Este estado de envío significa que el mensaje NO llegó? */
 function fallado(estado: string): boolean {
   return /no se envió|fallido|error|no lo ha tomado/i.test(estado)
+}
+
+/**
+ * Cómo se lee cada estado, en palabras y no en jerga.
+ *
+ * «pendiente» se muestra como «sin confirmar» a propósito: pendiente suena a
+ * que está en camino, y lo que dice de verdad es que NO SABEMOS. Durante dos
+ * días WhatsApp descartó mensajes devolviendo `error: 463` mientras la pantalla
+ * decía enviado — la palabra tranquilizadora fue parte del problema.
+ */
+function comoSeLee(estado: string): string {
+  switch (estado) {
+    case 'pendiente':
+    case 'enviado':
+      return 'sin confirmar'
+    case 'entregado':
+      return 'entregado'
+    case 'leido':
+      return 'leído'
+    case 'fallido':
+      return 'no llegó'
+    default:
+      return estado
+  }
+}
+
+/** El estilo del estado: rojo si no llegó, apagado mientras nadie confirme. */
+function estiloEstado(estado: string): string | undefined {
+  if (fallado(estado)) return 'text-red-400 font-medium'
+  if (estado === 'pendiente' || estado === 'enviado') return 'italic opacity-70'
+  return undefined
 }
 
 function hora(iso: string): string {
@@ -193,14 +229,23 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
 
   // Se refresca solo mientras el chat está abierto, y se corta al cerrarlo:
   // un sondeo que sigue vivo detrás de una pantalla cerrada es gasto puro.
-  useEffect(() => {
-    // `cargar` es async: en este tick solo arranca el fetch, y el setState
-    // pasa recien cuando responde. La regla no puede ver a traves del await.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    cargar()
-    const t = setInterval(cargar, REFRESCO_MS)
-    return () => clearInterval(t)
-  }, [cargar])
+  //
+  // Y ahora también se corta cuando la pestaña deja de verse. Antes este era el
+  // único de los tres sondeos del CRM que no lo hacía: con el chat abierto y el
+  // navegador minimizado seguía pidiendo el hilo cada 5 segundos toda la tarde,
+  // sin nadie mirando. Además el navegador congela los temporizadores en
+  // segundo plano, así que ese intervalo no cumplía ni el horario: llegaba
+  // tarde y en ráfaga. Ahora al volver se pide de una — que es el momento en
+  // que la persona quiere ver si le contestaron.
+  useEffect(
+    () =>
+      iniciarSondeoVisible({
+        cadaMs: REFRESCO_MS,
+        tarea: () => void cargar(),
+        visibilidad: visibilidadDelNavegador(),
+      }),
+    [cargar],
+  )
 
   useEffect(() => {
     finRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -225,7 +270,7 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
       // El borrador ya cumplio: si queda guardado, reaparece la proxima vez que
       // se abra el chat, encima de una conversacion que ya siguio.
       fetch(`/api/leads/${lead.id}/borrador`, { method: 'DELETE' }).catch(() => {})
-      toast.success('Mensaje en cola — su estado aparece bajo el mensaje')
+      toast.success('Listo — el estado del envío aparece bajo el mensaje')
       cargar()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo enviar')
@@ -272,11 +317,14 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
             Todavía no hay mensajes. El primero que mandes aparece acá.
           </p>
         )}
-        {mensajes.map((m) => {
+        {mensajes.map((m, i) => {
           const mio = m.direccion === 'out'
           const quien = mio ? (m.es_bot ? 'Vex' : m.enviado_por || 'Equipo') : (lead.nombre_negocio ?? 'Lead')
+          const diaNuevo = abreDiaNuevo(m.created_at, mensajes[i - 1]?.created_at)
           return (
-            <div key={m.id} className={`flex ${mio ? 'justify-end' : 'justify-start'}`}>
+            <Fragment key={m.id}>
+            {diaNuevo && <SeparadorDia fecha={m.created_at} />}
+            <div className={`flex ${mio ? 'justify-end' : 'justify-start'}`}>
               <div
                 className={`max-w-[78%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words ${
                   mio
@@ -291,13 +339,21 @@ export function LeadChatWa({ lead, onCerrar }: { lead: Lead; onCerrar?: () => vo
                       que la hora, nadie lo lee, y creer que un cliente recibió
                       un mensaje que nunca salió es el peor final posible. */}
                   {mio && m.estado_envio ? (
-                    <span className={fallado(m.estado_envio) ? 'text-red-400 font-medium' : undefined}>
-                      {' · '}{m.estado_envio}
+                    <span
+                      className={estiloEstado(m.estado_envio)}
+                      // El motivo va en el title y no en la burbuja: "no llegó"
+                      // alcanza para actuar, y el código crudo del acuse (463)
+                      // es lo que hace falta para diagnosticar. Los dos, sin
+                      // que el segundo tape la conversación.
+                      title={m.ack_codigo ? `Acuse de WhatsApp: ${m.ack_codigo}` : undefined}
+                    >
+                      {' · '}{comoSeLee(m.estado_envio)}
                     </span>
                   ) : null}
                 </div>
               </div>
             </div>
+            </Fragment>
           )
         })}
         <div ref={finRef} />

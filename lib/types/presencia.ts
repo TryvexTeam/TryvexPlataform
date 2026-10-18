@@ -16,6 +16,13 @@ export const ESTADOS_PRESENCIA = [
   'en_pausa',
   'fuera_de_turno',
   'inactivo',
+  /**
+   * No sale de la vista `presencia_equipo` -- lo deriva `estadoVisible` en el
+   * cliente cuando alguien tiene la pestaña abierta (Realtime Presence) pero
+   * no marcó turno. Uno puede ponerse activo/inactivo sin tener jornada
+   * abierta; nunca se guarda en la base.
+   */
+  'conectado_sin_turno',
 ] as const
 
 export type EstadoPresencia = (typeof ESTADOS_PRESENCIA)[number]
@@ -39,6 +46,7 @@ export const PRESENCIA_LABEL: Record<EstadoPresencia, string> = {
   en_pausa: 'En pausa',
   fuera_de_turno: 'Fuera de turno',
   inactivo: 'Inactivo',
+  conectado_sin_turno: 'Conectado (sin turno)',
 }
 
 /** Verde solo para disponible: si todo brilla, nada informa. */
@@ -48,6 +56,9 @@ export const PRESENCIA_COLOR: Record<EstadoPresencia, string> = {
   en_pausa: 'oklch(80% 0.15 85)',
   fuera_de_turno: 'oklch(60% 0.02 260)',
   inactivo: 'oklch(50% 0.01 260)',
+  // Un azul apagado: ni el verde de "disponible" (no marcó turno) ni el gris
+  // de "fuera de turno" (si estuviera realmente ausente no se vería esto).
+  conectado_sin_turno: 'oklch(70% 0.1 240)',
 }
 
 /**
@@ -56,19 +67,34 @@ export const PRESENCIA_COLOR: Record<EstadoPresencia, string> = {
  *
  * `conectado` viene de Realtime Presence (pestaña abierta ahora). Marcó turno pero
  * no está conectado → sigue "disponible", porque el turno es la declaración
- * explícita y pesa más que la pestaña. Al revés no: tener el navegador abierto sin
- * marcar entrada NO es estar disponible.
+ * explícita y pesa más que la pestaña. Al revés, tener el navegador abierto sin
+ * marcar entrada tampoco es "disponible" -- pero sí es información real: uno se
+ * puede poner activo o inactivo sin tener jornada abierta, y antes esto se
+ * perdía del todo (`fuera_de_turno` tapaba la conexión real).
+ *
+ * `inactivo` es distinto: sale de `i.activo = false` en la vista, un integrante
+ * desactivado del equipo. Ahí `conectado` no cambia nada -- si está desactivado,
+ * se muestra así aunque tenga la pestaña abierta.
  */
 export function estadoVisible(
   presencia: PresenciaIntegrante | undefined,
   conectado: boolean,
 ): EstadoPresencia {
   if (!presencia) return conectado ? 'disponible' : 'inactivo'
+  if (presencia.estado === 'fuera_de_turno' && conectado) return 'conectado_sin_turno'
   return presencia.estado
 }
 
-/** Texto de apoyo bajo el nombre: "Disponible desde las 09:30". */
-export function detallePresencia(presencia: PresenciaIntegrante | undefined): string | null {
+/**
+ * Texto de apoyo bajo el nombre: "Disponible desde las 09:30".
+ *
+ * `conectado` es opcional para no romper a quien todavía no lo pasa: sin él
+ * se comporta como antes (mira solo el estado crudo de la vista).
+ */
+export function detallePresencia(
+  presencia: PresenciaIntegrante | undefined,
+  conectado = false,
+): string | null {
   if (!presencia) return null
 
   const hora = (iso: string) =>
@@ -85,6 +111,8 @@ export function detallePresencia(presencia: PresenciaIntegrante | undefined): st
     return `En turno desde las ${hora(presencia.turno_desde)}`
   }
   if (presencia.estado === 'en_pausa') return 'En pausa'
-  if (presencia.estado === 'fuera_de_turno') return 'Sin turno abierto'
+  if (presencia.estado === 'fuera_de_turno') {
+    return conectado ? 'Conectado, sin turno abierto' : 'Sin turno abierto'
+  }
   return null
 }

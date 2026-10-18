@@ -5,6 +5,7 @@ import {
   DragOverlay,
   MouseSensor,
   TouchSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -15,17 +16,90 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { SortableContext, verticalListSortingStrategy, useSortable, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
+import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/**
+ * Qué columnas están plegadas, guardado en este navegador.
+ *
+ * Es un store de verdad (no un `useState` + effect) porque el valor vive fuera
+ * de React: lo escribe el usuario al plegar y lo lee `localStorage`. Leerlo en
+ * un effect obligaba a un segundo render y se veía el parpadeo de las columnas
+ * abriéndose y plegándose de golpe; además el lint lo prohíbe con razón
+ * (`react-hooks/set-state-in-effect`).
+ *
+ * `useSyncExternalStore` permite dar una respuesta distinta en el servidor
+ * (nada plegado, que es lo único que el servidor puede saber) sin que React
+ * tire abajo el árbol por no coincidir con el navegador.
+ */
+const VACIO: string[] = []
+const oyentes = new Set<() => void>()
+// El snapshot tiene que ser el MISMO objeto mientras no cambie nada: si se
+// devolviera un array nuevo en cada lectura, React entendería "cambió" y
+// entraría en un bucle de renders.
+const cache = new Map<string, { crudo: string | null; valor: string[] }>()
+
+function claveDe(memoria: string) {
+  return `kanban-colapso:${memoria}`
+}
+
+function leerColapsadas(memoria: string): string[] {
+  let crudo: string | null = null
+  try {
+    crudo = window.localStorage.getItem(claveDe(memoria))
+  } catch {
+    // Modo privado o site data bloqueada: no recordar el plegado es molesto;
+    // que reviente el tablero, no.
+    return VACIO
+  }
+  const previo = cache.get(memoria)
+  if (previo && previo.crudo === crudo) return previo.valor
+  let valor = VACIO
+  try {
+    const parseado: unknown = crudo ? JSON.parse(crudo) : null
+    if (Array.isArray(parseado)) valor = parseado.filter((x): x is string => typeof x === 'string')
+  } catch {
+    // Un JSON viejo con otra forma no debería dejar el tablero inservible.
+  }
+  cache.set(memoria, { crudo, valor })
+  return valor
+}
+
+function guardarColapsadas(memoria: string, valor: string[]) {
+  try {
+    window.localStorage.setItem(claveDe(memoria), JSON.stringify(valor))
+  } catch {
+    // Igual que al leer: preferible olvidar el plegado a romper el tablero.
+  }
+  cache.set(memoria, { crudo: JSON.stringify(valor), valor })
+  oyentes.forEach((f) => f())
+}
+
+function suscribir(f: () => void) {
+  oyentes.add(f)
+  return () => {
+    oyentes.delete(f)
+  }
+}
 
 export interface KanbanColumn<T> {
   id: string
   title: string
   items: T[]
   color?: string
+  /**
+   * Parte el contenido de la columna en secciones plegables (en tareas: un
+   * grupo por mes de vencimiento). `items` sigue siendo la lista completa y en
+   * el mismo orden: es lo que ve dnd-kit, y si no coincidiera, arrastrar
+   * dejaria las tarjetas en cualquier parte.
+   *
+   * Sin esto la columna se pinta como siempre, de corrido.
+   */
+  grupos?: { id: string; titulo: string; items: T[]; atrasadas?: number }[]
 }
 
 interface KanbanBoardProps<T extends { id: string }> {
@@ -45,7 +119,28 @@ interface KanbanBoardProps<T extends { id: string }> {
    *  para celular, donde el scroll lateral y el drag competian por el mismo
    *  gesto. El drag y el drop funcionan igual en los dos casos, dnd-kit
    *  detecta por posicion real, no le importa la direccion del layout. */
-  orientation?: 'horizontal' | 'vertical'
+  /**
+   * `responsive` (por defecto) apila las columnas en el teléfono y las pone
+   * lado a lado desde `md`. Las otras dos fuerzan una sola forma en todos los
+   * tamaños, para quien monta dos tableros distintos por breakpoint.
+   */
+  orientation?: 'horizontal' | 'vertical' | 'responsive'
+  /**
+   * 'elastico' (por defecto): las columnas se reparten el ancho disponible.
+   * 'fijo': todas miden lo mismo y el sobrante queda libre a la derecha.
+   *
+   * En tareas hace falta 'fijo'. Al sacar la columna Backlog, su ancho se lo
+   * repartieron las cuatro restantes y volvieron a llegar hasta la esquina
+   * inferior derecha, tapando el tacho de la papelera. Los tableros de leads,
+   * clientes y proyectos tienen más columnas y sí quieren repartirse el ancho.
+   */
+  anchoColumna?: 'elastico' | 'fijo'
+  /**
+   * Con qué nombre se recuerda, en este navegador, qué secciones están
+   * plegadas. Sin esto el plegado funciona igual pero se olvida al recargar.
+   * Va por tablero: el de un proyecto no hereda lo del tablero general.
+   */
+  memoriaColapso?: string
 }
 
 /** Tacho de basura propio (no un icono de lucide): cuerpo + tapa por separado
@@ -147,8 +242,11 @@ const cardEntrance = {
   show: {
     opacity: 1,
     y: 0,
+    scale: 1,
     transition: { type: 'spring' as const, stiffness: 350, damping: 25 },
   },
+  /** Hueco que deja la tarjeta mientras el DragOverlay la lleva bajo el cursor. */
+  arrastrando: { opacity: 0, scale: 0.98, y: 0 },
 }
 
 function SortableCard<T extends { id: string }>({
@@ -171,13 +269,40 @@ function SortableCard<T extends { id: string }>({
     <motion.div
       ref={setNodeRef}
       style={style}
+      /*
+       * `variants` y NO un `animate` con objeto literal.
+       *
+       * El padre orquesta la entrada con `initial="hidden"` / `animate="show"`,
+       * y esa cadena solo llega a los hijos que hablan el mismo idioma. Antes
+       * este nodo declaraba las dos cosas a la vez: heredaba el `hidden` del
+       * padre (`opacity: 0`) pero su propio `animate` literal pisaba la
+       * variante `show`, así que nunca volvía a opacidad 1 — las tarjetas se
+       * quedaban invisibles al abrir el tablero, con la columna dibujada y
+       * vacía, hasta que cualquier otro render las despertaba.
+       *
+       * Arrastrando se atenúa: es el hueco que deja la tarjeta mientras el
+       * `DragOverlay` la dibuja bajo el cursor.
+       */
       variants={cardEntrance}
       layout
       {...attributes}
       {...listeners}
-      animate={isDragging ? { opacity: 0, scale: 0.98 } : { opacity: 1, scale: 1 }}
+      animate={isDragging ? 'arrastrando' : 'show'}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-      className="touch-none"
+      // `touch-manipulation`, no `touch-none`. `touch-action: none` le dice al
+      // navegador, desde el primer toque, que nunca haga scroll nativo con un
+      // gesto que empiece sobre esta tarjeta — sin importar lo que decida
+      // despues el sensor. El delay de 200ms de arriba solo controla cuando
+      // dnd-kit arranca SU propio drag; no le devuelve el gesto al navegador.
+      // Resultado real: el primer swipe sobre una tarjeta se "perdía" (ni
+      // arrastraba ni scrolleaba) y recien el segundo, que ya no tocaba una
+      // tarjeta, scrolleaba — el sintoma exacto que reporto Adley ("hay que
+      // pasar el scroll muchas veces para que pesque"). `manipulation` deja
+      // que el navegador scrollee nativo de inmediato; dnd-kit sigue recibiendo
+      // los eventos de touch en paralelo y decide el drag con el mismo delay,
+      // sin bloquear nada de entrada. Patron oficial de dnd-kit para esto:
+      // https://dndkit.com/react/guides/sensors
+      className="touch-manipulation"
     >
       {renderCard(item, isDragging)}
     </motion.div>
@@ -187,9 +312,14 @@ function SortableCard<T extends { id: string }>({
 function DroppableColumn<T extends { id: string }>({
   col,
   renderCard,
+  plegado,
+  alternar,
 }: {
   col: KanbanColumn<T>
   renderCard: (item: T, isDragging?: boolean) => React.ReactNode
+  /** Ids de grupo plegados dentro de ESTA columna. */
+  plegado?: (grupoId: string) => boolean
+  alternar?: (grupoId: string) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id })
 
@@ -205,8 +335,13 @@ function DroppableColumn<T extends { id: string }>({
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         className="flex flex-col gap-2 min-h-[120px] rounded-xl p-2 transition-all duration-150"
         style={{
-          background: isOver ? 'oklch(58% 0.24 292 / 8%)' : 'oklch(8% 0.003 240)',
-          border: isOver ? '1.5px dashed oklch(58% 0.24 292 / 40%)' : '1px solid var(--tx-border)',
+          // El acento del CRM, no un morado suelto: `oklch(... 292)` venía de
+          // una paleta anterior y en el tablero se leía como si perteneciera a
+          // otra aplicación.
+          background: isOver ? 'var(--tx-accent-subtle)' : 'oklch(8% 0.003 240)',
+          border: isOver
+            ? '1.5px dashed color-mix(in srgb, var(--tx-accent) 45%, transparent)'
+            : '1px solid var(--tx-border)',
         }}
       >
         <motion.div
@@ -215,9 +350,66 @@ function DroppableColumn<T extends { id: string }>({
           animate="show"
           className="flex flex-col gap-2"
         >
-          {col.items.map((item) => (
-            <SortableCard key={item.id} item={item} renderCard={renderCard} />
-          ))}
+          {col.grupos
+            ? col.grupos.map((grupo) => {
+                // Mientras arrastras algo sobre la columna se abren todos los
+                // grupos: si no, no verías dónde va a caer la tarjeta.
+                const cerrado = !isOver && (plegado?.(grupo.id) ?? false)
+                return (
+                  <div key={grupo.id} className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => alternar?.(grupo.id)}
+                      aria-expanded={!cerrado}
+                      className="flex w-full items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors hover:bg-white/[0.04]"
+                    >
+                      <ChevronDown
+                        size={12}
+                        className={cn(
+                          'shrink-0 text-[var(--tx-ink-muted)] transition-transform duration-150',
+                          cerrado && '-rotate-90',
+                        )}
+                      />
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-ink-secondary)] truncate">
+                        {grupo.titulo}
+                      </span>
+                      {/* El contador se pone rojo cuando el grupo tiene algo
+                          atrasado. Un mes plegado tiene que poder avisar que
+                          adentro hay algo vencido: si no, plegarlo se vuelve
+                          una forma cómoda de no enterarse. */}
+                      <span
+                        title={
+                          grupo.atrasadas
+                            ? `${grupo.atrasadas} ${grupo.atrasadas === 1 ? 'tarea atrasada' : 'tareas atrasadas'}`
+                            : undefined
+                        }
+                        className="ml-auto shrink-0 rounded-full px-1.5 text-[10px] font-medium tabular-nums"
+                        style={
+                          grupo.atrasadas
+                            ? {
+                                background: 'oklch(63% 0.21 22 / 16%)',
+                                color: 'oklch(72% 0.17 22)',
+                                border: '1px solid oklch(63% 0.21 22 / 32%)',
+                              }
+                            : {
+                                background: 'var(--tx-surface-2)',
+                                color: 'var(--tx-ink-muted)',
+                              }
+                        }
+                      >
+                        {grupo.items.length}
+                      </span>
+                    </button>
+                    {!cerrado &&
+                      grupo.items.map((item) => (
+                        <SortableCard key={item.id} item={item} renderCard={renderCard} />
+                      ))}
+                  </div>
+                )
+              })
+            : col.items.map((item) => (
+                <SortableCard key={item.id} item={item} renderCard={renderCard} />
+              ))}
         </motion.div>
 
         <AnimatePresence>
@@ -232,6 +424,34 @@ function DroppableColumn<T extends { id: string }>({
               {isOver ? '↓ Soltar aquí' : 'Sin elementos'}
             </motion.p>
           )}
+
+          {/*
+           * La misma señal en las columnas que YA tienen tarjetas.
+           *
+           * Antes el "Soltar aquí" vivía dentro del bloque de columna vacía, así
+           * que al arrastrar sobre una columna con contenido no aparecía nada:
+           * solo cambiaba el fondo, que con una tarjeta encima del cursor casi
+           * no se ve. La confirmación de a dónde va a caer tiene que ser la
+           * misma en las cinco columnas.
+           *
+           * Va al final de la lista porque es donde se añade la tarjeta.
+           */}
+          {isOver && col.items.length > 0 && (
+            <motion.div
+              key="destino"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.14 }}
+              className="flex items-center justify-center rounded-xl border border-dashed py-3 text-xs"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--tx-accent) 45%, transparent)',
+                color: 'var(--tx-accent-2)',
+              }}
+            >
+              ↓ Soltar aquí
+            </motion.div>
+          )}
         </AnimatePresence>
       </motion.div>
     </SortableContext>
@@ -244,10 +464,32 @@ export function KanbanBoard<T extends { id: string }>({
   onDragEnd,
   scrollContainerRef,
   trashZone,
-  orientation = 'horizontal',
+  orientation = 'responsive',
+  anchoColumna = 'elastico',
+  memoriaColapso,
 }: KanbanBoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sobrePapelera, setSobrePapelera] = useState(false)
+  // Sin `memoriaColapso` el plegado no se recuerda entre recargas, pero sigue
+  // funcionando dentro de la sesión (`sesion`, abajo).
+  const [sesion, setSesion] = useState<string[]>(VACIO)
+  const guardadas = useSyncExternalStore(
+    suscribir,
+    () => (memoriaColapso ? leerColapsadas(memoriaColapso) : VACIO),
+    () => VACIO,
+  )
+  const colapsadas = memoriaColapso ? guardadas : sesion
+
+  function alternarColapso(colId: string, grupoId: string) {
+    // La clave lleva las dos partes: "Septiembre" de Por hacer y "Septiembre"
+    // de Hecho son secciones distintas y se pliegan por separado.
+    const clave = `${colId}/${grupoId}`
+    const siguiente = colapsadas.includes(clave)
+      ? colapsadas.filter((c) => c !== clave)
+      : [...colapsadas, clave]
+    if (memoriaColapso) guardarColapsadas(memoriaColapso, siguiente)
+    else setSesion(siguiente)
+  }
 
   // Sensores separados a proposito: con un solo PointerSensor, en el celular
   // cualquier intento de hacer scroll horizontal por las columnas arrancaba un
@@ -257,7 +499,8 @@ export function KanbanBoard<T extends { id: string }>({
   // (drag): hay que mantener 200ms sin moverse mas de 8px para que arranque.
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
   // Por defecto dnd-kit compara el RECTANGULO de la tarjeta arrastrada contra
@@ -337,14 +580,22 @@ export function KanbanBoard<T extends { id: string }>({
     >
       <div
         ref={scrollContainerRef}
+        /*
+         * `responsive` cambia de eje por CSS, en un solo árbol, en vez de
+         * montar dos tableros y esconder uno: con dos instancias, dnd-kit
+         * arranca y descarta sus sensores al cruzar el breakpoint, y hay el
+         * doble de nodos en el DOM para el mismo tablero.
+         *
+         * Sin colchón a la derecha en vertical: el tacho solo "atrapa" con el
+         * puntero exacto (ver collisionDetection), así que ya no hace falta
+         * robarle ancho a las tarjetas.
+         */
         className={
           orientation === 'vertical'
-            // Sin colchon a la derecha: el tacho ahora solo "atrapa" con el
-            // puntero exacto (ver collisionDetection), asi que ya no hace
-            // falta robarle ancho a las tarjetas para evitar toques
-            // accidentales — se superpone igual que en desktop.
             ? 'flex flex-col gap-5 pb-24'
-            : 'flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none'
+            : orientation === 'horizontal'
+              ? 'flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none'
+              : 'flex flex-col gap-5 pb-24 md:flex-row md:gap-4 md:overflow-x-auto md:pb-4'
         }
         style={orientation === 'horizontal' ? { scrollPaddingLeft: '1rem' } : undefined}
       >
@@ -353,36 +604,58 @@ export function KanbanBoard<T extends { id: string }>({
             key={col.id}
             data-kanban-col={col.id}
             className={
-              orientation === 'vertical'
+              anchoColumna === 'fijo' && orientation !== 'vertical'
+                ? // Ancho fijo: apiladas en el teléfono, y desde `md` todas del
+                  // mismo porte, sin estirarse para llenar la pantalla.
+                  'flex flex-col w-full md:w-[272px] md:shrink-0'
+                : orientation === 'vertical'
                 ? 'flex flex-col w-full'
+                : orientation === 'responsive'
+                  // Ancho completo apiladas; desde `md`, el mismo reparto que
+                  // en horizontal. Sin `snap`: apiladas no hay nada a lo que
+                  // engancharse.
+                  ? 'flex flex-col w-full md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink lg:min-w-[200px]'
                 // En celular las columnas quedan a ancho fijo (85vw, con
                 // scroll+snap entre ellas). De md para arriba, en vez de eso
                 // dejarlas pegadas a la izquierda con un hueco vacio al lado,
                 // que crezcan para repartirse el espacio disponible — con un
                 // tope (360px) para que las tarjetas no queden gigantes en
                 // pantallas muy anchas.
-                : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink'
+                //
+                // El minimo baja de 272 a 200 en `lg`: con el tablero de cinco
+                // columnas del scrum, 272 x 5 mas los huecos pasan de 1400 px y
+                // obligaban a desplazarse lateralmente en un portatil normal.
+                // Un tablero al que hay que hacerle scroll para ver la ultima
+                // columna deja de servir para lo unico que sirve un tablero,
+                // que es ver el estado completo de un vistazo.
+                : 'flex flex-col w-[85vw] max-w-[272px] shrink-0 snap-start md:w-auto md:min-w-[272px] md:max-w-[360px] md:flex-1 md:shrink lg:min-w-[200px]'
             }
           >
-            {/* Column header */}
+            {/* Cabecera de la columna: una etiqueta, no un control. Lo que se
+                pliega son las secciones de adentro (los meses). */}
             <div className="flex items-center justify-between mb-2.5 px-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 {col.color && (
                   <span
                     className="h-2 w-2 rounded-full shrink-0"
                     style={{ background: col.color }}
                   />
                 )}
-                <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] tracking-tight">
+                <span className="text-[13px] font-semibold text-[var(--tx-ink-primary)] tracking-tight truncate">
                   {col.title}
                 </span>
               </div>
-              <span className="text-[11px] font-medium text-[var(--tx-ink-muted)] bg-[var(--tx-surface-2)] rounded-full px-2 py-0.5 tabular-nums">
+              <span className="text-[11px] font-medium text-[var(--tx-ink-muted)] bg-[var(--tx-surface-2)] rounded-full px-2 py-0.5 tabular-nums shrink-0">
                 {col.items.length}
               </span>
             </div>
 
-            <DroppableColumn col={col} renderCard={renderCard} />
+            <DroppableColumn
+              col={col}
+              renderCard={renderCard}
+              plegado={(grupoId) => colapsadas.includes(`${col.id}/${grupoId}`)}
+              alternar={(grupoId) => alternarColapso(col.id, grupoId)}
+            />
           </div>
         ))}
       </div>

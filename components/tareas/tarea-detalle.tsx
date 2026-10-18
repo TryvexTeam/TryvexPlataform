@@ -13,9 +13,10 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { TareaForm } from './tarea-form'
 import type { TareaConResponsables, Subtarea, TareaInsert } from '@/lib/types/tarea'
+import { etiquetaEstado } from '@/lib/types/tarea'
 import { cn } from '@/lib/utils'
+import { parseFechaLocal, fechaHoraSantiago } from '@/lib/utils/fecha-santiago'
 
-const estadoLabel = { sin_empezar: 'Sin empezar', en_curso: 'En curso', listo: 'Listo' }
 const prioridadColor = { alta: 'destructive', media: 'secondary', baja: 'outline' } as const
 
 interface TareaDetalleProps {
@@ -109,7 +110,8 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
   return (
     <div>
       {/* Back */}
-      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 mb-6">
+      {/* Metadato de navegación: va en muted, y al hover sube a primary para dar feedback claro */}
+      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-[var(--tx-ink-muted)] hover:text-[var(--tx-ink-primary)] mb-6">
         <ArrowLeft size={14} />
         Volver
       </button>
@@ -149,26 +151,32 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
           style={{ background: 'oklch(63% 0.21 22 / 8%)', color: 'oklch(72% 0.17 22)', border: '1px solid oklch(63% 0.21 22 / 25%)' }}
         >
           <Trash2 size={14} />
-          Esta tarea esta en la papelera desde el {format(new Date(tarea.eliminado_at), "d 'de' MMMM, HH:mm", { locale: es })}.
+          {/* En hora de Santiago, no en la de quien lo dibuje: `eliminado_at`
+              es UTC, el servidor de Vercel corre en UTC y el navegador de
+              Cristian en America/Santiago. Con `format` salía con 3 o 4 horas
+              de diferencia —a veces otro día— y, peor, el HTML del servidor no
+              coincidía con el del cliente: React descartaba la hidratación de
+              este árbol y lo volvía a renderizar entero. */}
+          Esta tarea esta en la papelera desde el {fechaHoraSantiago(tarea.eliminado_at)}.
         </div>
       )}
 
       {/* Meta */}
       <div className="flex flex-wrap gap-2 mb-6">
-        <Badge variant="secondary">{estadoLabel[tarea.estado]}</Badge>
+        <Badge variant="secondary">{etiquetaEstado(tarea.estado)}</Badge>
         <Badge variant={prioridadColor[tarea.prioridad]}>{tarea.prioridad}</Badge>
         <Badge variant="outline">{tarea.tipo}</Badge>
         <Badge variant="outline">Esfuerzo: {tarea.esfuerzo}</Badge>
         {tarea.fecha_limite && (
           <Badge variant="outline">
-            Límite: {format(new Date(tarea.fecha_limite), 'd MMM yyyy', { locale: es })}
+            Límite: {format(parseFechaLocal(tarea.fecha_limite), 'd MMM yyyy', { locale: es })}
           </Badge>
         )}
       </div>
 
-      {/* Descripción */}
+      {/* Descripción: contenido que hay que leer, no un metadato, por eso va en secundario y no en muted */}
       {tarea.descripcion && (
-        <p className="text-sm text-neutral-600 mb-6 leading-relaxed">{tarea.descripcion}</p>
+        <p className="text-sm text-[var(--tx-ink-secondary)] mb-6 leading-relaxed">{tarea.descripcion}</p>
       )}
 
       <Separator className="mb-6" />
@@ -176,17 +184,17 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
       {/* Subtareas */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-neutral-700">
+          <h2 className="text-sm font-semibold text-[var(--tx-ink-primary)]">
             Subtareas {subtareas.length > 0 && `(${completadas}/${subtareas.length})`}
           </h2>
         </div>
 
-        {/* Progress bar */}
+        {/* Progress bar: fondo con opacidad baja de superficie y relleno con verde semántico de éxito */}
         {subtareas.length > 0 && (
-          <div className="h-1.5 bg-neutral-100 rounded-full mb-4 overflow-hidden">
+          <div className="h-1.5 bg-white/[0.038] rounded-full mb-4 overflow-hidden">
             <div
-              className="h-full bg-green-500 rounded-full transition-all"
-              style={{ width: `${(completadas / subtareas.length) * 100}%` }}
+              className="h-full rounded-full transition-all"
+              style={{ background: 'oklch(72% .17 145)', width: `${(completadas / subtareas.length) * 100}%` }}
             />
           </div>
         )}
@@ -198,12 +206,12 @@ export function TareaDetalle({ tarea, initialSubtareas }: TareaDetalleProps) {
                 checked={s.completada}
                 onCheckedChange={(v) => handleToggleSubtarea(s.id, v as boolean)}
               />
-              <span className={cn('text-sm flex-1', s.completada && 'line-through text-neutral-400')}>
+              <span className={cn('text-sm flex-1', s.completada && 'line-through text-[var(--tx-ink-muted)]')}>
                 {s.descripcion}
               </span>
               <button
                 onClick={() => handleDeleteSubtarea(s.id)}
-                className="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-400 transition-opacity"
+                className="opacity-0 group-hover:opacity-100 text-[var(--tx-ink-muted)] hover:text-red-400 transition-opacity"
               >
                 <Trash2 size={13} />
               </button>

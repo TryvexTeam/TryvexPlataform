@@ -2,10 +2,13 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { TareasRepository } from '@/lib/repos/tareas'
+import { EstadoTareaSchema } from '@/lib/types/tarea'
 
 const PapeleraSchema = z.object({
   accion: z.enum(['mover', 'restaurar']),
-  estado: z.enum(['sin_empezar', 'en_curso', 'listo']).optional(),
+  // Del esquema y no repetida aquí: enumerarla a mano fue lo que dejó la
+  // ruta de estado rechazando las columnas nuevas con un 400.
+  estado: EstadoTareaSchema.optional(),
 })
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -17,7 +20,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = await req.json()
   const result = PapeleraSchema.safeParse(body)
   if (!result.success) {
-    return NextResponse.json({ error: result.error.issues }, { status: 400 })
+    return NextResponse.json({ error: result.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
 
   const repo = new TareasRepository(supabase)

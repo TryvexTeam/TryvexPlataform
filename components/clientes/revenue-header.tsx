@@ -67,8 +67,15 @@ export function RevenueHeader({ clientes, ventas }: RevenueHeaderProps) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
+      // Sin opacity en el keyframe a propósito: son datos financieros, no
+      // pueden depender de que una animación termine para ser legibles.
+      // useDatosVivos (dim_clientes/fact_ventas) refresca con cada cambio de
+      // foco de la pestaña, no solo cada N minutos — eso remonta este
+      // componente seguido y le corta la animación de entrada a mitad de
+      // camino. El resultado real: la tarjeta quedaba pegada en su opacity:0
+      // inicial, con el fondo del CRM tapando el MRR/ARR casi por completo.
+      initial={{ y: -8 }}
+      animate={{ y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 28 }}
       className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6"
     >
@@ -77,8 +84,9 @@ export function RevenueHeader({ clientes, ventas }: RevenueHeaderProps) {
         return (
           <motion.div
             key={m.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
+            // Mismo motivo que el wrapper de arriba: sin opacity en el keyframe.
+            initial={{ y: 12 }}
+            animate={{ y: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 28, delay: i * 0.05 }}
             className="relative overflow-hidden rounded-2xl p-4"
             style={{

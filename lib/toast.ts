@@ -15,9 +15,20 @@ export interface ToastOptions {
   id?: string
 }
 
+/**
+ * Red de seguridad en tiempo de ejecución: `mensaje` se tipa `string`, pero
+ * llega de un `await res.json()` sin tipar (`any`). Si una API devuelve algo
+ * que no es texto —el caso real: el array crudo de `error.issues` de Zod—
+ * React tumbaba la página entera al intentar renderizarlo ("Objects are not
+ * valid as a React child"). Mejor un mensaje genérico que un crash.
+ */
+function aTexto(valor: unknown): string {
+  return typeof valor === 'string' && valor.trim() !== '' ? valor : 'Ocurrió un error inesperado'
+}
+
 function build(mensaje: string, tipo: SileoState, opts?: ToastOptions): SileoOptions {
   return {
-    title: mensaje,
+    title: aTexto(mensaje),
     type: tipo,
     description: opts?.description,
     duration: opts?.duration,

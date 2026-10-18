@@ -1,7 +1,9 @@
 'use client'
 
+import Link from 'next/link'
+
 import { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Loader2, ChevronDown } from 'lucide-react'
+import { Bot, Send, Loader2, ChevronDown, Brain } from 'lucide-react'
 import { TarjetaBorrador } from './tarjeta-borrador'
 
 export type DraftLead = {
@@ -111,6 +113,12 @@ export function VexChat({ historialInicial }: VexChatProps) {
           <span>scraper-clientes</span>
           <ChevronDown size={13} />
         </button>
+        {/* El puesto de control del agente de WhatsApp: ajustes, conversaciones
+            y el interruptor por hilo. */}
+        <Link href="/vex/intelligence" className="reader__hint" title="Tryvex Intelligence">
+          <Brain size={13} />
+          <span className="hidden sm:inline">Intelligence</span>
+        </Link>
       </div>
 
       {/* Thread */}

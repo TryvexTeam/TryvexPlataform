@@ -1,7 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SB = any
+type SB = SupabaseClient<Database>
 
 /**
  * Acceso a los datos del flujo "olvidé mi contraseña". Usa el cliente admin porque

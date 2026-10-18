@@ -27,15 +27,16 @@ import {
   Check,
   Maximize2,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { ClienteForm } from './cliente-form'
 import { PagoForm } from './pago-form'
 import { ConfirmarDialog } from './confirmar-dialog'
-import { ESTADOS_PROYECTO, resumenFinanciero } from '@/lib/types/proyecto'
+import { ESTADOS_PROYECTO, resumenFinanciero, saldoInicialArrastrado } from '@/lib/types/proyecto'
 import { nombreCliente, type Cliente, type ClienteInsert } from '@/lib/types/cliente'
 import type { Proyecto, Venta } from '@/lib/types/proyecto'
 
-const estadoPagoConfig: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
+const estadoPagoConfig: Record<string, { label: string; color: string; bg: string; icon: LucideIcon }> = {
   pendiente: { label: 'Pendiente', color: 'oklch(80% 0.14 55)',  bg: 'oklch(74% 0.17 55 / 12%)',  icon: Clock },
   pagado:    { label: 'Pagado',    color: 'oklch(78% 0.14 145)', bg: 'oklch(72% 0.17 145 / 12%)', icon: CheckCircle2 },
   atrasado:  { label: 'Atrasado',  color: 'oklch(72% 0.21 22)',  bg: 'oklch(63% 0.21 22 / 12%)',  icon: AlertTriangle },
@@ -85,11 +86,11 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
   )
   const pendientes = ventas.filter((v) => v.estado_pago === 'pendiente' || v.estado_pago === 'atrasado')
 
-  // Saldo del valor inicial que aún se arrastra: lo acordado menos lo cobrado como inicial.
-  const cobradoInicial = ventas
-    .filter((v) => v.tipo === 'inicial' && v.estado_pago === 'pagado')
-    .reduce((s, v) => s + (v.monto_usd ?? 0), 0)
-  const saldoArrastrado = Math.max(0, (cliente.valor_inicial_usd ?? 0) - cobradoInicial)
+  const saldoArrastrado = saldoInicialArrastrado(
+    ventas,
+    cliente.valor_inicial_usd,
+    cliente.saldo_inicial_saldado,
+  )
   const mostrarSaldoInicial = saldoArrastrado > 0 || cliente.saldo_inicial_saldado
   const hayAtrasados = ventas.some((v) => v.estado_pago === 'atrasado')
   const proyActivos = proyectos.filter((p) => p.estado !== 'cerrado' && p.estado !== 'entregado')
@@ -336,7 +337,7 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
 
         {/* KPI Strip */}
         <div
-          className="shrink-0 grid grid-cols-4 gap-px"
+          className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-px"
           style={{ background: 'oklch(100% 0 0 / 5%)', borderBottom: '1px solid oklch(100% 0 0 / 6%)' }}
         >
           {kpis.map((k) => (
@@ -602,6 +603,14 @@ export function ClientePanel({ cliente, proyectos, ventas, onClose, onUpdate }: 
                           background: 'oklch(100% 0 0 / 4%)',
                           border: '1px solid oklch(100% 0 0 / 8%)',
                           transition: 'background 150ms, border-color 150ms',
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            window.open(`/proyectos/${p.id}`, '_blank')
+                          }
                         }}
                         onClick={() => window.open(`/proyectos/${p.id}`, '_blank')}
                         onMouseEnter={(e) => {

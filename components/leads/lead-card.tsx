@@ -1,4 +1,5 @@
-import { Globe, Phone, MapPin, Star } from 'lucide-react'
+import { memo } from 'react'
+import { Globe, Phone, PhoneCall, PhoneOff, MapPin, Star } from 'lucide-react'
 import type { Lead } from '@/lib/types/lead'
 
 const origenConfig = {
@@ -14,10 +15,20 @@ interface LeadCardProps {
   noLeidos?: number
 }
 
-export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
+export const LeadCard = memo(function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
   return (
     <div
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        // Solo Enter: esta tarjeta se usa dentro de un kanban con dnd-kit
+        // (SortableCard), cuyo wrapper ya usa Espacio para levantar el drag.
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          onClick?.()
+        }
+      }}
       className="rounded-xl p-3 cursor-pointer select-none transition-all duration-150 group"
       style={{
         background: 'oklch(10% 0.004 240)',
@@ -55,15 +66,33 @@ export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
             💬 {noLeidos}
           </span>
         )}
-        {lead.score && (
-          <span
-            className="flex items-center gap-0.5 text-[11px] shrink-0 font-medium"
-            style={{ color: 'oklch(74% 0.17 55)' }}
-          >
-            <Star size={10} fill="currentColor" />
-            {lead.score}
-          </span>
-        )}
+      </div>
+
+      {/*
+        El score de IA decide a quién llamar primero, así que va como cifra +
+        barra, no como un número perdido entre otros datos. Sin score no es
+        "cero" (eso se leería como "pésimo"): es un guion, porque significa
+        que todavía nadie lo calificó.
+      */}
+      <div className="flex items-center gap-1.5 mb-2">
+        <Star size={10} style={{ color: lead.score && lead.score >= 8 ? 'var(--tx-accent-2)' : 'var(--tx-ink-muted)' }} fill="currentColor" />
+        <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,.08)' }}>
+          {lead.score && (
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${(lead.score / 10) * 100}%`,
+                background: lead.score >= 8 ? 'var(--tx-accent)' : 'rgba(255,255,255,.34)',
+              }}
+            />
+          )}
+        </div>
+        <span
+          className="text-[11px] font-medium shrink-0 tabular-nums"
+          style={{ color: lead.score ? (lead.score >= 8 ? 'var(--tx-accent-2)' : 'var(--tx-ink-primary)') : 'var(--tx-ink-muted)' }}
+        >
+          {lead.score ?? '—'}
+        </span>
       </div>
 
       <div className="space-y-1 mb-2.5">
@@ -88,8 +117,34 @@ export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
           {origenConfig[lead.origen].label}
         </span>
         <div className="flex items-center gap-2">
-          {lead.telefono && (
+          {/*
+            Antes de que se registrara ninguna llamada: solo el ícono de
+            "tiene teléfono" (gris, informativo). Después de la primera
+            llamada, el ícono pasa a contar el resultado — verde si contestó,
+            apagado si no — para distinguir de un vistazo, sin abrir la
+            ficha, a quién ya se le habló de verdad de a quién solo se le
+            marcó sin suerte.
+          */}
+          {lead.telefono && lead.ultima_llamada_respondio == null && (
             <Phone size={11} style={{ color: 'var(--tx-ink-muted)' }} />
+          )}
+          {lead.telefono && lead.ultima_llamada_respondio === true && (
+            <PhoneCall
+              size={11}
+              style={{ color: 'oklch(72% 0.17 145)' }}
+              aria-label="Última llamada: contestó"
+            >
+              <title>Última llamada: contestó</title>
+            </PhoneCall>
+          )}
+          {lead.telefono && lead.ultima_llamada_respondio === false && (
+            <PhoneOff
+              size={11}
+              style={{ color: 'var(--tx-ink-muted)' }}
+              aria-label="Última llamada: sin respuesta"
+            >
+              <title>Última llamada: sin respuesta</title>
+            </PhoneOff>
           )}
           {lead.tiene_web && (
             <Globe size={11} style={{ color: 'var(--tx-ink-muted)' }} />
@@ -98,4 +153,4 @@ export function LeadCard({ lead, onClick, noLeidos = 0 }: LeadCardProps) {
       </div>
     </div>
   )
-}
+})

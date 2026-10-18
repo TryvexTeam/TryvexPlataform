@@ -64,6 +64,8 @@ export type IntegrantePermisos = {
   id: string
   nombre: string
   email: string
+  /** Foto de perfil. Viaja con los permisos porque es la misma fila. */
+  avatar_url: string | null
   activo: boolean
   es_superadmin: boolean
   ver_jornadas_equipo: boolean

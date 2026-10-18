@@ -1,0 +1,367 @@
+"""Mira QUE tiene la web de un lead, no solo si tiene una.
+
+Por que existe: saber `tiene_web=true` no alcanzo. A Opticas Premium, que ya
+tiene sitio, Vex igual le ofrecio "agenda de horas" y "cotizaciones online" --
+cosas que su web YA hace. Para el dueno, eso se lee igual de mal que ofrecerle
+una pagina: los dos casos dicen "no miramos tu negocio".
+
+Lo que se busca son SENALES CONCRETAS en el HTML, no una opinion:
+
+    reserva   -> se puede pedir hora ahi (Reservo, Agendapro, Calendly, Booksy,
+                 un boton "agendar hora")
+    cotiza    -> hay como pedir un presupuesto
+    carrito   -> se puede comprar en linea
+    whatsapp  -> hay un enlace directo a WhatsApp
+    formulario-> hay un formulario de contacto
+    chat      -> hay un chat en vivo
+
+Limitaciones, dichas de frente:
+
+* Solo lee el HTML que entrega el servidor. Un sitio hecho con React que arma
+  todo con JavaScript puede tener agenda y que aca no se vea. Por eso el
+  resultado distingue "no lo encontre" de "no lo tiene": `revisada` queda en
+  False cuando ni siquiera se pudo leer la pagina.
+* Un enlace a Reservo prueba que la agenda existe; su ausencia NO prueba que no.
+  El sesgo es a proposito: preferimos callar una capacidad real antes que
+  afirmar una que no esta.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import re
+from dataclasses import dataclass, field
+from typing import Optional
+
+import httpx
+
+# Paginas internas que se prueban ademas de la home: es donde suele estar la
+# agenda o el formulario cuando la home es solo una portada.
+RUTAS_EXTRA = ("/contacto", "/reservas", "/agenda", "/hora", "/cotizacion")
+
+# Cada senal: (nombre, patrones). Los patrones van contra el HTML en minuscula.
+# Se prefieren dominios de proveedores reales antes que palabras sueltas: un
+# enlace a reservo.cl es un hecho, la palabra "agenda" puede ser cualquier cosa.
+SENALES: dict[str, tuple[str, ...]] = {
+    "reserva": (
+        r"reservo\.cl", r"agendapro", r"calendly\.com", r"booksy", r"simplybook",
+        r"getmereserva", r"bookeo", r"square\.site", r"appointlet", r"setmore",
+        r"cal\.com", r"timify", r"reservaonline",
+        # Botones propios: se exige el verbo pegado al objeto para no pegarle a
+        # "nuestra agenda de talleres" o "agenda de actividades".
+        r"reserv(a|ar)\s+(tu\s+)?(hora|cita|turno)",
+        r"agend(a|ar)\s+(tu\s+)?(hora|cita|turno)",
+        r"pedir\s+(hora|cita)",
+        r"book\s+(now|appointment)",
+    ),
+    "cotiza": (
+        r"cotiz(a|ar|acion)", r"solicita(r)?\s+(tu\s+)?presupuesto",
+        r"pide\s+tu\s+presupuesto", r"get\s+a\s+quote",
+    ),
+    "carrito": (
+        r"woocommerce", r"shopify", r"add-to-cart", r"añadir\s+al\s+carrito",
+        r"agregar\s+al\s+carrito", r"/cart", r"jumpseller", r"vtex", r"prestashop",
+        r"bsale", r"mercadopago", r"webpay", r"transbank", r"flow\.cl",
+    ),
+    "whatsapp": (r"wa\.me/", r"api\.whatsapp\.com", r"web\.whatsapp\.com", r"whatsapp://"),
+    "formulario": (r"<form", r"formulario\s+de\s+contacto", r"contact-form", r"wpcf7"),
+    "chat": (r"tawk\.to", r"crisp\.chat", r"intercom", r"tidio", r"livechat", r"zendesk"),
+}
+
+
+# Que ES ese sitio. Un dominio que responde 200 no es un negocio con web
+# andando: puede ser "volvemos pronto", un staging olvidado o un dominio en
+# venta. La diferencia importa porque cambia de lado el lead.
+#
+# ⭐ Este es el hallazgo de Jarvis (15-sep) que mas plata puede mover: el
+# scraper descartaba por igual al que tiene un sitio funcionando y al que lo
+# tiene a medio hacer. El segundo es el MEJOR lead que hay -- ya decidio que
+# necesita web, ya puso plata, y quedo botado. La venta ahi no es "hagamos un
+# sitio", es "terminemos lo que empezaste". Casos reales de su revision: Santo
+# Pan ("en mantencion"), La Tienda de Ruben (tienda en wpcomstaging.com),
+# Ivan Gonzalez (bucle 302, 16 s, 0 bytes), NRG (el dominio de su Facebook no
+# existe).
+EN_OBRA = (
+    r"en\s+mantenci[oó]n", r"under\s+construction", r"coming\s+soon",
+    r"pr[oó]ximamente", r"sitio\s+en\s+construcci[oó]n", r"volvemos\s+pronto",
+    r"estamos\s+trabajando\s+en", r"web\s+en\s+construcci[oó]n",
+)
+PARQUEADA = (
+    r"dominio\s+en\s+venta", r"buy\s+this\s+domain", r"this\s+domain\s+is\s+for\s+sale",
+    r"parked\s+(free\s+)?(at|by)", r"sedoparking", r"domain\s+broker",
+    r"hugedomains", r"afternic",
+    # ⭐ La firma mas comun y la mas silenciosa: 114 bytes de HTML que rebotan
+    # por JavaScript a "/lander". Es lo que sirven GoDaddy y compania para un
+    # dominio comprado y sin usar. Responde 200, asi que el scraper lo contaba
+    # como "tiene web". Encontrado el 15-sep en cafeforestal.com,
+    # centroferretero.com, zonafranka.com y tecnoferre.com -- todos dominios que
+    # `buscar_web_por_nombre` habia adivinado y dado por suyos.
+    r"location\.href\s*=\s*[\"']/lander", r"/lander[\"']",
+)
+# Dominios que delatan un sitio a medio publicar, sin mirar el contenido.
+# Codigos que hablan de NOSOTROS, no del sitio. Un 403 al bot desde un
+# datacenter es lo mas comun; el sitio suele estar impecable para una persona.
+BLOQUEO = (401, 403, 429, 451)
+
+HOSTS_STAGING = ("wpcomstaging.com", ".staging.", "staging.", "dev.", ".test.", "myshopify.com/password")
+
+
+@dataclass
+class RevisionWeb:
+    url: str
+    revisada: bool = False
+    """False = no se pudo leer la pagina. NO significa "no tiene nada"."""
+    capacidades: list[str] = field(default_factory=list)
+    paginas_leidas: int = 0
+    error: Optional[str] = None
+    estado: str = "desconocido"
+    """viva · en_obra · staging · parqueada · vacia · caida · bloqueada · desconocido.
+
+    `bloqueada` = el servidor nos dijo que no (403, 401, 429). No sabemos nada
+    de su sitio: puede estar perfecto. Nunca es una oportunidad.
+    """
+    url_final: Optional[str] = None
+    """Adonde termino despues de los redirects. Delata dominios revendidos."""
+
+    @property
+    def es_oportunidad(self) -> bool:
+        """¿Su web esta a medio hacer? Entonces es un lead MEJOR, no un descarte.
+
+        🔴 Solo cuenta lo que SE PUDO COMPROBAR. Un timeout no es un sitio
+        muerto: es un sitio que no alcanzamos. Caso real del 16-sep, la primera
+        corrida con esto en el VPS: pasteleriavienesa.cl quedo marcada "caida"
+        por ConnectTimeout desde el servidor, y responde 200 desde otra red --
+        el sitio bloquea al datacenter. Si eso pasa por bueno, Vex le escribe
+        al dueño diciendole que su web esta caida cuando no lo esta.
+
+        Por eso `caida` solo vale si vino de una respuesta HTTP de verdad
+        (un 404, un 500). Si `revisada` es False, no sabemos nada y no se
+        afirma nada.
+        """
+        if self.estado == "caida":
+            return self.revisada
+        return self.estado in ("en_obra", "staging", "parqueada", "vacia")
+
+    def como_dict(self) -> dict:
+        return {
+            "url": self.url,
+            "revisada": self.revisada,
+            "capacidades": sorted(self.capacidades),
+            "paginas_leidas": self.paginas_leidas,
+            "error": self.error,
+            "estado": self.estado,
+            "url_final": self.url_final,
+            "es_oportunidad": self.es_oportunidad,
+        }
+
+
+# Marcas de que la pagina la arma JavaScript en el navegador. El HTML que
+# entrega el servidor viene casi vacio A PROPOSITO: el contenido lo pone React,
+# Vue o Angular despues. Nosotros no ejecutamos JavaScript, asi que contarlo
+# como "vacia" es afirmar algo que no vimos.
+#
+# 🔴 Caso real del 16-sep, en la primera corrida completa con el timer
+# encendido: clinicaborealis.cl son 2.712 bytes con un <div id="root"> y 5
+# palabras. Para una persona el sitio funciona; para nosotros parecia un
+# dominio botado.
+# Cuantas palabras puede tener una pagina que dice estar en construccion.
+# Una portada de "volvemos pronto" trae un parrafo; un sitio andando trae
+# cientos. Los casos reales del 16-sep: inmotionkinesiologia.cl ("Estamos
+# trabajando en algo increible") tiene 28 palabras; kinecura.cl, que funciona
+# entero y solo tiene una seccion pendiente, tiene 1.807.
+TOPE_EN_OBRA = 250
+
+MARCAS_SPA = (
+    # El div donde la app se monta. El id puede venir sin comillas.
+    r"""id=["']?(root|app|q-app|__nuxt|__next|main-app)["'\s>]""",
+    r"__NEXT_DATA__",
+    r"__NUXT__",
+    r"ng-app",
+    r"data-reactroot",
+    r"data-svelte",
+    r"/_next/",
+    # Un bundle con hash: index-a1b2c3.js o index.a1b2c3.js, los dos existen.
+    r"/assets/[a-z]+[.-][a-z0-9]{6,}\.js",
+    # Un modulo ES en el head es senal de app moderna, no de pagina servida.
+    r"""<script[^>]+type=["']module["']""",
+)
+
+def marco_principal(html: str) -> str:
+    """La URL del marco donde vive el sitio de verdad, si esto es un frameset.
+
+    🔴 Caso real del 16-sep: ferreteriasantodomingo.cl son 646 bytes de
+    <frameset> apuntando a smartienda.cl. Contado por palabras da "vacia" --
+    y adentro del marco hay una tienda con 115 palabras. El sitio no esta
+    vacio, esta viejo. Decirle al dueño que su web esta vacia es falso.
+    """
+    texto = html or ""
+    if "<frameset" not in texto.lower():
+        return ""
+    for m in re.finditer(r"<frame[^>]*", texto, re.I):
+        src = re.search(r"src\s*=\s*[\"']([^\"']+)[\"']", m.group(0), re.I)
+        if src and src.group(1).strip():
+            return src.group(1).strip()
+    return ""
+
+
+def texto_visible(html: str) -> str:
+    """El texto sin lo que vive dentro de <script>, <style> y los comentarios.
+
+    Buscar una frase en el HTML crudo encuentra cosas que nadie lee: menus de
+    traducciones, plantillas de componentes, texto comentado.
+    """
+    t = html or ""
+    t = re.sub(r"<!--.*?-->", " ", t, flags=re.S)
+    t = re.sub(r"<(script|style|template|noscript)\b[^>]*>.*?</\1>", " ", t, flags=re.S | re.I)
+    return re.sub(r"<[^>]+>", " ", t)
+
+
+def clasificar_sitio(html: str, url_final: str = "", tamano: Optional[int] = None) -> str:
+    """En que estado esta el sitio. Solo con lo que entrega el servidor."""
+    if any(h in (url_final or "").lower() for h in HOSTS_STAGING):
+        return "staging"
+
+    crudo = (html or "").lower()
+    # PARQUEADA se busca en el HTML entero A PROPOSITO: la firma mas comun de
+    # un dominio parqueado es justamente un redirect escrito en JavaScript.
+    if any(re.search(p, crudo) for p in PARQUEADA):
+        return "parqueada"
+
+    # 🔴 EN_OBRA solo en lo que una persona VE. Caso real del 16-sep, primera
+    # corrida completa: maryblanca.cl quedo "en obra" porque un diccionario de
+    # traducciones de su widget dice
+    #     'label.circle.comming_soon': "proximamente"
+    # dentro de un <script>. El sitio tiene 842 palabras y funciona perfecto.
+    visible = texto_visible(crudo)
+    palabras_visibles = len(visible.split())
+    # 🔴 Y ademas tiene que ser un sitio CHICO. Caso real del 16-sep:
+    # kinecura.cl tiene 1.807 palabras y funciona entero; lo marcaba la frase
+    # "Proximamente: recepcion, boxes, sala de rehabilitacion" -- una seccion
+    # de galeria sin fotos todavia. Un sitio con ese contenido no esta en
+    # construccion, diga lo que diga una de sus secciones.
+    if palabras_visibles < TOPE_EN_OBRA and any(re.search(p, visible) for p in EN_OBRA):
+        return "en_obra"
+
+    # Una pagina casi sin texto no es un sitio: es un dominio con algo puesto.
+    palabras = len(texto_visible(html or "").split())
+    if palabras < 40:
+        # Antes de decir "vacia": ¿sera que el contenido lo pone JavaScript?
+        # Si hay marcas de SPA, no lo sabemos -- y no saber no es un lead.
+        if any(re.search(p, html or "", re.I) for p in MARCAS_SPA):
+            return "desconocido"
+        return "vacia"
+
+    return "viva"
+
+
+def senales_en(html: str) -> set[str]:
+    """Las capacidades que aparecen en este HTML."""
+    texto = html.lower()
+    return {
+        nombre
+        for nombre, patrones in SENALES.items()
+        if any(re.search(p, texto) for p in patrones)
+    }
+
+
+async def revisar_web(url: str, timeout: float = 8.0) -> RevisionWeb:
+    """Lee la home y algunas paginas internas, y devuelve que se encontro."""
+    r = RevisionWeb(url=url)
+    if not url or not url.strip():
+        r.error = "sin url"
+        return r
+
+    base = url.strip().rstrip("/")
+    encontradas: set[str] = set()
+
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; TryvexBot/1.0)"},
+        verify=False,
+    ) as client:
+        try:
+            resp = await client.get(base)
+            r.url_final = str(resp.url)
+            if resp.status_code in BLOQUEO:
+                # 🔴 El servidor contesto, pero contesto "no". Un 403 NO es un
+                # sitio roto: es un sitio que nos bloquea a NOSOTROS.
+                # Caso real del 16-sep: floristeriayregalos.cl dio 403 al bot
+                # desde el VPS y responde 200 desde otra red. Si eso pasa por
+                # "caida", le escribimos al dueño de un sitio sano diciendole
+                # que lo tiene botado.
+                r.error = f"home respondio {resp.status_code} (nos bloquea)"
+                r.estado = "bloqueada"
+                return r
+            if resp.status_code >= 400:
+                # Un 404 o un 500 si dicen algo del sitio: el negocio tiene
+                # dominio y no tiene nada en pie detras.
+                r.error = f"home respondio {resp.status_code}"
+                r.estado = "caida"
+                # El servidor contesto sobre el CONTENIDO: esto si es una
+                # comprobacion. Se distingue del timeout y del bloqueo.
+                r.revisada = True
+                return r
+            r.revisada = True
+            r.paginas_leidas = 1
+            cuerpo = resp.text
+            # Si es un frameset, el sitio de verdad esta un nivel mas adentro.
+            marco = marco_principal(cuerpo)
+            if marco:
+                try:
+                    dentro = await client.get(marco)
+                    if dentro.status_code < 400:
+                        cuerpo = dentro.text
+                        r.url_final = str(dentro.url)
+                except Exception:
+                    pass  # si no se puede, se juzga la cascara y queda revisada
+            r.estado = clasificar_sitio(cuerpo, r.url_final)
+            encontradas |= senales_en(cuerpo)
+        except Exception as e:  # noqa: BLE001 — el motivo se guarda, no se traga
+            r.error = type(e).__name__
+            # No se pudo abrir. Puede ser el dominio caido, puede ser la red
+            # del servidor, puede ser el sitio bloqueando datacenters. NO
+            # sabemos cual, asi que no se afirma ninguna. `revisada` en False
+            # hace que `es_oportunidad` no lo cuente.
+            r.estado = "caida"
+            return r
+
+        # Un sitio a medio hacer no necesita que le miremos las capacidades: no
+        # las tiene, y el gancho es otro.
+        if r.es_oportunidad:
+            r.capacidades = []
+            return r
+
+        # Muchos sitios responden 200 a CUALQUIER ruta y devuelven siempre la
+        # home (lo vimos en fycsalon.com: 6 rutas, el mismo HTML de 60 KB). Sin
+        # esto, `paginas_leidas` diria 6 habiendo leido una sola pagina.
+        vistas = {hash(resp.text)}
+
+        # Las internas son un extra: que fallen no invalida la revision.
+        for ruta in RUTAS_EXTRA:
+            if {"reserva", "cotiza"} <= encontradas:
+                break  # ya sabemos lo que mas nos importa
+            try:
+                resp = await client.get(base + ruta)
+                if resp.status_code >= 400:
+                    continue
+                if hash(resp.text) in vistas:
+                    continue  # es la home otra vez
+                vistas.add(hash(resp.text))
+                r.paginas_leidas += 1
+                encontradas |= senales_en(resp.text)
+            except Exception:
+                continue
+
+    r.capacidades = sorted(encontradas)
+    return r
+
+
+async def revisar_varias(urls: list[str], concurrencia: int = 8) -> list[RevisionWeb]:
+    sem = asyncio.Semaphore(concurrencia)
+
+    async def una(u: str) -> RevisionWeb:
+        async with sem:
+            return await revisar_web(u)
+
+    return await asyncio.gather(*(una(u) for u in urls))

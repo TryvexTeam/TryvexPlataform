@@ -3,8 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { SendIcon, XIcon } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { createClient } from '@/lib/supabase/client'
 import { Markdown } from '@/components/shared/markdown'
 import type { Conversacion, Mensaje, MiembroChat } from '@/lib/types/chat'
+import { abreDiaNuevo } from '@/lib/utils/fecha-santiago'
+import { SeparadorDia } from '@/components/shared/separador-dia'
 import { AvatarChat } from './avatar-chat'
 import { AdjuntosMensaje } from './adjuntos-mensaje'
 
@@ -37,9 +40,18 @@ export function PanelHilo({ conversacion, padre, miembros, onCerrar, onRespondid
   const [enviando, setEnviando] = useState(false)
   const finRef = useRef<HTMLDivElement>(null)
 
+  // Volver a mostrar "Cargando..." al cambiar de hilo sin desmontar el panel.
+  // Ajustar el estado durante el render (no en un efecto) al detectar el cambio
+  // es el patrón que React recomienda para esto -- ver "Adjusting state when a
+  // prop changes" en react.dev.
+  const [padreIdPrevio, setPadreIdPrevio] = useState(padre.id)
+  if (padreIdPrevio !== padre.id) {
+    setPadreIdPrevio(padre.id)
+    setCargando(true)
+  }
+
   useEffect(() => {
     let vigente = true
-    setCargando(true)
 
     fetch(`/api/chat/mensajes?conversacion=${conversacion.id}&hilo=${padre.id}`)
       .then((r) => r.json())
@@ -60,6 +72,48 @@ export function PanelHilo({ conversacion, padre, miembros, onCerrar, onRespondid
     finRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [respuestas.length])
 
+  // Sin esto, una respuesta de otra persona en este mismo hilo no aparecía
+  // hasta cerrar y reabrir el panel: a diferencia del flujo principal
+  // (hilo-chat.tsx), este componente no tenía ninguna suscripción realtime.
+  useEffect(() => {
+    const supabase = createClient()
+    const canal = supabase
+      .channel(`hilo-${padre.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'mensajes',
+          filter: `conversacion_id=eq.${conversacion.id}`,
+        },
+        (payload) => {
+          const nuevo = payload.new as Mensaje
+          if (nuevo.hilo_padre !== padre.id) return
+          setRespuestas((previas) => (previas.some((r) => r.id === nuevo.id) ? previas : [...previas, nuevo]))
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'mensajes',
+          filter: `conversacion_id=eq.${conversacion.id}`,
+        },
+        (payload) => {
+          const actualizado = payload.new as Mensaje
+          if (actualizado.hilo_padre !== padre.id) return
+          setRespuestas((previas) => previas.map((r) => (r.id === actualizado.id ? { ...r, ...actualizado } : r)))
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(canal)
+    }
+  }, [conversacion.id, padre.id])
+
   const responder = async () => {
     const contenido = borrador.trim()
     if (!contenido || enviando) return
@@ -74,7 +128,10 @@ export function PanelHilo({ conversacion, padre, miembros, onCerrar, onRespondid
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error ?? 'No se pudo responder')
 
-      setRespuestas((previas) => [...previas, json.data as Mensaje])
+      setRespuestas((previas) => {
+        const nueva = json.data as Mensaje
+        return previas.some((r) => r.id === nueva.id) ? previas : [...previas, nueva]
+      })
       setBorrador('')
       onRespondido(padre.id)
     } catch (err) {
@@ -122,8 +179,11 @@ export function PanelHilo({ conversacion, padre, miembros, onCerrar, onRespondid
             Todavía nadie respondió. Escribe la primera.
           </p>
         ) : (
-          respuestas.map((r) => (
+          respuestas.map((r, i) => (
             <div key={r.id}>
+              {abreDiaNuevo(r.created_at, i === 0 ? padre.created_at : respuestas[i - 1].created_at) && (
+                <SeparadorDia fecha={r.created_at} />
+              )}
               <Encabezado autor={autorDe(r)} fecha={r.created_at} />
               {r.adjuntos && r.adjuntos.length > 0 && <AdjuntosMensaje adjuntos={r.adjuntos} />}
               {r.eliminado_at ? (

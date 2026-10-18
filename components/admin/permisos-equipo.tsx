@@ -55,7 +55,7 @@ export function PermisosEquipo({ equipoInicial }: PermisosEquipoProps) {
   }
 
   if (equipo.length === 0) {
-    return <p className="text-sm text-neutral-500">No hay integrantes activos todavía.</p>
+    return <p className="text-sm text-[var(--tx-ink-muted)]">No hay integrantes activos todavía.</p>
   }
 
   return (
@@ -63,7 +63,7 @@ export function PermisosEquipo({ equipoInicial }: PermisosEquipoProps) {
       {equipo.map((integrante) => (
         <article
           key={integrante.id}
-          className="rounded-xl border border-neutral-200 p-4"
+          className="rounded-xl border border-[var(--tx-border)] p-4"
           style={{ opacity: guardando === integrante.id ? 0.7 : 1, transition: 'opacity 150ms' }}
         >
           <header className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3">
@@ -71,10 +71,10 @@ export function PermisosEquipo({ equipoInicial }: PermisosEquipoProps) {
               <p className="text-sm font-semibold truncate text-[var(--tx-ink-primary)]">
                 {integrante.nombre}
               </p>
-              <p className="text-xs text-neutral-500 truncate">{integrante.email}</p>
+              <p className="text-xs text-[var(--tx-ink-muted)] truncate">{integrante.email}</p>
             </div>
             {integrante.es_superadmin && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--tx-border-strong)] px-2 py-0.5 text-[11px] font-medium text-[var(--tx-ink-secondary)]">
                 <ShieldCheck size={11} /> Dueño de la cuenta
               </span>
             )}
@@ -90,7 +90,7 @@ export function PermisosEquipo({ equipoInicial }: PermisosEquipoProps) {
                     <span className="block text-[13px] font-medium text-[var(--tx-ink-primary)]">
                       {label}
                     </span>
-                    <span className="block text-[11.5px] text-neutral-500 leading-snug">
+                    <span className="block text-[11.5px] text-[var(--tx-ink-muted)] leading-snug">
                       {descripcion}
                     </span>
                   </label>
@@ -111,7 +111,7 @@ export function PermisosEquipo({ equipoInicial }: PermisosEquipoProps) {
           {/* Aparte de los permisos, y con línea de por medio: esto no da acceso a nada,
               decide qué se ve afuera. El dueño también se enciende y se apaga como
               cualquiera — ser dueño no implica salir publicado. */}
-          <div className="mt-3 border-t border-neutral-200 pt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="mt-3 border-t border-[var(--tx-border)] pt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             {VISIBILIDAD_LABELS.map(({ key, label, descripcion }) => {
               const control = `visibilidad-${integrante.id}-${key}`
               return (
@@ -120,7 +120,7 @@ export function PermisosEquipo({ equipoInicial }: PermisosEquipoProps) {
                     <span className="block text-[13px] font-medium text-[var(--tx-ink-primary)]">
                       {label}
                     </span>
-                    <span className="block text-[11.5px] text-neutral-500 leading-snug">
+                    <span className="block text-[11.5px] text-[var(--tx-ink-muted)] leading-snug">
                       {descripcion}
                     </span>
                   </label>

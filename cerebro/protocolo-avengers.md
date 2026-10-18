@@ -171,3 +171,18 @@ Hallazgo transversal: buena parte de lo que se iba a construir **ya existe a med
 es de reconciliación, no de creación. Eso solo se supo tras el pull.
 
 Ver también: [[estado-plataforma]] · [[contexto-tryvex]] · [[gotchas-supabase]]
+
+## Auto-blindaje — corrida del 2026-10-13 (bienvenida/ban/Google + chat WhatsApp)
+
+| Error | Causa | Fix permanente |
+|---|---|---|
+| `worker-start --agent codex` dejó el spec pegado sin enviar (`[Pasted Content]`) | El receipt no prueba el envío | Tras despachar, `terminal read`: si ve `[Pasted Content]` → Enter; si ve `tab to queue message` → Tab |
+| Dos Codex en `high` agotaron la cuota de 5 h de la cuenta en ~40 min | La cuota es por cuenta, no por worker | Mirar `5h limit: N% left` al despachar; `medium` para lo mecánico; planificar el relevo desde el inicio |
+| Kimi K3 (NIM) y Gemini 3.8 Flash por claude-multi no escribieron nada en 30 min | Timeouts de NIM y 429 de Gemini con contexto grande | Carriles gratis solo para tareas chicas; una vista grande va a Codex o a subagente Sonnet |
+| `npm run build` en worktree de Orca: `Symlink node_modules ... out of the filesystem root` | Turbopack no acepta el junction de node_modules | El junction sirve para tsc/lint/vitest; el build se valida en el checkout principal o en CI |
+| `pkill -f patron` por SSH devolvió 255 | El patrón aparecía en la línea de comando de la propia sesión | Procesos de larga vida en el VPS con `systemd-run --unit=... --collect` |
+| El E2E "no vio" la tarjeta de bienvenida | El componente se pinta en el cliente; el HTML del servidor no la trae | Lo que se pinta en cliente se verifica con navegador (Playwright), no con `fetch().text()` |
+| El bloqueo de IP "no bloqueó" en la prueba | La IP quedó en caché (60 s) como libre antes de bloquearla | Es diseño: el bloqueo tarda hasta 60 s. Las pruebas esperan el TTL |
+| Red del señor Ignacio con TLS interceptado (Fortinet) hacia Supabase | Intercepción intermitente | Túnel: proxy CONNECT en el VPS (solo localhost, solo Supabase) + `ssh -L 3128` + `NODE_USE_ENV_PROXY=1 HTTPS_PROXY=...`. Nunca confiar en la CA del firewall |
+| Un worker de claude-multi siguió escribiendo 55 min tras mandarle Esc y pisó archivos de otro worker | Esc interrumpe un turno, no la sesión: los reintentos del gateway reanudan el trabajo | Para sacar a un worker: `orca terminal close`, nunca solo Esc. Confirmarlo con `terminal list` |
+| Bugs que solo aparecieron al probar en el navegador (lista `inert` en escritorio, soltar el long-press activaba "Fijar") | tsc/lint/vitest no ven interacción | Toda entrega de UI pasa por Playwright en 390 px y 1280 px; los gestos táctiles con CDP `Input.dispatchTouchEvent` |

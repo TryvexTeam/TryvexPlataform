@@ -4,6 +4,13 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { normalizarTelefono } from '@/lib/vex/telefono'
 import { IntegrantesRepository } from '@/lib/repos/integrantes'
 import { AsignacionesRepository } from '@/lib/repos/asignaciones'
+import { MensajesWaRepository } from '@/lib/repos/mensajes-wa'
+import { debeAvanzarAContactado } from '@/lib/types/lead'
+import {
+  transporteActivo,
+  enviarPorVex,
+  explicarTransporteSinConfigurar,
+} from '@/lib/wa/transporte'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any
@@ -42,7 +49,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => null)
   const parsed = bodySchema.safeParse(raw)
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }, { status: 400 })
   }
   const { lead_id, texto } = parsed.data
 
@@ -63,20 +70,90 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient() as SB
   let telefono = parsed.data.telefono ?? null
+  let nombreNegocio: string | null = null
 
   if (lead_id) {
     const { data: lead } = await admin
       .from('fact_leads')
-      .select('telefono')
+      .select('telefono, nombre_negocio')
       .eq('id', lead_id)
       .single()
     if (!lead) return NextResponse.json({ error: 'Lead no encontrado.' }, { status: 404 })
     telefono = lead.telefono
+    nombreNegocio = lead.nombre_negocio ?? null
   }
 
   const numero = normalizarTelefono(telefono)
   if (!numero) {
     return NextResponse.json({ error: 'Teléfono inválido o inexistente para ese destinatario.' }, { status: 400 })
+  }
+
+  // Con el agente como transporte, el mensaje sale por ahí y NO se anota en el
+  // buzón: dos transportes tirando del mismo mensaje lo mandarían dos veces.
+  // El registro en `outreach_messages` se hace igual más abajo, pero ya como
+  // 'enviado', no como pendiente de que alguien lo recoja.
+  //
+  // Si el agente falla no se cae al puente en silencio: son dos sesiones
+  // distintas del mismo número y elegir sola cuál usa es justo la clase de
+  // decisión que no debe tomar un `catch`. Se devuelve el error y la persona
+  // decide.
+  let referenciaVex: string | number | undefined
+  let avisoRegistro: string | undefined
+
+  // Sin transporte elegido no se manda nada, y se dice por qué.
+  //
+  // Antes esto caía a `puente` por omisión y el mensaje quedaba 'encolado'
+  // esperando a un proceso que ya no existe. No había error que mirar —nadie
+  // falló, nadie fue a buscarlo— así que desde la pantalla se veía igual que
+  // un envío en camino. 502 y el motivo: es peor un mensaje que se cree
+  // enviado que uno que avisa que no salió.
+  const transporte = transporteActivo()
+  if (transporte === 'sin_configurar') {
+    return NextResponse.json({ error: explicarTransporteSinConfigurar() }, { status: 502 })
+  }
+
+  if (transporte === 'vex') {
+    const envio = await enviarPorVex(numero, texto, nombreNegocio ?? undefined)
+    if (!envio.ok) {
+      return NextResponse.json(
+        { error: envio.error ?? 'El agente no pudo enviar el mensaje.' },
+        { status: 502 }
+      )
+    }
+    referenciaVex = envio.referencia
+
+    // El mensaje ya salió: hay que dejarlo en el hilo del lead. Lo escribe esta
+    // ruta porque con el agente como transporte nadie más lo hace.
+    //
+    // El chat del lead dibuja `mensajes_wa`, y el ÚNICO que escribía ahí era el
+    // puente, al confirmar cada envío. Al pasar el transporte al agente el
+    // puente quedó fuera del camino y ese registro se perdió con él: el mensaje
+    // salía de verdad, `outreach_messages` decía 'enviado', y el hilo quedaba
+    // vacío. Desde la pantalla se ve exactamente igual que no haber mandado
+    // nada — que fue justo lo que reportó Cristian.
+    try {
+      await new MensajesWaRepository(admin).registrarSaliente({
+        lead_id,
+        cliente_id: null,
+        texto,
+        // Lo escribió una persona en el chat del CRM, no el bot.
+        es_bot: false,
+        enviado_por: autorNombre,
+        // El chip lo pone el agente, que es quien tiene la sesión.
+        chip_id: null,
+        waMessageId: referenciaVex !== undefined ? String(referenciaVex) : null,
+      })
+    } catch (e) {
+      // No se devuelve error: el WhatsApp YA salió y decirle a la persona que
+      // falló la haría mandarlo de nuevo. Se registra fuerte y se avisa en la
+      // respuesta, que es lo que permite mostrarlo en pantalla en vez de dejar
+      // un hilo vacío sin explicación.
+      console.error(
+        `[api/wa/send] CRITICO: el mensaje salio por el agente pero no se pudo anotar en mensajes_wa (lead ${lead_id}). No va a aparecer en el hilo. Texto: ${texto}`,
+        e
+      )
+      avisoRegistro = 'El mensaje salió, pero no se pudo dejar en el hilo del chat.'
+    }
   }
 
   // El CRM ya no llama al puente: lo anota aca y el puente lo pasa a buscar.
@@ -90,10 +167,22 @@ export async function POST(req: Request) {
       lead_id,
       canal: 'whatsapp',
       texto,
-      estado: 'encolado',
+      // Por el agente ya salió: queda 'enviado' para que nadie lo recoja otra vez.
+      estado: referenciaVex !== undefined ? 'enviado' : 'encolado',
+      // Esta ruta es el chat del CRM, no el primer contacto. La distinción
+      // importa: `uq_outreach_primer_contacto` deja un solo 'enviado' por lead,
+      // y sin marcarlo el segundo mensaje de una conversación reventaba con 500
+      // (migración 097).
+      tipo: 'chat',
       enviado_por: autorNombre,
       integrante_id: perfil.id,
       aprobado_por: perfil.id,
+      // Sin esto el acuse no tenía por dónde agarrar esta fila: `wa-estado`
+      // actualiza `outreach_messages` por `wa_message_id` y el insert nunca lo
+      // ponía, así que el update matcheaba CERO filas siempre. La referencia
+      // del agente viajaba por la red y se descartaba en la misma línea que
+      // escribía el estado.
+      wa_message_id: referenciaVex !== undefined ? String(referenciaVex) : null,
     })
     .select('id')
     .single()
@@ -118,13 +207,61 @@ export async function POST(req: Request) {
       tipo: 'whatsapp',
       contenido: texto,
     })
+
+    // Escribirle a un lead ES contactarlo. Antes esta ruta lo asignaba pero
+    // dejaba el estado intacto, así que el lead seguía figurando como "sin
+    // contactar" después de haberle mandado un WhatsApp — y `ultimo_contacto`,
+    // que es lo que mide "Requiere acción hoy" en el panel, no se movía.
+    const { data: lead } = await admin
+      .from('fact_leads')
+      .select('estado')
+      .eq('id', lead_id)
+      .single()
+
+    if (lead) {
+      const cambios: { ultimo_contacto: string; estado?: string } = {
+        ultimo_contacto: new Date().toISOString(),
+      }
+      // Escribirle a un lead lo deja en «contactado». Esto volvió acá el
+      // 3-sep por pedido de Cristian, y conviene dejar escrito por qué, porque
+      // en agosto se hizo justo lo contrario.
+      //
+      // El 29-ago se sacó este salto de aquí: con el agente como transporte,
+      // `referenciaVex` es solo el id con el que el agente metió el mensaje en
+      // SU cola, y el error 463 de WhatsApp ocurre después. Marcar contactado
+      // en ese momento dejó 11 fichas avanzadas sin que llegara un solo
+      // mensaje. La decisión entonces fue esperar el acuse en
+      // `/api/agentes/wa-estado`.
+      //
+      // Esa espera no funcionó: al 3-sep hay CERO acuses recibidos en toda la
+      // historia de la tabla (60 mensajes, 0 con `ack_at`; 40 filas de
+      // outreach, 0 con `enviado_at`). El agente nunca llamó a ese endpoint.
+      // Así que la ficha no avanzaba nunca y el equipo perdía de vista a quién
+      // ya le habían escrito — que es peor, en el día a día, que avanzarla de
+      // más.
+      //
+      // Se elige el error barato sobre el caro: si el mensaje se descarta, el
+      // acuse —cuando exista— lo devuelve a `sin_contactar` (ver abajo en
+      // wa-estado). Si en cambio no avanzamos nunca, el equipo le escribe dos
+      // veces al mismo lead y eso sí quema el número.
+      if (debeAvanzarAContactado(lead.estado, 'whatsapp')) {
+        cambios.estado = 'contactado'
+      }
+      await admin.from('fact_leads').update(cambios).eq('id', lead_id)
+    }
   } catch (e) {
     console.error('[api/wa/send] mensaje encolado pero fallo la asignacion/interaccion:', e)
   }
 
   // 202 y no 200: el mensaje esta aceptado, todavia no entregado.
   return NextResponse.json(
-    { ok: true, encolado: true, id: encolado.id, asignado_como: rolAsignado },
+    {
+      ok: true,
+      encolado: true,
+      id: encolado.id,
+      asignado_como: rolAsignado,
+      ...(avisoRegistro ? { advertencia: avisoRegistro } : {}),
+    },
     { status: 202 }
   )
 }
