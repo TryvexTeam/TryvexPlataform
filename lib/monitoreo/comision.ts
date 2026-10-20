@@ -1,5 +1,5 @@
 import { CERO, aTexto, decimal, porcentajeDe, sumar, type Decimal } from './decimal'
-import { esMesCerrado, type MetricasV1 } from './esquema'
+import type { MetricasV1 } from './esquema'
 import type { FilaComision } from '@/lib/types/monitoreo'
 
 /**
@@ -15,23 +15,27 @@ import type { FilaComision } from '@/lib/types/monitoreo'
 export function calcularComision(payload: MetricasV1, porcentaje: string | number): FilaComision[] {
   const pct = decimal(typeof porcentaje === 'number' ? porcentaje.toFixed(2) : porcentaje)
   const acumulado = new Map<string, {
-    mes: string; moneda: string; registrado: Decimal; anulado: Decimal
+    mes: string; moneda: string; cerrado: boolean; registrado: Decimal; anulado: Decimal
     pagos: number; anulaciones: number
   }>()
 
   for (const org of payload.organizations) {
-    for (const p of org.payments) {
-      const clave = `${p.month}|${p.currency}`
-      const fila = acumulado.get(clave) ?? {
-        mes: p.month, moneda: p.currency, registrado: CERO, anulado: CERO, pagos: 0, anulaciones: 0,
+    for (const mes of org.payments) {
+      for (const [moneda, montos] of Object.entries(mes.by_currency)) {
+        const clave = `${mes.month}|${moneda}`
+        const fila = acumulado.get(clave) ?? {
+          mes: mes.month, moneda, cerrado: true, registrado: CERO, anulado: CERO, pagos: 0, anulaciones: 0,
+        }
+        acumulado.set(clave, {
+          ...fila,
+          // Abierto si alguna organización todavía no lo cierra.
+          cerrado: fila.cerrado && mes.closed,
+          registrado: sumar(fila.registrado, decimal(montos.registered.total)),
+          anulado: sumar(fila.anulado, decimal(montos.annulled.total)),
+          pagos: fila.pagos + montos.registered.count,
+          anulaciones: fila.anulaciones + montos.annulled.count,
+        })
       }
-      acumulado.set(clave, {
-        ...fila,
-        registrado: sumar(fila.registrado, decimal(p.registered.total)),
-        anulado: sumar(fila.anulado, decimal(p.annulled.total)),
-        pagos: fila.pagos + p.registered.count,
-        anulaciones: fila.anulaciones + p.annulled.count,
-      })
     }
   }
 
@@ -40,7 +44,7 @@ export function calcularComision(payload: MetricasV1, porcentaje: string | numbe
     .map((f) => ({
       mes: f.mes,
       moneda: f.moneda,
-      cerrado: esMesCerrado(f.mes, payload.generated_at),
+      cerrado: f.cerrado,
       pagos: f.pagos,
       anulaciones: f.anulaciones,
       registrado: aTexto(f.registrado),

@@ -145,11 +145,11 @@ export function ProyectoMonitoreo({ proyectoId, vista, error, puedeActualizar }:
             <div className="overflow-x-auto rounded-lg border border-white/[0.08]">
               <table className="w-full min-w-[640px] text-sm">
                 <caption className="sr-only">
-                  Cobros por mes y moneda, comisión de Tryvex al {vista.saas.porcentaje_tryvex}% y estado del sello de cada mes
+                  Cobros por mes de registro y moneda, comisión de Tryvex al {vista.saas.porcentaje_tryvex}% y estado del sello de cada mes
                 </caption>
                 <thead className="bg-white/5 text-xs text-[var(--tx-ink-muted)]">
                   <tr>
-                    <th scope="col" className="px-3 py-2 text-left font-medium">Mes</th>
+                    <th scope="col" className="px-3 py-2 text-left font-medium">Mes de registro</th>
                     <th scope="col" className="px-3 py-2 text-left font-medium">Moneda</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Registrado</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Anulado</th>

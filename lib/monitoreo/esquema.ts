@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { DECIMAL_RE } from './decimal'
 
 /**
  * Contrato `tryvex.metrics/v1`, lado CRM.
@@ -12,90 +11,79 @@ import { DECIMAL_RE } from './decimal'
 
 export const SCHEMA_ID = 'tryvex.metrics/v1'
 
-const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
+// Misma forma que `src/features/ops-metrics/schemas/metrics.ts` en Bitácora
+// (rama feat/ops-metricas), fuente de verdad del contrato. Acá se agregan topes
+// (dígitos, tamaños) para que un valor fuera de rango no llegue a la aritmética.
+const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
+/** Mes de REGISTRO del pago (created_at), no de cobro. */
 const MES_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const MONEDA_RE = /^[A-Z]{3}$/
 const SHA256_RE = /^[0-9a-f]{64}$/
+/** Id estable de la organización; el slug es solo etiqueta y puede cambiar. */
+const ORG_REF_RE = /^[0-9a-f]{16}$/
+/** Siempre 2 decimales; el tope de 15 enteros es el mismo que admite `decimal()`. */
+const MONTO_RE = /^(0|[1-9]\d{0,14})\.\d{2}$/
 
-/** Conteo exacto o "<3": el origen esconde 1 y 2 para no identificar personas. */
-const Conteo = z.union([z.number().int().nonnegative(), z.literal('<3')])
-
-const Monto = z.string().regex(DECIMAL_RE, 'Total con formato decimal inválido')
+const Conteo = z.number().int().nonnegative()
 
 const Agregado = z.strictObject({
-  count: z.number().int().nonnegative(),
-  total: Monto,
+  count: Conteo,
+  total: z.string().regex(MONTO_RE, 'Total con formato decimal inválido'),
 })
 
-const PagoMes = z.strictObject({
+const Mes = z.strictObject({
   month: z.string().regex(MES_RE),
-  currency: z.string().regex(MONEDA_RE),
-  registered: Agregado,
-  annulled: Agregado,
-})
-
-const Sello = z.strictObject({
-  month: z.string().regex(MES_RE),
-  sha256: z.string().regex(SHA256_RE),
+  closed: z.boolean(),
+  /** sha256 de los pagos del mes; null en el mes en curso. */
+  seal: z.string().regex(SHA256_RE).nullable(),
+  by_currency: z.record(
+    z.string().regex(MONEDA_RE),
+    z.strictObject({ registered: Agregado, annulled: Agregado }),
+  ),
 })
 
 const Organizacion = z
   .strictObject({
+    org_ref: z.string().regex(ORG_REF_RE),
     slug: z.string().regex(SLUG_RE),
     reseller: z.string().regex(SLUG_RE).nullable(),
-    students: z.record(z.string().regex(/^[a-z_]{1,40}$/), Conteo),
+    students: z.strictObject({ active: Conteo, blocked: Conteo }),
     subscriptions: z.strictObject({
       active: Conteo,
       expiring_7d: Conteo,
       grace: Conteo,
       expired: Conteo,
     }),
-    payments: z.array(PagoMes).max(12 * 20),
-    seals: z.array(Sello).max(12),
+    payments: z.array(Mes).max(12),
   })
   .superRefine((org, ctx) => {
-    const pagos = new Set<string>()
+    const meses = new Set<string>()
     for (const p of org.payments) {
-      const k = `${p.month}|${p.currency}`
-      if (pagos.has(k)) ctx.addIssue({ code: 'custom', message: `Pago duplicado ${k}` })
-      pagos.add(k)
-    }
-    const sellos = new Set<string>()
-    for (const s of org.seals) {
-      if (sellos.has(s.month)) ctx.addIssue({ code: 'custom', message: `Sello duplicado ${s.month}` })
-      sellos.add(s.month)
+      if (meses.has(p.month)) ctx.addIssue({ code: 'custom', message: `Mes duplicado ${p.month}` })
+      meses.add(p.month)
     }
   })
 
 export const MetricasV1Schema = z
   .strictObject({
     schema: z.literal(SCHEMA_ID),
-    project: z.string().regex(SLUG_RE),
-    generated_at: z.iso.datetime({ offset: true }),
+    project: z.string().min(1).max(100),
+    generated_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/),
     version: z.string().regex(/^[0-9a-f]{7,40}$/).nullable(),
     schema_version: z.string().min(1).max(200).nullable(),
     organizations: z.array(Organizacion).max(1000),
   })
   .superRefine((m, ctx) => {
-    const slugs = new Set<string>()
+    const refs = new Set<string>()
     for (const o of m.organizations) {
-      if (slugs.has(o.slug)) ctx.addIssue({ code: 'custom', message: `Organización duplicada ${o.slug}` })
-      slugs.add(o.slug)
+      if (refs.has(o.org_ref)) ctx.addIssue({ code: 'custom', message: `Organización duplicada ${o.org_ref}` })
+      refs.add(o.org_ref)
     }
   })
 
 export type MetricasV1 = z.infer<typeof MetricasV1Schema>
 export type OrganizacionV1 = MetricasV1['organizations'][number]
-
-/** Mes "YYYY-MM" de una fecha ISO, en UTC (el SaaS sella en UTC). */
-export function mesDe(iso: string): string {
-  return iso.slice(0, 7)
-}
-
-/** Mes cerrado = anterior al mes en que se generó la respuesta. */
-export function esMesCerrado(mes: string, generadoEn: string): boolean {
-  return mes < mesDe(new Date(generadoEn).toISOString())
-}
+export type MesV1 = OrganizacionV1['payments'][number]
 
 /** Primer mes de la ventana de 12 meses que cubre la respuesta. */
 export function inicioVentana(generadoEn: string): string {

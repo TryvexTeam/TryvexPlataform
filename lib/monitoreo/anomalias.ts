@@ -1,5 +1,5 @@
-import { comparar, decimal, superaFraccion, aTexto } from './decimal'
-import { esMesCerrado, inicioVentana, type MetricasV1 } from './esquema'
+import { comparar, decimal, superaFraccion } from './decimal'
+import { inicioVentana, type MesV1, type MetricasV1 } from './esquema'
 import type { AlertaNueva } from '@/lib/types/monitoreo'
 
 /** Anulado sobre registrado que dispara ANNULMENTS_SPIKE (estrictamente mayor). */
@@ -40,50 +40,69 @@ export function detectarAnomalias(
   return alertas
 }
 
+/**
+ * Meses por organización: org_ref → mes → fila. Se indexa por `org_ref` y no
+ * por slug: el slug es una etiqueta que el coach puede cambiar, y renombrar no
+ * debe parecer (ni esconder) una alteración de cifras.
+ */
+function indexar(m: MetricasV1): Map<string, Map<string, MesV1>> {
+  return new Map(m.organizations.map((o) => [o.org_ref, new Map(o.payments.map((p) => [p.month, p]))]))
+}
+
+/**
+ * Meses que ya estaban cerrados en el pull previo. Solo esos se comparan: un
+ * mes en curso puede cambiar legítimamente, y el mes que recién cierra todavía
+ * no tiene contra qué compararse.
+ */
+function* mesesCerradosPrevios(previo: MetricasV1, ventana: string) {
+  for (const org of previo.organizations) {
+    for (const mes of org.payments) {
+      // Un mes que salió de la ventana de 12 meses deja de reportarse: no es alteración.
+      if (mes.closed && mes.month >= ventana) yield { ref: org.org_ref, mes }
+    }
+  }
+}
+
+/** Slug para mostrar: el actual si la organización sigue, si no el del pull previo. */
+function etiquetasDe(previo: MetricasV1, actual: MetricasV1): Map<string, string> {
+  return new Map([...previo.organizations, ...actual.organizations].map((o) => [o.org_ref, o.slug]))
+}
+
 function sellosCambiados(previo: MetricasV1, actual: MetricasV1): AlertaNueva[] {
   const alertas: AlertaNueva[] = []
-  const ventana = inicioVentana(actual.generated_at)
-  const orgsActuales = new Map(actual.organizations.map((o) => [o.slug, o]))
-
-  for (const orgPrevia of previo.organizations) {
-    const orgActual = orgsActuales.get(orgPrevia.slug)
-    const sellosActuales = new Map((orgActual?.seals ?? []).map((s) => [s.month, s.sha256]))
-    for (const sello of orgPrevia.seals) {
-      // Un mes que salió de la ventana de 12 meses deja de reportarse: no es alteración.
-      if (sello.month < ventana) continue
-      const ahora = sellosActuales.get(sello.month) ?? null
-      if (ahora === sello.sha256) continue
-      alertas.push({
-        tipo: 'SEAL_CHANGED',
-        clave: `${orgPrevia.slug}|${sello.month}`,
-        detalle: { organizacion: orgPrevia.slug, mes: sello.month, antes: sello.sha256, ahora },
-      })
-    }
+  const actuales = indexar(actual)
+  const etiquetas = etiquetasDe(previo, actual)
+  for (const { ref, mes } of mesesCerradosPrevios(previo, inicioVentana(actual.generated_at))) {
+    const slug = etiquetas.get(ref) ?? ref
+    if (mes.seal === null) continue
+    const ahora = actuales.get(ref)?.get(mes.month)?.seal ?? null
+    if (ahora === mes.seal) continue
+    alertas.push({
+      tipo: 'SEAL_CHANGED',
+      clave: `${ref}|${mes.month}`,
+      detalle: { org_ref: ref, organizacion: slug, mes: mes.month, antes: mes.seal, ahora },
+    })
   }
   return alertas
 }
 
 function ingresosQueBajan(previo: MetricasV1, actual: MetricasV1): AlertaNueva[] {
   const alertas: AlertaNueva[] = []
-  const ventana = inicioVentana(actual.generated_at)
-  const totalesActuales = new Map<string, string>()
-  for (const org of actual.organizations) {
-    for (const p of org.payments) totalesActuales.set(`${org.slug}|${p.month}|${p.currency}`, p.registered.total)
-  }
-
-  for (const org of previo.organizations) {
-    for (const p of org.payments) {
-      if (p.month < ventana || !esMesCerrado(p.month, actual.generated_at)) continue
-      const clave = `${org.slug}|${p.month}|${p.currency}`
-      // Una fila que desaparece en un mes cerrado es un total que bajó a cero.
-      const ahora = totalesActuales.get(clave) ?? '0'
-      if (comparar(decimal(ahora), decimal(p.registered.total)) >= 0) continue
+  const actuales = indexar(actual)
+  const etiquetas = etiquetasDe(previo, actual)
+  for (const { ref, mes } of mesesCerradosPrevios(previo, inicioVentana(actual.generated_at))) {
+    const slug = etiquetas.get(ref) ?? ref
+    const mesActual = actuales.get(ref)?.get(mes.month)
+    for (const [moneda, montos] of Object.entries(mes.by_currency)) {
+      // Una moneda (o un mes) que desaparece en un mes cerrado es un total que bajó a cero.
+      const ahora = mesActual?.by_currency[moneda]?.registered.total ?? '0'
+      if (comparar(decimal(ahora), decimal(montos.registered.total)) >= 0) continue
       alertas.push({
         tipo: 'REVENUE_DECREASED',
-        clave,
+        clave: `${ref}|${mes.month}|${moneda}`,
         detalle: {
-          organizacion: org.slug, mes: p.month, moneda: p.currency,
-          antes: p.registered.total, ahora: aTexto(decimal(ahora)),
+          org_ref: ref, organizacion: slug, mes: mes.month, moneda,
+          antes: montos.registered.total, ahora,
         },
       })
     }
@@ -94,18 +113,21 @@ function ingresosQueBajan(previo: MetricasV1, actual: MetricasV1): AlertaNueva[]
 function picosDeAnulaciones(actual: MetricasV1): AlertaNueva[] {
   const alertas: AlertaNueva[] = []
   for (const org of actual.organizations) {
-    for (const p of org.payments) {
-      const anulado = decimal(p.annulled.total)
-      if (anulado.unidades === BigInt(0)) continue
-      if (!superaFraccion(anulado, decimal(p.registered.total), UMBRAL_ANULACIONES_PCT)) continue
-      alertas.push({
-        tipo: 'ANNULMENTS_SPIKE',
-        clave: `${org.slug}|${p.month}|${p.currency}`,
-        detalle: {
-          organizacion: org.slug, mes: p.month, moneda: p.currency,
-          registrado: p.registered.total, anulado: p.annulled.total, umbral_pct: UMBRAL_ANULACIONES_PCT,
-        },
-      })
+    for (const mes of org.payments) {
+      for (const [moneda, montos] of Object.entries(mes.by_currency)) {
+        const anulado = decimal(montos.annulled.total)
+        if (anulado.unidades === BigInt(0)) continue
+        if (!superaFraccion(anulado, decimal(montos.registered.total), UMBRAL_ANULACIONES_PCT)) continue
+        alertas.push({
+          tipo: 'ANNULMENTS_SPIKE',
+          clave: `${org.org_ref}|${mes.month}|${moneda}`,
+          detalle: {
+            org_ref: org.org_ref, organizacion: org.slug, mes: mes.month, moneda,
+            registrado: montos.registered.total, anulado: montos.annulled.total,
+            umbral_pct: UMBRAL_ANULACIONES_PCT,
+          },
+        })
+      }
     }
   }
   return alertas
