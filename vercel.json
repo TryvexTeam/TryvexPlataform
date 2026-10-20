@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/llamadas-zombis",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/monitoreo-saas",
+      "schedule": "0 10 * * *"
     }
   ]
 }
