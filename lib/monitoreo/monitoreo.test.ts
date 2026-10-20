@@ -3,7 +3,7 @@ import { aTexto, decimal, porcentajeDe, redondearTexto, sumar } from './decimal'
 import { MetricasV1Schema, type MetricasV1 } from './esquema'
 import { detectarAnomalias } from './anomalias'
 import { calcularComision } from './comision'
-import { pedirMetricas } from './cliente'
+import { MAX_BYTES, pedirMetricas, validarUrlPublica } from './cliente'
 
 const SELLO_A = 'a'.repeat(64)
 const SELLO_B = 'b'.repeat(64)
@@ -298,38 +298,108 @@ describe('detectarAnomalias', () => {
   })
 })
 
-describe('pedirMetricas', () => {
-  const ENV = 'MONITOREO_TOKEN_PRUEBA'
+describe('validarUrlPublica', () => {
+  it('acepta un dominio público https', () => {
+    expect('url' in validarUrlPublica('https://bitacora.tryvex.tech')).toBe(true)
+    expect('url' in validarUrlPublica('https://app.example.com/base')).toBe(true)
+  })
+  it.each([
+    'http://bitacora.tryvex.tech',
+    'https://localhost',
+    'https://api.localhost',
+    'https://127.0.0.1',
+    'https://10.0.0.5',
+    'https://169.254.169.254',
+    'https://2130706433',
+    'https://0x7f.1',
+    'https://[::1]',
+    'https://[fd00::1]',
+    'https://8.8.8.8',
+    'https://intranet',
+    'https://db.internal',
+    'https://nas.local',
+    'https://user:pass@bitacora.tryvex.tech',
+    'https://bitacora.tryvex.tech?x=1',
+    'no es url',
+  ])('rechaza %s', (url) => {
+    expect('error' in validarUrlPublica(url)).toBe(true)
+  })
+})
 
-  it('no lee variables fuera del prefijo permitido', async () => {
-    const r = await pedirMetricas('https://x.test', 'SUPABASE_SERVICE_ROLE_KEY', async () => new Response('{}'))
-    expect(r).toMatchObject({ httpStatus: 0, metricas: null })
+describe('pedirMetricas', () => {
+  const ENV = {
+    MONITOREO_URL_BITACORA: 'https://bitacora.tryvex.tech',
+    MONITOREO_TOKEN_BITACORA: 'token-bitacora',
+    MONITOREO_URL_OTRO: 'https://otro.example.com',
+    MONITOREO_TOKEN_OTRO: 'token-otro',
+  }
+  const nuncaLlamado = async () => { throw new Error('no debía pedir nada') }
+
+  it('sin el par de variables completo no pide nada y deja error', async () => {
+    for (const env of [{}, { MONITOREO_URL_BITACORA: ENV.MONITOREO_URL_BITACORA }, { MONITOREO_TOKEN_BITACORA: 'x' }]) {
+      const r = await pedirMetricas('BITACORA', nuncaLlamado, env)
+      expect(r).toMatchObject({ httpStatus: 0, metricas: null })
+      expect(r.error).toMatch(/MONITOREO_URL_BITACORA o MONITOREO_TOKEN_BITACORA/)
+    }
   })
 
-  it('envía el Bearer y valida el payload', async () => {
-    process.env[ENV] = 'secreto'
-    let auth: string | null = null
-    const r = await pedirMetricas('https://x.test/', ENV, async (url, init) => {
-      expect(String(url)).toBe('https://x.test/api/ops/metrics')
-      auth = new Headers(init?.headers).get('authorization')
+  it('una URL de entorno que es IP o localhost se rechaza sin pedir', async () => {
+    for (const url of ['https://127.0.0.1', 'https://localhost', 'https://169.254.169.254']) {
+      const r = await pedirMetricas('BITACORA', nuncaLlamado, { MONITOREO_URL_BITACORA: url, MONITOREO_TOKEN_BITACORA: 't' })
+      expect(r.httpStatus).toBe(0)
+      expect(r.error).toMatch(/IP|interna|dominio/)
+    }
+  })
+
+  it('cada clave usa solo su propio token y su propia URL', async () => {
+    const vistos: [string, string | null][] = []
+    const f: typeof fetch = async (url, init) => {
+      vistos.push([String(url), new Headers(init?.headers).get('authorization')])
       return new Response(JSON.stringify(MUESTRA_CONTRATO), { status: 200 })
-    })
-    expect(auth).toBe('Bearer secreto')
+    }
+    await pedirMetricas('BITACORA', f, ENV)
+    await pedirMetricas('OTRO', f, ENV)
+    expect(vistos).toEqual([
+      ['https://bitacora.tryvex.tech/api/ops/metrics', 'Bearer token-bitacora'],
+      ['https://otro.example.com/api/ops/metrics', 'Bearer token-otro'],
+    ])
+    // Una clave con nombre de variable ajena no lee nada fuera de su par.
+    expect((await pedirMetricas('SUPABASE_SERVICE_ROLE_KEY', nuncaLlamado, { ...ENV, SUPABASE_SERVICE_ROLE_KEY: 'x' })).httpStatus).toBe(0)
+    expect((await pedirMetricas('bitacora', nuncaLlamado, ENV)).error).toBe('Clave de SaaS no válida')
+  })
+
+  it('valida el payload', async () => {
+    const r = await pedirMetricas('BITACORA', async () => new Response(JSON.stringify(MUESTRA_CONTRATO), { status: 200 }), ENV)
     expect(r.error).toBeNull()
     expect(r.metricas?.organizations).toHaveLength(2)
   })
 
+  it('corta la descarga apenas el cuerpo pasa 1 MB, sin leer el resto', async () => {
+    let entregados = 0
+    const trozo = new Uint8Array(256 * 1024).fill(32)
+    const infinito = new ReadableStream<Uint8Array>({
+      pull(c) { entregados++; c.enqueue(trozo) },
+    })
+    const r = await pedirMetricas('BITACORA', async () => new Response(infinito, { status: 200 }), ENV)
+    expect(r).toMatchObject({ httpStatus: 200, metricas: null, error: 'Respuesta demasiado grande' })
+    expect(entregados * trozo.byteLength).toBeLessThan(MAX_BYTES + 3 * trozo.byteLength)
+  })
+
+  it('rechaza de entrada un content-length mayor a 1 MB', async () => {
+    const res = new Response('{}', { status: 200, headers: { 'content-length': String(MAX_BYTES + 1) } })
+    const r = await pedirMetricas('BITACORA', async () => res, ENV)
+    expect(r.error).toBe('Respuesta demasiado grande')
+  })
+
   it('un 200 con payload malo queda como error con el crudo guardado', async () => {
-    process.env[ENV] = 'secreto'
-    const r = await pedirMetricas('https://x.test', ENV, async () => new Response('{"schema":"otro"}', { status: 200 }))
+    const r = await pedirMetricas('BITACORA', async () => new Response('{"schema":"otro"}', { status: 200 }), ENV)
     expect(r.metricas).toBeNull()
     expect(r.crudo).toEqual({ schema: 'otro' })
     expect(r.error).toMatch(/Payload inválido/)
   })
 
   it('una falla de red devuelve status 0 sin lanzar', async () => {
-    process.env[ENV] = 'secreto'
-    const r = await pedirMetricas('https://x.test', ENV, async () => { throw new TypeError('fetch failed') })
+    const r = await pedirMetricas('BITACORA', async () => { throw new TypeError('fetch failed') }, ENV)
     expect(r).toMatchObject({ httpStatus: 0, error: 'No se pudo conectar' })
   })
 })

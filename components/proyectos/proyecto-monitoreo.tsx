@@ -77,6 +77,11 @@ export function ProyectoMonitoreo({ proyectoId, vista, error, puedeActualizar }:
               Comisión Tryvex {vista.saas.porcentaje_tryvex}%
             </span>
           )}
+          {vista && (
+            <span className="text-xs text-[var(--tx-ink-muted)]">
+              Clave <code className="font-mono">{vista.saas.clave}</code>
+            </span>
+          )}
         </div>
         {vista && puedeActualizar && (
           <Button variant="outline" size="sm" onClick={actualizar} disabled={pendiente || !vista.saas.activo} aria-busy={pendiente}>

@@ -7,7 +7,7 @@ import type { AlertaNueva, SaasAlerta, SaasMonitoreado, SaasSnapshot } from '@/l
 // queda en este repo para no propagar consultas sin tipos.
 type ClienteSinTipos = SupabaseClient
 
-const COLS_SAAS = 'id, proyecto_id, base_url, token_env, porcentaje_tryvex, schema_esperado, activo, created_at'
+const COLS_SAAS = 'id, proyecto_id, clave, porcentaje_tryvex, schema_esperado, activo, created_at'
 const COLS_SNAP = 'id, saas_id, tomado_en, http_status, payload, error'
 const COLS_ALERTA = 'id, saas_id, tipo, clave, detalle, creada_en, resuelta_en'
 

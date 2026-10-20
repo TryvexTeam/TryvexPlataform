@@ -28,8 +28,8 @@ export interface AlertaNueva {
 export interface SaasMonitoreado {
   id: string
   proyecto_id: string
-  base_url: string
-  token_env: string
+  /** Sufijo de MONITOREO_URL_<clave> / MONITOREO_TOKEN_<clave>. */
+  clave: string
   porcentaje_tryvex: number
   schema_esperado: string | null
   activo: boolean
@@ -76,7 +76,7 @@ export interface FilaMonitoreo extends FilaComision {
 
 /** Lo que necesita la sección "Monitoreo" del detalle de proyecto. */
 export interface VistaMonitoreo {
-  saas: Pick<SaasMonitoreado, 'id' | 'base_url' | 'porcentaje_tryvex' | 'activo'>
+  saas: Pick<SaasMonitoreado, 'id' | 'clave' | 'porcentaje_tryvex' | 'activo'>
   ultimoPull: { tomado_en: string; http_status: number; error: string | null } | null
   ultimoOk: { tomado_en: string; version: string | null; schema_version: string | null } | null
   filas: FilaMonitoreo[]

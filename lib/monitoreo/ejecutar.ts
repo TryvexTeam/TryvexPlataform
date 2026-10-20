@@ -32,7 +32,7 @@ export async function monitorearSaas(
   fetchImpl: typeof fetch = fetch,
 ): Promise<ResumenPull> {
   const previoSnap = await repo.ultimoSnapshotOk(saas.id)
-  const pull = await pedirMetricas(saas.base_url, saas.token_env, fetchImpl)
+  const pull = await pedirMetricas(saas.clave, fetchImpl)
 
   await repo.guardarSnapshot({
     saasId: saas.id,
@@ -81,7 +81,7 @@ export async function armarVista(repo: MonitoreoSaasRepository, proyectoId: stri
     : []
 
   return {
-    saas: { id: saas.id, base_url: saas.base_url, porcentaje_tryvex: saas.porcentaje_tryvex, activo: saas.activo },
+    saas: { id: saas.id, clave: saas.clave, porcentaje_tryvex: saas.porcentaje_tryvex, activo: saas.activo },
     ultimoPull: ultimo ? { tomado_en: ultimo.tomado_en, http_status: ultimo.http_status, error: ultimo.error } : null,
     ultimoOk: ok && metricas
       ? { tomado_en: ok.tomado_en, version: metricas.version, schema_version: metricas.schema_version }

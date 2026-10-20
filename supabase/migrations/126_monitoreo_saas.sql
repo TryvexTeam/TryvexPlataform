@@ -3,16 +3,17 @@
 -- Para qué: Tryvex cobra un porcentaje de lo que factura cada SaaS. Sin una
 -- fuente propia, la cifra la dice el coach o el revendedor, y nada impide que
 -- anule un cobro después de cerrado el mes o reporte de menos. El CRM tira
--- (pull) de `GET {base_url}/api/ops/metrics` (contrato `tryvex.metrics/v1`),
+-- (pull) de `GET {MONITOREO_URL_<clave>}/api/ops/metrics` (contrato `tryvex.metrics/v1`),
 -- guarda cada respuesta tal cual llegó y compara contra la anterior: si un mes
 -- cerrado cambia de sello o baja su total, queda una alerta.
 --
 -- Tres decisiones que no se ven en el esquema:
---   · El token NO vive en la base: `token_env` es el NOMBRE de la variable de
---     entorno que lo guarda. Con prefijo obligatorio `MONITOREO_TOKEN_`: si no,
---     quien pudiera escribir esta tabla podría apuntar `token_env` a
---     `SUPABASE_SERVICE_ROLE_KEY` y `base_url` a su servidor, y el cron le
---     mandaría la llave como Bearer.
+--   · Ni la URL ni el token viven en la base. La fila solo trae una `clave`
+--     (p. ej. BITACORA) y el servidor lee el par MONITOREO_URL_<CLAVE> y
+--     MONITOREO_TOKEN_<CLAVE> de sus variables de entorno, siempre juntos. Así
+--     editar esta tabla no puede mandar un token a otro servidor (SSRF /
+--     exfiltración) ni combinar la URL de un SaaS con el token de otro: quien
+--     controla adónde va cada token es quien controla el deploy, no la base.
 --   · `saas_snapshots` es solo-agregar: es la evidencia. Si se pudiera editar,
 --     el historial que prueba un mes alterado se podría alterar también.
 --   · Escribe solo el servidor (service role, desde el cron o la acción de
@@ -23,11 +24,8 @@
 CREATE TABLE IF NOT EXISTS saas_monitoreados (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   proyecto_id       UUID NOT NULL REFERENCES dim_proyectos(id) ON DELETE CASCADE,
-  -- Sin barra final ni query: el cron arma `${base_url}/api/ops/metrics`.
-  base_url          TEXT NOT NULL
-    CHECK (base_url ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*[A-Za-z0-9._~-])?$'),
-  token_env         TEXT NOT NULL
-    CHECK (token_env ~ '^MONITOREO_TOKEN_[A-Z0-9_]+$'),
+  -- Sufijo de las variables MONITOREO_URL_<clave> y MONITOREO_TOKEN_<clave>.
+  clave             TEXT NOT NULL UNIQUE CHECK (clave ~ '^[A-Z0-9_]{2,40}$'),
   porcentaje_tryvex NUMERIC(5,2) NOT NULL
     CHECK (porcentaje_tryvex >= 0 AND porcentaje_tryvex <= 100),
   -- Última migración que `main` del SaaS ya tiene. Si la base reporta una
@@ -39,14 +37,14 @@ CREATE TABLE IF NOT EXISTS saas_monitoreados (
 );
 
 COMMENT ON TABLE saas_monitoreados IS
-  'SaaS construidos por Tryvex que el CRM monitorea (tryvex.metrics/v1). token_env es el NOMBRE de la variable de entorno con el token, nunca el token.';
+  'SaaS construidos por Tryvex que el CRM monitorea (tryvex.metrics/v1). URL y token salen de las variables MONITOREO_URL_<clave> y MONITOREO_TOKEN_<clave>, nunca de la base.';
 
 -- ── Cada pull, tal cual llegó (solo-agregar) ─────────────────────────────────
 CREATE TABLE IF NOT EXISTS saas_snapshots (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   saas_id     UUID NOT NULL REFERENCES saas_monitoreados(id) ON DELETE RESTRICT,
   tomado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  -- 0 = no hubo respuesta HTTP (timeout, DNS, TLS, token sin configurar).
+  -- 0 = no hubo respuesta HTTP (timeout, DNS, TLS, variables sin configurar, URL rechazada).
   http_status INTEGER NOT NULL CHECK (http_status BETWEEN 0 AND 599),
   payload     JSONB NULL,
   error       TEXT NULL CHECK (error IS NULL OR char_length(error) <= 2000)
