@@ -301,7 +301,7 @@ describe('detectarAnomalias', () => {
 describe('validarUrlPublica', () => {
   it('acepta un dominio público https', () => {
     expect('url' in validarUrlPublica('https://bitacora.tryvex.tech')).toBe(true)
-    expect('url' in validarUrlPublica('https://app.example.com/base')).toBe(true)
+    expect('url' in validarUrlPublica('https://app.example.com/')).toBe(true)
   })
   it.each([
     'http://bitacora.tryvex.tech',
@@ -320,6 +320,8 @@ describe('validarUrlPublica', () => {
     'https://nas.local',
     'https://user:pass@bitacora.tryvex.tech',
     'https://bitacora.tryvex.tech?x=1',
+    'https://app.example.com/base',
+    'https://bitacora.tryvex.tech//attacker.example',
     'no es url',
   ])('rechaza %s', (url) => {
     expect('error' in validarUrlPublica(url)).toBe(true)

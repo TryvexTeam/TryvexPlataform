@@ -59,6 +59,8 @@ export function validarUrlPublica(texto: string): { url: URL } | { error: string
   if (/(^|\.)(localhost|local|internal|intranet|lan|home|corp|localdomain)$/.test(host)) {
     return { error: 'La URL del SaaS apunta a una red interna' }
   }
+  // Solo el origen: con ruta, `//otro-dominio` en el pathname haría que el Bearer saliera a otro host.
+  if (url.pathname !== '/') return { error: 'La URL del SaaS debe ser solo el dominio, sin ruta' }
   return { url }
 }
 
@@ -76,7 +78,7 @@ export async function pedirMetricas(
   const cred = credencialesDe(clave, env)
   if ('error' in cred) return falla(0, cred.error)
 
-  const destino = new URL(`${cred.url.pathname.replace(/\/+$/, '')}/api/ops/metrics`, cred.url.origin)
+  const destino = new URL('/api/ops/metrics', cred.url.origin)
   const control = new AbortController()
   const reloj = setTimeout(() => control.abort(), TIMEOUT_MS)
   try {
