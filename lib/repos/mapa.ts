@@ -5,7 +5,7 @@ import type { DatosMapa, LeadEnMapa } from '@/lib/types/mapa'
 import type { EstadoLead } from '@/lib/types/lead'
 
 /**
- * Los leads para el mapa. `lat`/`lng` son de la migración 127 y los tipos generados
+ * Los leads para el mapa. `lat`/`lng` son de la migración 128 y los tipos generados
  * todavía no los conocen: la consulta va sin tipar acá, en un solo lugar.
  */
 export class MapaRepository {

@@ -1,6 +1,6 @@
 import type { EstadoLead } from '@/lib/types/lead'
 
-/** Un lead con ubicación, tal como lo dibuja el mapa (migración 127). */
+/** Un lead con ubicación, tal como lo dibuja el mapa (migración 128). */
 export interface LeadEnMapa {
   id: string
   nombre: string

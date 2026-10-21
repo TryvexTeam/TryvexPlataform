@@ -13,7 +13,7 @@ import {
 } from '@/lib/types/feed'
 
 /**
- * El feed del equipo (migración 127). Las tablas son nuevas y los tipos generados
+ * El feed del equipo (migración 128). Las tablas son nuevas y los tipos generados
  * todavía no las conocen: se usan sin tipar acá, en un solo lugar, igual que
  * `tabla-encargos.ts`. Para quitarlo: regenerar los tipos.
  */

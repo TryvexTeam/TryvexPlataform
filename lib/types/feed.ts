@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 /**
  * El feed del equipo: lo que cada uno encuentra y quiere compartir (referencias,
- * videos, ideas) y las noticias que trae el radar. Ver migración 127.
+ * videos, ideas) y las noticias que trae el radar. Ver migración 128.
  */
 
 export const EMOJIS_FEED = ['🔥', '💡', '👏', '😂', '👀'] as const

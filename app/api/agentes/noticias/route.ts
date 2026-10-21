@@ -9,7 +9,7 @@ import { LoteNoticiasSchema } from '@/lib/types/feed'
  *   { "noticias": [{ "url": "https://…", "titulo": "…", "resumen": "…", "fuente": "radar semanal" }] }
  *
  * Hasta 30 por llamada. Una noticia cuya url ya está publicada se salta (índice
- * único de la migración 127): el radar puede mandar la semana entera sin duplicar.
+ * único de la migración 128): el radar puede mandar la semana entera sin duplicar.
  * La vista previa la arma el agente (título y resumen): el servidor no abre links acá.
  */
 export async function POST(req: Request) {

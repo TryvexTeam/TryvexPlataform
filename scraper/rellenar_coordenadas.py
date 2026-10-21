@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Rellena lat/lng de los leads que ya existen (migracion 127), para el mapa de leads.
+Rellena lat/lng de los leads que ya existen (migracion 128), para el mapa de leads.
 
 Los leads nuevos traen sus coordenadas desde el scraper. Los viejos no: este
 script abre la ficha de cada uno en Google Maps por su identificador

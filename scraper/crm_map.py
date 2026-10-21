@@ -128,7 +128,7 @@ def a_crm(lead: dict) -> dict:
         # reconocer el MISMO negocio aunque le cambien el nombre, y lo que evita
         # las fichas duplicadas que hoy tiene la cartera.
         "google_place_id": lead.get("google_place_id") or None,
-        # Donde esta el local, para el mapa de leads (migracion 127). Sale de la
+        # Donde esta el local, para el mapa de leads (migracion 128). Sale de la
         # misma URL de la ficha que el place_id.
         "lat": lead.get("lat"),
         "lng": lead.get("lng"),
