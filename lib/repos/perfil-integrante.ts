@@ -271,7 +271,7 @@ export class PerfilIntegranteRepository {
     return [...porId.values()].sort((a, b) => b.fecha.localeCompare(a.fecha))
   }
 
-  /** Horas de jornada por día (función de la migración 126: solo totales, no entradas ni salidas). */
+  /** Horas de jornada por día (función de la migración 127: solo totales, no entradas ni salidas). */
   private async horasPorDia(id: string, desde: string): Promise<Map<string, number>> {
     const { data, error } = await (this.sb as unknown as SupabaseClient).rpc('horas_por_dia_integrante', {
       p_integrante: id,
