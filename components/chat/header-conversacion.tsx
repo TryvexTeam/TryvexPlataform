@@ -35,7 +35,7 @@ export function HeaderConversacion(props: HeaderConversacionProps) {
         <ChevronLeftIcon className="size-7" />
         {props.noLeidosOtros ? <span className="absolute right-0 top-0 grid min-w-4 place-items-center rounded-full bg-[var(--chat-accent)] px-1 text-[10px] font-bold text-white">{props.noLeidosOtros > 99 ? '99+' : props.noLeidosOtros}</span> : null}
       </button>
-      <AvatarChat nombre={titulo} avatarUrl={avatarConversacion(c, props.miIntegranteId).url} color={avatarConversacion(c, props.miIntegranteId).color} estado={c.tipo === 'dm' ? estado : undefined} size={36} />
+      <AvatarChat nombre={titulo} avatarUrl={avatarConversacion(c, props.miIntegranteId).url} color={avatarConversacion(c, props.miIntegranteId).color} estado={c.tipo === 'dm' ? estado : undefined} size={36} integranteId={c.tipo === 'dm' ? otro?.integrante_id : null} />
       <div className="min-w-0 flex-1 px-1">
         <h2 className="truncate text-[17px] font-semibold text-[var(--chat-ink)]">{titulo}</h2>
         <p className={`truncate text-[13px] ${props.escribiendo ? 'text-[var(--chat-accent)]' : 'text-[var(--chat-meta)]'}`}>{subtitulo || `${c.miembros.length} integrantes`}</p>

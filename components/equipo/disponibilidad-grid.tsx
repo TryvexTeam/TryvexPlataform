@@ -305,6 +305,7 @@ export function DisponibilidadGrid() {
                 color={color}
                 size={26}
                 destacado={m.es_propio}
+                integranteId={m.integrante_id}
               />
               {m.nombre.split(' ')[0]}
               {m.es_propio && (

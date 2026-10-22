@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 
 /**
  * Avatar de un integrante: su foto de perfil, con las iniciales de respaldo.
@@ -24,6 +25,12 @@ interface AvatarIntegranteProps {
   size?: number
   /** Marca visible de "este eres tú": anillo de acento. */
   destacado?: boolean
+  /**
+   * Con el id, la foto lleva al perfil del integrante (`/equipo/[id]`). Sin él
+   * queda como imagen: así no se mete un link dentro de un botón o de otra
+   * tarjeta que ya es link (eso es HTML inválido y rompe el clic).
+   */
+  integranteId?: string | null
 }
 
 function iniciales(nombre: string): string {
@@ -43,11 +50,12 @@ export function AvatarIntegrante({
   color,
   size = 36,
   destacado = false,
+  integranteId,
 }: AvatarIntegranteProps) {
   const [fallo, setFallo] = useState(false)
   const muestraFoto = Boolean(avatarUrl) && !fallo
 
-  return (
+  const avatar = (
     <div
       className="relative shrink-0 overflow-hidden rounded-full border"
       style={{
@@ -85,5 +93,17 @@ export function AvatarIntegrante({
         />
       )}
     </div>
+  )
+
+  if (!integranteId) return avatar
+
+  return (
+    <Link
+      href={`/equipo/${integranteId}`}
+      aria-label={`Ver el perfil de ${nombre}`}
+      className="shrink-0 rounded-full transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tx-accent)]"
+    >
+      {avatar}
+    </Link>
   )
 }
