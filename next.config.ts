@@ -30,7 +30,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self' ${supabaseOrigenes} https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://generativelanguage.googleapis.com https://graph.facebook.com https://rtc.live.cloudflare.com`,
+  `connect-src 'self' ${supabaseOrigenes} https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://generativelanguage.googleapis.com https://graph.facebook.com https://rtc.live.cloudflare.com https://tiles.openfreemap.org`,
   "frame-src 'self' https://www.youtube.com https://music.youtube.com https://vimeo.com",
   "media-src 'self' blob: https:",
   "object-src 'none'",

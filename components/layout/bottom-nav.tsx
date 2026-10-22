@@ -19,8 +19,7 @@ import {
   Settings,
   Users,
   Wallet,
-  X,
-} from 'lucide-react'
+  X, Map as MapIcon, Newspaper } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useNavMovilOculta } from '@/lib/hooks/use-nav-movil-oculta'
 
@@ -46,12 +45,14 @@ const TODAS = [
     { href: '/chat', label: 'Chat', icon: MessageSquare },
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/leads', label: 'Leads', icon: Users },
+    { href: '/mapa', label: 'Mapa', icon: MapIcon },
     { href: '/clientes', label: 'Clientes', icon: Building2 },
     { href: '/proyectos', label: 'Proyectos', icon: FolderKanban },
     { href: '/tareas', label: 'Tareas', icon: CheckSquare },
   ]},
   { grupo: 'Equipo', items: [
     { href: '/reuniones', label: 'Equipo', icon: Calendar },
+    { href: '/feed', label: 'Feed', icon: Newspaper },
     { href: '/cerebro', label: 'Cerebro', icon: Brain },
     { href: '/vex', label: 'Vex', icon: Bot },
     { href: '/jornada', label: 'Jornada', icon: Clock },

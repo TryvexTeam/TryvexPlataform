@@ -71,3 +71,6 @@ workspace/
 
 # Cache local de la Supabase CLI (project ref, versiones de servicios).
 supabase/.temp/
+
+# Worker del mapa: lo copia scripts/copiar-worker-mapa.mjs antes de dev y build
+public/maplibre/

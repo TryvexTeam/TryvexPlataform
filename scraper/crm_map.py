@@ -128,6 +128,10 @@ def a_crm(lead: dict) -> dict:
         # reconocer el MISMO negocio aunque le cambien el nombre, y lo que evita
         # las fichas duplicadas que hoy tiene la cartera.
         "google_place_id": lead.get("google_place_id") or None,
+        # Donde esta el local, para el mapa de leads (migracion 128). Sale de la
+        # misma URL de la ficha que el place_id.
+        "lat": lead.get("lat"),
+        "lng": lead.get("lng"),
         "categoria_google": limpiar(lead.get("categoria_google")),
         "telefono": limpiar(lead.get("telefono")),
         # `info_texto` conserva su salto de linea a proposito: es el crudo de la
@@ -186,4 +190,6 @@ def campos_update(lead: dict) -> dict:
         "categoria_google": m["categoria_google"],
         "score": m["score"],
         "localidad": m["localidad"],
+        # Solo si se leyeron: un None no puede borrar una ubicacion buena.
+        **({"lat": m["lat"], "lng": m["lng"]} if m["lat"] is not None and m["lng"] is not None else {}),
     }
